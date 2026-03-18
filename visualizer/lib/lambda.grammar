@@ -17,8 +17,26 @@ EXPR := APPLICATION | TERM
 // A term is either a lambda abstraction, an identifier, or a group.
 TERM := ABSTRACTION | IDENT | GROUP
 
-// A lambda abstraction is a lambda symbol followed by an identifier, a dot, optional spacing, and an expression.
-ABSTRACTION := 'λ' parameter=IDENT '\.' ' '* body=EXPR
+// A lambda abstraction is a lambda symbol followed by an identifier, an optional type annotation, a dot, optional spacing, and an expression.
+ABSTRACTION := 'λ' parameter=IDENT TYPE_ANNOTATION? '\.' ' '* body=EXPR
+
+// A type annotation is a colon followed by a type.
+TYPE_ANNOTATION := ':' ' '* type=TYPE
+
+// A type is either an arrow type or a simple type.
+TYPE := ARROW_TYPE | SIMPLE_TYPE
+
+// An arrow type is a simple type followed by an arrow and another type (right-associative).
+ARROW_TYPE := from=SIMPLE_TYPE ' '* {'->' | '→'} ' '* to=TYPE
+
+// A simple type is either a parenthesized type, a hole, or an identifier.
+SIMPLE_TYPE := TYPE_GROUP | HOLE_TYPE | IDENT
+
+// A hole type is a question mark, representing an unknown/to-be-inferred type.
+HOLE_TYPE := '\?'
+
+// A type group is a type wrapped in parentheses.
+TYPE_GROUP := '\(' ' '* type=TYPE ' '* '\)'
 
 // A lambda application is a function followed by an argument, separated by any number of spaces.
 // For example, when one of the expressions is a group then no space is neccessary.

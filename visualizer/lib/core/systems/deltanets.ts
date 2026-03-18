@@ -4,9 +4,11 @@
 
 import { removeFromArrayIf } from "../../util.ts";
 import type { AstNode, SystemType } from "../../ast.ts";
+import { typeToString } from "../../ast.ts";
 import type { Graph, Node, NodePort, Redex, InteractionSystem } from "../types.ts";
 import { link, reciprocal } from "../graph.ts";
 import { reduceAnnihilate, reduceErase, reduceCommute } from "../reductions.ts";
+import { typeCheck } from "../typechecker.ts";
 
 // --- Delta-nets specific types ---
 
@@ -122,7 +124,8 @@ function addAstNodeToGraph(
   if (astNode.type === "abs") {
     const eraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(eraser);
-    const node: Node = { type: "abs", label: "λ" + astNode.name, ports: [] };
+    const typeStr = astNode.typeAnnotation ? ":" + typeToString(astNode.typeAnnotation) : "";
+    const node: Node = { type: "abs", label: "λ" + astNode.name + typeStr, ports: [] };
     graph.push(node);
     link({ node: eraser, port: 0 }, { node, port: 2 });
 
@@ -624,4 +627,5 @@ export const deltanets: InteractionSystem = {
   isConnectedToAllErasers,
   countAuxErasers,
   levelColor,
+  typeCheck,
 };

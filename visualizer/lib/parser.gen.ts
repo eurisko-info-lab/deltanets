@@ -51,6 +51,10 @@ export enum ASTKinds {
     APPLICATION = "APPLICATION",
     GROUP = "GROUP",
     IDENT = "IDENT",
+    TYPE_ANNOTATION = "TYPE_ANNOTATION",
+    ARROW_TYPE = "ARROW_TYPE",
+    TYPE_GROUP = "TYPE_GROUP",
+    HOLE_TYPE = "HOLE_TYPE",
     WHITESPACE_1 = "WHITESPACE_1",
     WHITESPACE_2 = "WHITESPACE_2",
     COMMENT = "COMMENT",
@@ -84,6 +88,7 @@ export type TERM_3 = GROUP;
 export interface ABSTRACTION {
     kind: ASTKinds.ABSTRACTION;
     parameter: IDENT;
+    typeAnnotation: TYPE_ANNOTATION | null;
     body: EXPR;
 }
 export interface APPLICATION {
@@ -98,6 +103,24 @@ export interface GROUP {
 export interface IDENT {
     kind: ASTKinds.IDENT;
     identifier: string;
+}
+export interface TYPE_ANNOTATION {
+    kind: ASTKinds.TYPE_ANNOTATION;
+    type: TYPE;
+}
+export type TYPE = ARROW_TYPE | SIMPLE_TYPE;
+export type SIMPLE_TYPE = TYPE_GROUP | HOLE_TYPE | IDENT;
+export interface ARROW_TYPE {
+    kind: ASTKinds.ARROW_TYPE;
+    from: SIMPLE_TYPE;
+    to: TYPE;
+}
+export interface TYPE_GROUP {
+    kind: ASTKinds.TYPE_GROUP;
+    type: TYPE;
+}
+export interface HOLE_TYPE {
+    kind: ASTKinds.HOLE_TYPE;
 }
 export type WHITESPACE = WHITESPACE_1 | WHITESPACE_2;
 export type WHITESPACE_1 = COMMENT;
@@ -244,16 +267,18 @@ export class Parser {
         return this.run<ABSTRACTION>($$dpth,
             () => {
                 let $scope$parameter: Nullable<IDENT>;
+                let $scope$typeAnnotation: Nullable<TYPE_ANNOTATION[]>;
                 let $scope$body: Nullable<EXPR>;
                 let $$res: Nullable<ABSTRACTION> = null;
                 if (true
                     && this.regexAccept(String.raw`(?:λ)`, "", $$dpth + 1, $$cr) !== null
                     && ($scope$parameter = this.matchIDENT($$dpth + 1, $$cr)) !== null
+                    && ($scope$typeAnnotation = this.loop<TYPE_ANNOTATION>(() => this.matchTYPE_ANNOTATION($$dpth + 1, $$cr), 0, 1)) !== null
                     && this.regexAccept(String.raw`(?:\.)`, "", $$dpth + 1, $$cr) !== null
                     && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
                     && ($scope$body = this.matchEXPR($$dpth + 1, $$cr)) !== null
                 ) {
-                    $$res = {kind: ASTKinds.ABSTRACTION, parameter: $scope$parameter, body: $scope$body};
+                    $$res = {kind: ASTKinds.ABSTRACTION, parameter: $scope$parameter, typeAnnotation: $scope$typeAnnotation.length > 0 ? $scope$typeAnnotation[0] : null, body: $scope$body};
                 }
                 return $$res;
             });
@@ -298,6 +323,81 @@ export class Parser {
                     && ($scope$identifier = this.regexAccept(String.raw`(?:[a-zA-Z0-9_]+)`, "", $$dpth + 1, $$cr)) !== null
                 ) {
                     $$res = {kind: ASTKinds.IDENT, identifier: $scope$identifier};
+                }
+                return $$res;
+            });
+    }
+    public matchTYPE_ANNOTATION($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE_ANNOTATION> {
+        return this.run<TYPE_ANNOTATION>($$dpth,
+            () => {
+                let $scope$type: Nullable<TYPE>;
+                let $$res: Nullable<TYPE_ANNOTATION> = null;
+                if (true
+                    && this.regexAccept(String.raw`(?::)`, "", $$dpth + 1, $$cr) !== null
+                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
+                    && ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null
+                ) {
+                    $$res = {kind: ASTKinds.TYPE_ANNOTATION, type: $scope$type};
+                }
+                return $$res;
+            });
+    }
+    public matchTYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE> {
+        return this.choice<TYPE>([
+            () => this.matchARROW_TYPE($$dpth + 1, $$cr),
+            () => this.matchSIMPLE_TYPE($$dpth + 1, $$cr),
+        ]);
+    }
+    public matchARROW_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<ARROW_TYPE> {
+        return this.run<ARROW_TYPE>($$dpth,
+            () => {
+                let $scope$from: Nullable<SIMPLE_TYPE>;
+                let $scope$to: Nullable<TYPE>;
+                let $$res: Nullable<ARROW_TYPE> = null;
+                if (true
+                    && ($scope$from = this.matchSIMPLE_TYPE($$dpth + 1, $$cr)) !== null
+                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
+                    && this.regexAccept(String.raw`(?:->|→)`, "", $$dpth + 1, $$cr) !== null
+                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
+                    && ($scope$to = this.matchTYPE($$dpth + 1, $$cr)) !== null
+                ) {
+                    $$res = {kind: ASTKinds.ARROW_TYPE, from: $scope$from, to: $scope$to};
+                }
+                return $$res;
+            });
+    }
+    public matchSIMPLE_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<SIMPLE_TYPE> {
+        return this.choice<SIMPLE_TYPE>([
+            () => this.matchTYPE_GROUP($$dpth + 1, $$cr),
+            () => this.matchHOLE_TYPE($$dpth + 1, $$cr),
+            () => this.matchIDENT($$dpth + 1, $$cr),
+        ]);
+    }
+    public matchTYPE_GROUP($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE_GROUP> {
+        return this.run<TYPE_GROUP>($$dpth,
+            () => {
+                let $scope$type: Nullable<TYPE>;
+                let $$res: Nullable<TYPE_GROUP> = null;
+                if (true
+                    && this.regexAccept(String.raw`(?:\()`, "", $$dpth + 1, $$cr) !== null
+                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
+                    && ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null
+                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
+                    && this.regexAccept(String.raw`(?:\))`, "", $$dpth + 1, $$cr) !== null
+                ) {
+                    $$res = {kind: ASTKinds.TYPE_GROUP, type: $scope$type};
+                }
+                return $$res;
+            });
+    }
+    public matchHOLE_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<HOLE_TYPE> {
+        return this.run<HOLE_TYPE>($$dpth,
+            () => {
+                let $$res: Nullable<HOLE_TYPE> = null;
+                if (true
+                    && this.regexAccept(String.raw`(?:\?)`, "", $$dpth + 1, $$cr) !== null
+                ) {
+                    $$res = {kind: ASTKinds.HOLE_TYPE};
                 }
                 return $$res;
             });

@@ -1,6 +1,7 @@
 // Universal types and interfaces for interaction net systems and tree-based calculi.
 
-import type { AstNode, Abstraction, Variable, SystemType } from "../ast.ts";
+import type { AstNode, Abstraction, Variable, SystemType, Type } from "../ast.ts";
+import type { TypeResult, TypeEnv } from "./typechecker.ts";
 
 // A port of a particular node.
 export type NodePort = { node: Node; port: number };
@@ -34,6 +35,7 @@ export interface InteractionSystem {
   isConnectedToAllErasers(node: Node): boolean;
   countAuxErasers(node: Node): number;
   levelColor(level: number): string | undefined;
+  typeCheck?(ast: AstNode, env?: TypeEnv): TypeResult;
 }
 
 // The interface that any tree-based lambda calculus must implement.
@@ -47,4 +49,5 @@ export interface TreeSystem {
   boundVars(node: AstNode, name: string): Variable[];
   isAbstractionClosed(node: Abstraction): boolean;
   astToString(ast: AstNode): string;
+  typeCheck?(ast: AstNode, env?: TypeEnv): TypeResult;
 }

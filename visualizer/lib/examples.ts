@@ -95,6 +95,32 @@ GraphColorable # Results in T
 # GraphNotColorable # Results in F
 `,
   },
+  {
+    name: "STLC: Identity",
+    code: `# Simply-Typed Lambda Calculus: Identity
+# Type annotations are optional. Use ":" after the parameter name.
+# Use "->" or "→" for arrow types.
+
+# The polymorphic identity on Nat
+λx:Nat.x`,
+  },
+  {
+    name: "STLC: Church Booleans",
+    code: `# Simply-Typed Lambda Calculus: Church Booleans
+# Here we encode booleans as Nat -> Nat -> Nat
+
+T = λx:Nat.λy:Nat.x
+F = λx:Nat.λy:Nat.y
+
+T`,
+  },
+  {
+    name: "STLC: Composition",
+    code: `# Simply-Typed Lambda Calculus: Composition
+# compose : (B -> C) -> (A -> B) -> A -> C
+
+λf:B -> C.λg:A -> B.λx:A.f (g x)`,
+  },
 ];
 
 export default examples;

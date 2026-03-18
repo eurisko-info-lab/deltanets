@@ -9,6 +9,7 @@ import type {
 import { clone, astToString } from "../../ast.ts";
 import { nameToFancyName } from "../../util.ts";
 import type { TreeSystem } from "../types.ts";
+import { typeCheck } from "../typechecker.ts";
 
 // Replaces a node with a new node. Returns true if the node is now the root node.
 function replace(astNode: AstNode, newNode: AstNode): boolean {
@@ -165,4 +166,5 @@ export const lambdacalc: TreeSystem = {
   boundVars,
   isAbstractionClosed,
   astToString,
+  typeCheck,
 };

@@ -1,16 +1,61 @@
-import { ASTKinds, type EXPR, parse, SyntaxErr } from "./parser.gen.ts";
+import { ASTKinds, type EXPR, type TYPE, parse, SyntaxErr } from "./parser.gen.ts";
 import { fancyNameToName, nameToFancyName } from "./util.ts";
+
+// --- Type representation for optional typing (STLC / interaction type theory) ---
+
+// A type is either a base type, an arrow (function) type, or a hole (unknown/to-be-inferred).
+export type Type = BaseType | ArrowType | HoleType;
+export type BaseType = { kind: "base"; name: string };
+export type ArrowType = { kind: "arrow"; from: Type; to: Type };
+export type HoleType = { kind: "hole" };
+
+// Renders a type as a string.
+export function typeToString(ty: Type): string {
+  if (ty.kind === "hole") return "?";
+  if (ty.kind === "base") return ty.name;
+  const fromStr = ty.from.kind === "arrow" ? `(${typeToString(ty.from)})` : typeToString(ty.from);
+  return `${fromStr} → ${typeToString(ty.to)}`;
+}
+
+// Checks structural equality of two types.
+// Holes are compatible with any type.
+export function typesEqual(a: Type, b: Type): boolean {
+  if (a.kind === "hole" || b.kind === "hole") return true;
+  if (a.kind === "base" && b.kind === "base") return a.name === b.name;
+  if (a.kind === "arrow" && b.kind === "arrow") {
+    return typesEqual(a.from, b.from) && typesEqual(a.to, b.to);
+  }
+  return false;
+}
+
+// Converts a raw parser TYPE node into an internal Type representation.
+function parseRawType(rawType: TYPE): Type {
+  if (rawType.kind === ASTKinds.ARROW_TYPE) {
+    return { kind: "arrow", from: parseRawType(rawType.from), to: parseRawType(rawType.to) };
+  } else if (rawType.kind === ASTKinds.TYPE_GROUP) {
+    return parseRawType(rawType.type);
+  } else if (rawType.kind === ASTKinds.HOLE_TYPE) {
+    return { kind: "hole" };
+  } else if (rawType.kind === ASTKinds.IDENT) {
+    return { kind: "base", name: rawType.identifier };
+  } else {
+    throw new Error("Unknown raw type node");
+  }
+}
+
+// --- AST node types ---
 
 // A `Node` is either an `Abstraction`, an `Application` or a `Variable`.
 // TODO: rename to "Expression"
 export type AstNode = Abstraction | Application | Variable;
 
-// An abstraction is a parameter name and a body.
+// An abstraction is a parameter name, an optional type annotation, and a body.
 export type Abstraction = {
   type: "abs";
   parent?: AstNode;
   name: string;
   body: AstNode;
+  typeAnnotation?: Type;
   extra?: any;
 };
 
@@ -99,6 +144,9 @@ function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?
       parent,
       name: nameToFancyName(rawNode.parameter.identifier),
     };
+    if (rawNode.typeAnnotation) {
+      (node as any).typeAnnotation = parseRawType(rawNode.typeAnnotation.type);
+    }
     node.body = parseRawExpressionNode(rawNode.body, definitions, node);
     return node as AstNode;
   } else if (rawNode.kind === ASTKinds.GROUP) {
@@ -119,11 +167,14 @@ function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?
 // Clones a node and its descendants.
 export function clone(astNode: AstNode, parent?: any): AstNode {
   if (astNode.type === "abs") {
-    const node: Partial<AstNode> = {
+    const node: Partial<Abstraction> = {
       type: "abs",
       parent,
       name: astNode.name,
     };
+    if (astNode.typeAnnotation) {
+      node.typeAnnotation = astNode.typeAnnotation;
+    }
     node.body = clone(astNode.body, node);
     return node as AstNode;
   } else if (astNode.type === "app") {
@@ -146,9 +197,9 @@ export function clone(astNode: AstNode, parent?: any): AstNode {
 // Renders an AST node as a string.
 export const astToString = (astNode: AstNode): string => {
   if (astNode.type === "abs") {
-    return (
-      "λ" + fancyNameToName(astNode.name) + "." + astToString(astNode.body)
-    );
+    const paramStr = fancyNameToName(astNode.name);
+    const typeStr = astNode.typeAnnotation ? ":" + typeToString(astNode.typeAnnotation) : "";
+    return "λ" + paramStr + typeStr + "." + astToString(astNode.body);
   } else if (astNode.type === "app") {
     let funcString = astToString(astNode.func);
     let argString = astToString(astNode.arg);

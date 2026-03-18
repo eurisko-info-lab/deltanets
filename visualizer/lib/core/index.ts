@@ -6,4 +6,6 @@ export { link, reciprocal } from "./graph.ts";
 export { reduceAnnihilate, reduceErase, reduceCommute } from "./reductions.ts";
 export { deltanets } from "./systems/deltanets.ts";
 export { lambdacalc } from "./systems/lambdacalc.ts";
+export { typeCheck, hasTypeAnnotations } from "./typechecker.ts";
+export type { TypeResult, TypeEnv } from "./typechecker.ts";
 
