@@ -9,6 +9,9 @@ import {
   Replicator,
   Root,
   SUBOPTIMAL_HIGHLIGHT_COLOR,
+  TYPECHECK_ACTIVE_COLOR,
+  TYPECHECK_DONE_COLOR,
+  TYPECHECK_ERROR_COLOR,
   Wire,
 } from "../render.ts";
 import { Method, MethodState } from "./index.ts";
@@ -17,6 +20,7 @@ import {
   type Node,
   type NodePort,
   type Redex,
+  Ports,
   reciprocal,
   deltanets,
 } from "../core/index.ts";
@@ -244,6 +248,9 @@ const renderNodePort = (
   } else if (nodePort.node.type === "var") {
     nodePort.node.isCreated = true;
     const label = new Label(nodePort.node.label);
+    if (nodePort.node.typeCheckState === "checking") label.highlightColor = TYPECHECK_ACTIVE_COLOR;
+    else if (nodePort.node.typeCheckState === "checked") label.highlightColor = TYPECHECK_DONE_COLOR;
+    else if (nodePort.node.typeCheckState === "error") label.highlightColor = TYPECHECK_ERROR_COLOR;
     label.pos.y = D;
     node2D.add(label);
     endpoints.push({ nodePort, node2D });
@@ -252,12 +259,15 @@ const renderNodePort = (
     const era = new Eraser();
     node2D.add(era);
     endpoints.push({ nodePort, node2D });
-  } else if (nodePort.node.type === "abs" && nodePort.port === 0) {
+  } else if (nodePort.node.type === "abs" && nodePort.port === Ports.abs.principal) {
     nodePort.node.isCreated = true;
     const fan = new Fan("up", nodePort.node.label);
+    if (nodePort.node.typeCheckState === "checking") fan.highlightColor = TYPECHECK_ACTIVE_COLOR;
+    else if (nodePort.node.typeCheckState === "checked") fan.highlightColor = TYPECHECK_DONE_COLOR;
+    else if (nodePort.node.typeCheckState === "error") fan.highlightColor = TYPECHECK_ERROR_COLOR;
 
     const { node2D: body, endpoints: bodyEndpoints } = renderNodePort(
-      nodePort.node.ports[1],
+      nodePort.node.ports[Ports.abs.body],
       state,
       redexes,
       level,
@@ -270,7 +280,7 @@ const renderNodePort = (
 
     const redex = getRedex(
       nodePort.node,
-      nodePort.node.ports[1].node,
+      nodePort.node.ports[Ports.abs.body].node,
       redexes,
     );
 
@@ -284,20 +294,20 @@ const renderNodePort = (
       node2D.add(funcWire);
     } else {
       // Add redex to the appropriate endpoint
-      const childEndpoint = bodyEndpoints.find((endpoint) => endpoint.nodePort === nodePort.node.ports[1]);
+      const childEndpoint = bodyEndpoints.find((endpoint) => endpoint.nodePort === nodePort.node.ports[Ports.abs.body]);
       if (childEndpoint) {
         childEndpoint.redex = redex;
       }
     }
 
-    // Create eraser or wire endpoint
-    if (nodePort.node.ports[2].node.type === "era") {
-      nodePort.node.ports[2].node.isCreated = true;
+    // Create eraser or wire endpoint for bind port
+    if (nodePort.node.ports[Ports.abs.bind].node.type === "era") {
+      nodePort.node.ports[Ports.abs.bind].node.isCreated = true;
       const era = new Eraser();
       era.pos.x = -Fan.PORT_DELTA;
       era.pos.y = fan.bounds.max.y - era.bounds.min.y;
       node2D.add(era);
-      endpoints.push({ nodePort: nodePort.node.ports[2], node2D: era, level });
+      endpoints.push({ nodePort: nodePort.node.ports[Ports.abs.bind], node2D: era, level });
       const wire = new Wire(fan, era, 0, undefined, levelColor(level + 1));
       wire.startOffset.x = -Fan.PORT_DELTA;
       wire.startOffset.y = Fan.HEIGHT;
@@ -312,23 +322,52 @@ const renderNodePort = (
       node2D.add(endpoint);
       (endpoint as any).isWireEndpoint = true;
       endpoints.push({
-        nodePort: nodePort.node.ports[2],
+        nodePort: nodePort.node.ports[Ports.abs.bind],
         node2D: endpoint,
         level: level + 1,
       });
     }
 
+    // Handle type port
+    let typeEndpoints: Endpoint[] = [];
+    const typePortRef = nodePort.node.ports[Ports.abs.type];
+    if (typePortRef.node.type === "type-hole") {
+      // Mark type-hole as created (invisible for unannotated lambdas)
+      typePortRef.node.isCreated = true;
+    } else {
+      // Render type subgraph inline
+      const { node2D: typeTree, endpoints: tEndpoints } = renderNodePort(
+        typePortRef, state, redexes, level,
+      );
+      typeEndpoints = tEndpoints;
+      typeTree.pos.x = -2 * Fan.PORT_DELTA;
+      typeTree.pos.y = (typeTree as any).isWireEndpoint
+        ? Fan.HEIGHT
+        : fan.bounds.max.y - typeTree.bounds.min.y;
+
+      if (!(typeTree as any).isWireEndpoint) {
+        const typeWire = new Wire(fan, typeTree, 0);
+        typeWire.startOffset.x = -Fan.PORT_DELTA;
+        typeWire.startOffset.y = Fan.HEIGHT;
+        node2D.add(typeWire);
+      }
+      node2D.add(typeTree);
+    }
+
     node2D.add(fan);
     node2D.add(body);
 
-    endpoints = [...endpoints, ...bodyEndpoints];
-  } else if (nodePort.node.type === "app" && nodePort.port === 1) {
+    endpoints = [...endpoints, ...bodyEndpoints, ...typeEndpoints];
+  } else if (nodePort.node.type === "app" && nodePort.port === Ports.app.result) {
     nodePort.node.isCreated = true;
     const fan = new Fan("down", nodePort.node.label);
+    if (nodePort.node.typeCheckState === "checking") fan.highlightColor = TYPECHECK_ACTIVE_COLOR;
+    else if (nodePort.node.typeCheckState === "checked") fan.highlightColor = TYPECHECK_DONE_COLOR;
+    else if (nodePort.node.typeCheckState === "error") fan.highlightColor = TYPECHECK_ERROR_COLOR;
     fan.pos.x = Fan.PORT_DELTA;
 
     const { node2D: func, endpoints: funcEndpoints } = renderNodePort(
-      nodePort.node.ports[0],
+      nodePort.node.ports[Ports.app.func],
       state,
       redexes,
       level,
@@ -341,7 +380,7 @@ const renderNodePort = (
 
     const redex = getRedex(
       nodePort.node,
-      nodePort.node.ports[0].node,
+      nodePort.node.ports[Ports.app.func].node,
       redexes,
     );
 
@@ -360,19 +399,19 @@ const renderNodePort = (
       node2D.add(funcWire);
     } else {
       // Add redex to the appropriate endpoint
-      const childEndpoint = funcEndpoints.find((endpoint) => endpoint.nodePort === nodePort.node.ports[0]);
+      const childEndpoint = funcEndpoints.find((endpoint) => endpoint.nodePort === nodePort.node.ports[Ports.app.func]);
       if (childEndpoint) {
         childEndpoint.redex = redex;
       }
     }
 
     const { node2D: arg, endpoints: argEndpoints } = renderNodePort(
-      nodePort.node.ports[2],
+      nodePort.node.ports[Ports.app.arg],
       state,
       redexes,
       level + 1,
     );
-    arg.pos.x = nodePort.node.ports[2].node.type === "var"
+    arg.pos.x = nodePort.node.ports[Ports.app.arg].node.type === "var"
       ? fan.bounds.max.x - arg.bounds.min.x + 2 * D
       : Fan.PORT_DELTA + Math.max(func.bounds.max.x, fan.bounds.max.x) -
         arg.bounds.min.x;
@@ -578,6 +617,59 @@ const renderNodePort = (
         node2D.add(childWire);
       });
     }
+  } else if (nodePort.node.type === "type-base") {
+    nodePort.node.isCreated = true;
+    const label = new Label(nodePort.node.label);
+    label.pos.y = D;
+    node2D.add(label);
+    endpoints.push({ nodePort, node2D });
+  } else if (nodePort.node.type === "type-hole") {
+    nodePort.node.isCreated = true;
+    const label = new Label("?");
+    label.pos.y = D;
+    node2D.add(label);
+    endpoints.push({ nodePort, node2D });
+  } else if (nodePort.node.type === "type-arrow" && nodePort.port === Ports.typeArrow.principal) {
+    nodePort.node.isCreated = true;
+    const fan = new Fan("up", "\u2192");
+
+    // Render codomain (right child)
+    const { node2D: codom, endpoints: codomEndpoints } = renderNodePort(
+      nodePort.node.ports[Ports.typeArrow.codomain], state, redexes, level,
+    );
+    codom.pos.x = Math.max(Fan.PORT_DELTA, -codom.bounds.min.x - D);
+    codom.pos.y = (codom as any).isWireEndpoint
+      ? Fan.HEIGHT
+      : fan.bounds.max.y - codom.bounds.min.y;
+
+    if (!(codom as any).isWireEndpoint) {
+      const wire = new Wire(fan, codom, D);
+      wire.startOffset.x = Fan.PORT_DELTA;
+      wire.startOffset.y = Fan.HEIGHT;
+      node2D.add(wire);
+    }
+
+    // Render domain (left child)
+    const { node2D: dom, endpoints: domEndpoints } = renderNodePort(
+      nodePort.node.ports[Ports.typeArrow.domain], state, redexes, level,
+    );
+    dom.pos.x = -Fan.PORT_DELTA;
+    dom.pos.y = (dom as any).isWireEndpoint
+      ? Fan.HEIGHT
+      : fan.bounds.max.y - dom.bounds.min.y;
+
+    if (!(dom as any).isWireEndpoint) {
+      const wire = new Wire(fan, dom, 0);
+      wire.startOffset.x = -Fan.PORT_DELTA;
+      wire.startOffset.y = Fan.HEIGHT;
+      node2D.add(wire);
+    }
+
+    node2D.add(fan);
+    node2D.add(codom);
+    node2D.add(dom);
+
+    endpoints = [...endpoints, ...codomEndpoints, ...domEndpoints];
   } else {
     // Node has not been created but will be in the future - create a wire endpoint
     const endpoint = new Node2D();

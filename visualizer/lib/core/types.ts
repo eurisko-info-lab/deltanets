@@ -14,10 +14,29 @@ export type Node = {
   label?: string;
   isCreated?: boolean;
   levelDeltas?: number[];
+  // Reference to the source AST node (for type check highlighting)
+  astRef?: AstNode;
+  // Type check visual state (set during type check stepping)
+  typeCheckState?: "checking" | "checked" | "error";
 };
 
 // A graph is a list of nodes.
 export type Graph = Node[];
+
+// Named port indices for each node type.
+// Port 0 is always the principal port for all interaction net agents.
+export const Ports = {
+  abs:       { principal: 0, body: 1, bind: 2, type: 3 },
+  app:       { func: 0, result: 1, arg: 2 },
+  repIn:     { principal: 0 },
+  repOut:    { principal: 0 },
+  era:       { principal: 0 },
+  var:       { principal: 0 },
+  root:      { principal: 0 },
+  typeBase:  { principal: 0 },
+  typeArrow: { principal: 0, domain: 1, codomain: 2 },
+  typeHole:  { principal: 0 },
+} as const;
 
 // A reducible pair of interacting nodes.
 export type Redex = { a: Node; b: Node; optimal: boolean; reduce: () => void };

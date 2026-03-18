@@ -3,8 +3,8 @@
 // graph building, redex detection, and analysis.
 
 import { removeFromArrayIf } from "../../util.ts";
-import type { AstNode, SystemType } from "../../ast.ts";
-import { typeToString } from "../../ast.ts";
+import type { AstNode, SystemType, Type } from "../../ast.ts";
+import { Ports } from "../types.ts";
 import type { Graph, Node, NodePort, Redex, InteractionSystem } from "../types.ts";
 import { link, reciprocal } from "../graph.ts";
 import { reduceAnnihilate, reduceErase, reduceCommute } from "../reductions.ts";
@@ -13,13 +13,16 @@ import { typeCheck } from "../typechecker.ts";
 // --- Delta-nets specific types ---
 
 export type NodeType =
-  | "abs"     // Abstraction (2 auxiliary ports)
-  | "app"     // Application (2 auxiliary ports)
-  | "rep-in"  // Replicator Fan-In (any number of auxiliary ports)
-  | "rep-out" // Replicator Fan-Out (any number of auxiliary ports)
-  | "era"     // Eraser (0 auxiliary ports)
-  | "var"     // Variable (0 auxiliary ports)
-  | "root";   // Root (0 auxiliary ports)
+  | "abs"        // Abstraction (3 auxiliary ports: body, bind, type)
+  | "app"        // Application (2 auxiliary ports: func, arg)
+  | "rep-in"     // Replicator Fan-In (any number of auxiliary ports)
+  | "rep-out"    // Replicator Fan-Out (any number of auxiliary ports)
+  | "era"        // Eraser (0 auxiliary ports)
+  | "var"        // Variable (0 auxiliary ports)
+  | "root"       // Root (0 auxiliary ports)
+  | "type-base"  // Base type (0 auxiliary ports)
+  | "type-arrow" // Arrow type (2 auxiliary ports: domain, codomain)
+  | "type-hole"; // Unknown/hole type (0 auxiliary ports)
 
 export type RepStatus = "unpaired" | "unknown";
 
@@ -50,12 +53,15 @@ function formatRepLabel(level: number, status: RepStatus): string {
 }
 
 function isParentPort(nodePort: NodePort): boolean {
-  return (nodePort.node.type === "rep-out" && nodePort.port === 0) ||
-    (nodePort.node.type === "rep-in" && nodePort.port !== 0) ||
-    (nodePort.node.type === "abs" && nodePort.port === 0) ||
-    (nodePort.node.type === "app" && nodePort.port === 1) ||
-    (nodePort.node.type === "era" && nodePort.port === 0) ||
-    (nodePort.node.type === "var" && nodePort.port === 0);
+  return (nodePort.node.type === "rep-out" && nodePort.port === Ports.repOut.principal) ||
+    (nodePort.node.type === "rep-in" && nodePort.port !== Ports.repIn.principal) ||
+    (nodePort.node.type === "abs" && nodePort.port === Ports.abs.principal) ||
+    (nodePort.node.type === "app" && nodePort.port === Ports.app.result) ||
+    (nodePort.node.type === "era" && nodePort.port === Ports.era.principal) ||
+    (nodePort.node.type === "var" && nodePort.port === Ports.var.principal) ||
+    (nodePort.node.type === "type-base" && nodePort.port === Ports.typeBase.principal) ||
+    (nodePort.node.type === "type-arrow" && nodePort.port === Ports.typeArrow.principal) ||
+    (nodePort.node.type === "type-hole" && nodePort.port === Ports.typeHole.principal);
 }
 
 function isConnectedToAllErasers(node: Node): boolean {
@@ -78,23 +84,25 @@ function countAuxErasers(node: Node): number {
 // --- Delta-nets specific reduction ---
 
 function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
-  const firstAuxNode = node.ports[1].node;
+  // node is an app node
+  const firstAuxNode = node.ports[Ports.app.result].node;
 
   if (firstAuxNode.type === "era") {
     const newEraser0: any = { type: "era", ports: [] };
     graph.push(newEraser0);
-    link({ node: newEraser0, port: 0 }, node.ports[0]);
+    link({ node: newEraser0, port: 0 }, node.ports[Ports.app.func]);
 
     const newEraser1: any = { type: "era", ports: [] };
     graph.push(newEraser1);
-    link({ node: newEraser1, port: 0 }, node.ports[2]);
+    link({ node: newEraser1, port: 0 }, node.ports[Ports.app.arg]);
 
     removeFromArrayIf(graph, (n) => (n === node) || (n === firstAuxNode));
   } else if (firstAuxNode.type.startsWith("rep")) {
+    // Rotate ports: func(0)→2, result(1)→0, arg(2)→1
     const origPorts = [...node.ports];
-    link({ node, port: 0 }, origPorts[1]);
-    link({ node, port: 1 }, origPorts[2]);
-    link({ node, port: 2 }, origPorts[0]);
+    link({ node, port: 0 }, origPorts[Ports.app.result]);
+    link({ node, port: 1 }, origPorts[Ports.app.arg]);
+    link({ node, port: 2 }, origPorts[Ports.app.func]);
 
     const { nodeClones, otherClones } = reduceCommute(node, graph);
 
@@ -112,6 +120,34 @@ function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
   }
 }
 
+// --- Type graph building ---
+
+function isTypeNode(node: Node): boolean {
+  return node.type === "type-base" || node.type === "type-arrow" || node.type === "type-hole";
+}
+
+function buildTypeGraph(ty: Type, graph: Graph): NodePort {
+  if (ty.kind === "hole") {
+    const node: Node = { type: "type-hole", label: "?", ports: [] };
+    graph.push(node);
+    return { node, port: Ports.typeHole.principal };
+  } else if (ty.kind === "base") {
+    const node: Node = { type: "type-base", label: ty.name, ports: [] };
+    graph.push(node);
+    return { node, port: Ports.typeBase.principal };
+  } else if (ty.kind === "arrow") {
+    const node: Node = { type: "type-arrow", label: "\u2192", ports: [] };
+    graph.push(node);
+    const domainPort = buildTypeGraph(ty.from, graph);
+    link(domainPort, { node, port: Ports.typeArrow.domain });
+    const codomainPort = buildTypeGraph(ty.to, graph);
+    link(codomainPort, { node, port: Ports.typeArrow.codomain });
+    return { node, port: Ports.typeArrow.principal };
+  } else {
+    throw new Error("Unknown type kind: " + (ty as any).kind);
+  }
+}
+
 // --- Graph building ---
 
 function addAstNodeToGraph(
@@ -124,16 +160,20 @@ function addAstNodeToGraph(
   if (astNode.type === "abs") {
     const eraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(eraser);
-    const typeStr = astNode.typeAnnotation ? ":" + typeToString(astNode.typeAnnotation) : "";
-    const node: Node = { type: "abs", label: "λ" + astNode.name + typeStr, ports: [] };
+    const node: Node = { type: "abs", label: "λ" + astNode.name, ports: [], astRef: astNode };
     graph.push(node);
-    link({ node: eraser, port: 0 }, { node, port: 2 });
+    link({ node: eraser, port: Ports.era.principal }, { node, port: Ports.abs.bind });
+
+    // Build type subgraph and connect to abs type port
+    const typeAnnotation: Type = astNode.typeAnnotation || { kind: "hole" };
+    const typePort = buildTypeGraph(typeAnnotation, graph);
+    link(typePort, { node, port: Ports.abs.type });
 
     const orig = vars.get(astNode.name);
-    vars.set(astNode.name, { level, nodePort: { node, port: 2 } });
+    vars.set(astNode.name, { level, nodePort: { node, port: Ports.abs.bind } });
 
     const bodyPort = addAstNodeToGraph(astNode.body, graph, vars, level, relativeLevel);
-    link(bodyPort, { node, port: 1 });
+    link(bodyPort, { node, port: Ports.abs.body });
 
     if (orig) {
       vars.set(astNode.name, orig);
@@ -141,18 +181,18 @@ function addAstNodeToGraph(
       vars.delete(astNode.name);
     }
 
-    return { node, port: 0 };
+    return { node, port: Ports.abs.principal };
   } else if (astNode.type === "app") {
-    const node: Node = { type: "app", label: "@", ports: [] };
+    const node: Node = { type: "app", label: "@", ports: [], astRef: astNode };
     graph.push(node);
 
     const funcPort = addAstNodeToGraph(astNode.func, graph, vars, level, relativeLevel);
-    link(funcPort, { node, port: 0 });
+    link(funcPort, { node, port: Ports.app.func });
 
     const argPort = addAstNodeToGraph(astNode.arg, graph, vars, level + 1, relativeLevel);
-    link(argPort, { node, port: 2 });
+    link(argPort, { node, port: Ports.app.arg });
 
-    return { node, port: 1 };
+    return { node, port: Ports.app.result };
   } else if (astNode.type === "var") {
     if (vars.has(astNode.name)) {
       const varData = vars.get(astNode.name)!;
@@ -177,7 +217,7 @@ function addAstNodeToGraph(
 
       return sourceNodePort;
     } else {
-      const node: Node = { type: "var", label: astNode.name, ports: [] };
+      const node: Node = { type: "var", label: astNode.name, ports: [], astRef: astNode };
       graph.push(node);
       let portToReturn = { node, port: 0 };
 
@@ -282,7 +322,7 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         if (node.type.startsWith("rep")) {
           console.error("Error: rep in linear system", node);
         }
-        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root") {
+        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root" || isTypeNode(node) || isTypeNode(node.ports[0].node)) {
           continue
         }
         if (node.type === "abs" && node.ports[0].node.type !== "app" || node.type === "app" && node.ports[0].node.type !== "abs") {
@@ -300,7 +340,7 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         console.error("Error: eraser in relevant system", node);
       }
       if (node.ports[0].port === 0) {
-        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root") {
+        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root" || isTypeNode(node) || isTypeNode(node.ports[0].node)) {
           continue
         }
         if (node.type === "era") {
@@ -322,6 +362,10 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
             nodeClones[0].label = formatRepLabel(level, "unknown");
             nodeClones[1].label = formatRepLabel(relativeLevel ? level + 1 :level, "unknown");
             nodeClones[1].type = nodeClones[1].type === "rep-in" ? "rep-out" : "rep-in";
+            // Handle type port replicator for abs nodes (3 aux ports)
+            if (nodeClones.length > 2) {
+              nodeClones[2].label = formatRepLabel(level, "unknown");
+            }
           });
         } else if (
           node.type.startsWith("rep") && node.ports[0].node.type.startsWith("rep")
@@ -402,7 +446,7 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         }
       } else if (
         node.type.startsWith("rep") &&
-        node.ports[0].node.type === "app" && node.ports[0].port === 1
+        node.ports[0].node.type === "app" && node.ports[0].port === Ports.app.result
       ) {
         createRedex(node, node.ports[0].node, false, () => reduceAuxFan(node.ports[0].node, graph, relativeLevel));
       }
@@ -431,7 +475,7 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         }
       }
 
-      if (firstAuxFanReplication === undefined && node.type.startsWith("rep") && node.ports[0].node.type === "app" && node.ports[0].port === 1) {
+      if (firstAuxFanReplication === undefined && node.type.startsWith("rep") && node.ports[0].node.type === "app" && node.ports[0].port === Ports.app.result) {
         firstAuxFanReplication = getRedex(node, node.ports[0].node, redexes);
       }
 
@@ -439,22 +483,24 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         return false;
       }
       (node as any).traversed = true;
-      if (node.type === "abs" && port === 0) {
-        if (node.ports[2].node.type === "era") {
-          if (traverse(node.ports[2])) {
+      if (node.type === "abs" && port === Ports.abs.principal) {
+        if (node.ports[Ports.abs.bind].node.type === "era") {
+          if (traverse(node.ports[Ports.abs.bind])) {
             return true;
           }
         }
-        if (traverse(node.ports[1])) {
+        if (traverse(node.ports[Ports.abs.body])) {
           return true;
         }
-      } else if (node.type === "app" && port === 1) {
-        if (traverse(node.ports[0])) {
+      } else if (node.type === "app" && port === Ports.app.result) {
+        if (traverse(node.ports[Ports.app.func])) {
           return true;
         }
-        if (traverse(node.ports[2])) {
+        if (traverse(node.ports[Ports.app.arg])) {
           return true;
         }
+      } else if (isTypeNode(node)) {
+        // Type subgraphs don't contain redexes
       } else if (node.type === "rep-in" && port !== 0) {
         return traverse(node.ports[0]);
       } else if (node.type === "rep-out" && port === 0) {
@@ -492,13 +538,13 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
         return;
       }
       (node as any).traversed2 = true;
-      if (node.type === "abs" && port === 0) {
-        if (node.ports[2].node.type === "era") {
-          traverse2(node.ports[2]);
+      if (node.type === "abs" && port === Ports.abs.principal) {
+        if (node.ports[Ports.abs.bind].node.type === "era") {
+          traverse2(node.ports[Ports.abs.bind]);
         }
-        traverse2(node.ports[1]);
-      } else if (node.type === "app" && port === 1) {
-        traverse2(node.ports[0]);
+        traverse2(node.ports[Ports.abs.body]);
+      } else if (node.type === "app" && port === Ports.app.result) {
+        traverse2(node.ports[Ports.app.func]);
         return;
       } else if (node.type === "rep-in" && port !== 0) {
         traverse2(node.ports[0]);
@@ -529,14 +575,20 @@ function findReachableNodes(graph: Graph): Set<Node> {
       return;
     }
     reachable.add(node);
-    if (node.type === "abs" && port === 0) {
-      if (node.ports[2].node.type === "era") {
-        traverse(node.ports[2]);
+    if (node.type === "abs" && port === Ports.abs.principal) {
+      if (node.ports[Ports.abs.bind].node.type === "era") {
+        traverse(node.ports[Ports.abs.bind]);
       }
-      traverse(node.ports[1]);
-    } else if (node.type === "app" && port === 1) {
-      traverse(node.ports[0]);
-      traverse(node.ports[2]);
+      traverse(node.ports[Ports.abs.body]);
+      traverse(node.ports[Ports.abs.type]);
+    } else if (node.type === "app" && port === Ports.app.result) {
+      traverse(node.ports[Ports.app.func]);
+      traverse(node.ports[Ports.app.arg]);
+    } else if (node.type === "type-arrow" && port === Ports.typeArrow.principal) {
+      traverse(node.ports[Ports.typeArrow.domain]);
+      traverse(node.ports[Ports.typeArrow.codomain]);
+    } else if (node.type === "type-base" || node.type === "type-hole") {
+      // Leaf type nodes — nothing to traverse
     } else if (node.type.startsWith("rep") && port !== 0) {
       traverse(node.ports[0]);
     } else if (node.type.startsWith("rep") && port === 0) {

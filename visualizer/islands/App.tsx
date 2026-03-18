@@ -1,7 +1,9 @@
 import { batch, Signal, useSignal, useSignalEffect } from "@preact/signals";
 import { Graph as LambdaGraph } from "./Graph.tsx";
 import { Head, IS_BROWSER } from "$fresh/runtime.ts";
-import { AstNode, getExpressionType, parseSource, SystemType } from "../lib/ast.ts";
+import { AstNode, getExpressionType, parseSource, SystemType, typeToString } from "../lib/ast.ts";
+import { typeCheck, hasTypeAnnotations, generateTypeCheckSteps, tagAstWithTypeCheckIndices } from "../lib/core/index.ts";
+import type { TypeResult, TypeCheckStep } from "../lib/core/index.ts";
 import IconArrowBarToLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-bar-to-left.tsx";
 import IconArrowLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-left.tsx";
 import IconArrowRight from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-right.tsx";
@@ -69,6 +71,9 @@ export default function App() {
   // AST
   const ast = useSignal<AstNode | null>(null);
 
+  // Type checking result
+  const typeResult = useSignal<TypeResult | null>(null);
+
   // Scene to render
   const scene = useSignal<Node2D | null>(null);
 
@@ -79,6 +84,11 @@ export default function App() {
   // Whether to render debugging helpers
   const storedDebug = IS_BROWSER && window.localStorage.getItem("debug");
   const debug = useSignal<boolean>(storedDebug !== null ? storedDebug === "true" : false);
+
+  // Type check stepping mode
+  const typeCheckMode = useSignal<boolean>(false);
+  const typeCheckSteps = useSignal<TypeCheckStep[]>([]);
+  const typeCheckStepIdx = useSignal<number>(-1);
 
   // Graph translation and scale
   const translate = useSignal<Pos>({ x: 0, y: 0 });
@@ -178,6 +188,25 @@ export default function App() {
       }
       e.preventDefault();
       e.stopPropagation();
+      // Type check mode: step through typing derivation
+      if (typeCheckMode.peek()) {
+        const steps = typeCheckSteps.peek();
+        const idx = typeCheckStepIdx.peek();
+        if (e.code === "ArrowLeft") {
+          if (e.getModifierState("Shift")) {
+            typeCheckStepIdx.value = 0;
+          } else if (idx > 0) {
+            typeCheckStepIdx.value = idx - 1;
+          }
+        } else if (e.code === "ArrowRight") {
+          if (e.getModifierState("Shift")) {
+            typeCheckStepIdx.value = steps.length - 1;
+          } else if (idx < steps.length - 1) {
+            typeCheckStepIdx.value = idx + 1;
+          }
+        }
+        return;
+      }
       if (e.code === "ArrowLeft") {
         if (e.getModifierState("Shift")) {
           METHODS[method.value].state.value?.reset?.();
@@ -222,6 +251,16 @@ export default function App() {
         ast.value = newAst.ast ?? null;
         systemType.value = getExpressionType(ast.value!);
         selectedSystemType.value = systemType.value;
+        typeResult.value = ast.value ? typeCheck(ast.value) : null;
+        // Generate type check steps and tag AST nodes with indices
+        if (ast.value) {
+          tagAstWithTypeCheckIndices(ast.value);
+          typeCheckSteps.value = generateTypeCheckSteps(ast.value);
+        } else {
+          typeCheckSteps.value = [];
+        }
+        typeCheckMode.value = false;
+        typeCheckStepIdx.value = -1;
       });
     }
   };
@@ -242,19 +281,90 @@ export default function App() {
   // `ast` -> `METHODS`
   useSignalEffect(() => initializeStates(ast.value));
 
-  // Update `scene` when `METHODS` or `method` changes
-  // (`METHODS`, `method`) -> `scene`
-  useSignalEffect(() => {
-    // Note: inside each `render` call below, callbacks may be set up that update the state of the current method.
-    // signal when e.g. the user clicks on highlighted edges.
-    // There are also callbacks that update `scene` and `expression` directly.
+  // Enter type check stepping mode
+  const enterTypeCheckMode = () => {
+    const steps = typeCheckSteps.peek();
+    if (steps.length === 0) return;
+    // Tag lambdacalc clone at step 0 for highlighting
+    const lcState = METHODS.lambdacalc.state.peek();
+    if (lcState?.stack[0]) {
+      tagAstWithTypeCheckIndices(lcState.stack[0]);
+    }
+    batch(() => {
+      typeCheckMode.value = true;
+      typeCheckStepIdx.value = 0;
+      const ms = METHODS[method.peek()].state.peek()!;
+      if (ms.reset) {
+        ms.reset();
+      } else {
+        METHODS[method.peek()].state.value = { ...ms };
+      }
+    });
+  };
 
-    // Clear scene if current state is null
+  // Exit type check stepping mode
+  const exitTypeCheckMode = () => {
+    batch(() => {
+      typeCheckMode.value = false;
+      typeCheckStepIdx.value = -1;
+      const ms = METHODS[method.peek()].state.peek()!;
+      METHODS[method.peek()].state.value = { ...ms };
+    });
+  };
+
+  // Update `scene` when `METHODS`, `method`, or type check state changes
+  // (`METHODS`, `method`, `typeCheckMode`, `typeCheckStepIdx`) -> `scene`
+  useSignalEffect(() => {
+    // Subscribe to type check signals to re-render when stepping
+    const tcMode = typeCheckMode.value;
+    const tcIdx = typeCheckStepIdx.value;
+
     const currentMethod = METHODS[method.value];
     const currentState = currentMethod.state;
     if (currentState.value === null) {
       scene.value = null;
       return;
+    }
+
+    // Apply type check highlights to graph/AST nodes before rendering
+    const item = currentState.value.stack[currentState.value.idx];
+    if (method.value === "deltanets") {
+      for (const node of item) {
+        if (tcMode && node.astRef?.extra?.typeCheckIdx !== undefined) {
+          const nIdx = node.astRef.extra.typeCheckIdx;
+          const step = typeCheckSteps.peek()[nIdx];
+          if (nIdx < tcIdx) {
+            node.typeCheckState = step?.result.ok ? "checked" : "error";
+          } else if (nIdx === tcIdx) {
+            node.typeCheckState = step?.result.ok ? "checking" : "error";
+          } else {
+            node.typeCheckState = undefined;
+          }
+        } else {
+          node.typeCheckState = undefined;
+        }
+      }
+    } else {
+      const walkAst = (aNode: AstNode) => {
+        if (aNode.extra?.typeCheckIdx !== undefined) {
+          const nIdx = aNode.extra.typeCheckIdx;
+          if (tcMode) {
+            const step = typeCheckSteps.peek()[nIdx];
+            if (nIdx < tcIdx) {
+              aNode.extra.typeCheckState = step?.result.ok ? "checked" : "error";
+            } else if (nIdx === tcIdx) {
+              aNode.extra.typeCheckState = step?.result.ok ? "checking" : "error";
+            } else {
+              aNode.extra.typeCheckState = undefined;
+            }
+          } else {
+            aNode.extra.typeCheckState = undefined;
+          }
+        }
+        if (aNode.type === "abs") walkAst(aNode.body);
+        if (aNode.type === "app") { walkAst(aNode.func); walkAst(aNode.arg); }
+      };
+      walkAst(item);
     }
 
     // Log current state
@@ -374,6 +484,10 @@ export default function App() {
   const deltaNetsData = METHODS[method.value].state.value?.data;
   const isDeltaFinalStep = method.value === "deltanets" && deltaNetsData?.isFinalStep && !deltaNetsData.appliedFinalStep;
 
+  const tcActive = typeCheckMode.value;
+  const tcIdx = tcActive ? typeCheckStepIdx.value : -1;
+  const tcLen = typeCheckSteps.value.length;
+
   const squareButtonClass =
     `border-1 rounded p-2 text-xl min-h-[44px] min-w-[44px] bg-inherit flex flex-row justify-center items-center disabled:opacity-[0.4] disabled:cursor-not-allowed hover:bg-[${theme.value === "light" ? "white" : "#2A2A2A"
     }] disabled:bg-transparent`;
@@ -474,6 +588,47 @@ export default function App() {
         <option value="absolute">Absolute levels (default)</option>
         <option value="relative">Relative levels</option>
       </select>}
+      {typeResult.value && (
+        <div
+          title={tcActive
+            ? (typeCheckSteps.value[tcIdx]?.judgment ?? "Type check mode")
+            : (typeResult.value.ok
+              ? `Type: ${typeToString(typeResult.value.type)}`
+              : `Type error: ${typeResult.value.error}`)}
+          class="border-1 rounded px-2 text-sm min-h-[44px] bg-inherit flex flex-row items-center whitespace-nowrap select-none"
+          style={{
+            borderColor: tcActive
+              ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
+              : (theme.value === "light" ? "#000D" : "#FFF6"),
+            color: tcActive
+              ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
+              : (typeResult.value.ok
+                ? (hasTypeAnnotations(ast.value!) ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : (theme.value === "light" ? "#666" : "#888"))
+                : (theme.value === "light" ? "#dc2626" : "#f87171")),
+            maxWidth: "360px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            cursor: typeResult.value.ok && hasTypeAnnotations(ast.value!) ? "pointer" : "default",
+            background: tcActive
+              ? (theme.value === "light" ? "#2563eb10" : "#60a5fa10")
+              : "transparent",
+          }}
+          onClick={() => {
+            if (!typeResult.value?.ok || !hasTypeAnnotations(ast.value!)) return;
+            if (typeCheckMode.value) {
+              exitTypeCheckMode();
+            } else {
+              enterTypeCheckMode();
+            }
+          }}
+        >
+          {tcActive
+            ? (typeCheckSteps.value[tcIdx]?.judgment ?? "⊢")
+            : (typeResult.value.ok
+              ? `⊢ ${typeToString(typeResult.value.type)}`
+              : `✘ ${typeResult.value.error}`)}
+        </div>
+      )}
       <select
         // This select is just an indicator in the lambda calculus method
         disabled={method.value === "lambdacalc"}
@@ -504,8 +659,8 @@ export default function App() {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={METHODS[method.value].state.value?.reset}
-        disabled={!METHODS[method.value].state.value?.reset}
+        onClick={tcActive ? (() => { typeCheckStepIdx.value = 0; }) : METHODS[method.value].state.value?.reset}
+        disabled={tcActive ? tcIdx <= 0 : !METHODS[method.value].state.value?.reset}
       >
         <IconArrowBarToLeft />
       </button>
@@ -516,8 +671,8 @@ export default function App() {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={METHODS[method.value].state.value?.back}
-        disabled={!METHODS[method.value].state.value?.back}
+        onClick={tcActive ? (() => { typeCheckStepIdx.value = Math.max(0, typeCheckStepIdx.peek() - 1); }) : METHODS[method.value].state.value?.back}
+        disabled={tcActive ? tcIdx <= 0 : !METHODS[method.value].state.value?.back}
       >
         <IconArrowLeft />
       </button>
@@ -525,12 +680,15 @@ export default function App() {
         class="border-0 rounded text-xl min-h-[44px] bg-inherit flex flex-row justify-center items-end font-mono p-1"
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
+          color: tcActive ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : "inherit",
         }}
       >
-        {METHODS[method.value].state.value?.idx ?? 0}/
+        {tcActive && tcLen > 0
+          ? `${tcIdx}/${tcLen - 1}`
+          : <>{METHODS[method.value].state.value?.idx ?? 0}/
         {METHODS[method.value].state.value?.stack?.length
           ? METHODS[method.value].state.value?.stack?.length! - 1
-          : 0}
+          : 0}</>}
       </div>
       <button
         type="button"
@@ -538,15 +696,17 @@ export default function App() {
         class={squareButtonClass}
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
-          background: isDeltaFinalStep ? OPTIMAL_HIGHLIGHT_COLOR : "transparent"
+          background: !tcActive && isDeltaFinalStep ? OPTIMAL_HIGHLIGHT_COLOR : "transparent"
         }}
-        onClick={METHODS[method.value].state.value?.forward}
-        disabled={!METHODS[method.value].state.value?.forward}
+        onClick={tcActive ? (() => { typeCheckStepIdx.value = Math.min(typeCheckSteps.peek().length - 1, typeCheckStepIdx.peek() + 1); }) : METHODS[method.value].state.value?.forward}
+        disabled={tcActive ? tcIdx >= tcLen - 1 : !METHODS[method.value].state.value?.forward}
       >
-        {(METHODS[method.value].state.value?.idx! <
-          METHODS[method.value].state.value?.stack.length! - 1) || METHODS[method.value].state.value?.forward === undefined
+        {tcActive
           ? <IconArrowRight />
-          : <IconArrowRightToArc />}
+          : ((METHODS[method.value].state.value?.idx! <
+            METHODS[method.value].state.value?.stack.length! - 1) || METHODS[method.value].state.value?.forward === undefined
+            ? <IconArrowRight />
+            : <IconArrowRightToArc />)}
       </button>
       <button
         type="button"
@@ -555,8 +715,8 @@ export default function App() {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={METHODS[method.value].state.value?.last}
-        disabled={!METHODS[method.value].state.value?.last}
+        onClick={tcActive ? (() => { typeCheckStepIdx.value = typeCheckSteps.peek().length - 1; }) : METHODS[method.value].state.value?.last}
+        disabled={tcActive ? tcIdx >= tcLen - 1 : !METHODS[method.value].state.value?.last}
       >
         <IconArrowBarToRight />
       </button>

@@ -9,19 +9,24 @@ import { link } from "./graph.ts";
 export function reduceAnnihilate(node: Node, graph: Graph) {
   const other = node.ports[0].node;
 
-  // Sanity checks
+  // Sanity check
   if (other.ports[0].node !== node) {
     throw new Error("nodes are not interacting!");
   }
-  if (node.ports.length !== other.ports.length) {
-    throw new Error("nodes have different number of ports!");
+
+  const minPorts = Math.min(node.ports.length, other.ports.length);
+
+  // Connect matching aux ports
+  for (let i = 1; i < minPorts; i++) {
+    link(node.ports[i], other.ports[i]);
   }
 
-  // Connect the aux ports (if any)
-  if (node.ports.length > 1) {
-    for (let i = 1; i < node.ports.length; i++) {
-      link(node.ports[i], other.ports[i]);
-    }
+  // Erase excess aux ports on the node with more ports
+  const larger = node.ports.length > other.ports.length ? node : other;
+  for (let i = minPorts; i < larger.ports.length; i++) {
+    const newEraser: Node = { type: "era", label: "era", ports: [] };
+    graph.push(newEraser);
+    link({ node: newEraser, port: 0 }, larger.ports[i]);
   }
 
   // Remove the nodes

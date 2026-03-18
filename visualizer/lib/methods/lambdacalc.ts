@@ -4,7 +4,7 @@ import {
   SystemType,
 } from "../ast.ts";
 import * as d3 from "d3";
-import { Edge, Enclosure, Label, Node2D, OPTIMAL_HIGHLIGHT_COLOR, Pos, SUBOPTIMAL_HIGHLIGHT_COLOR } from "../render.ts";
+import { Edge, Enclosure, Label, Node2D, OPTIMAL_HIGHLIGHT_COLOR, Pos, SUBOPTIMAL_HIGHLIGHT_COLOR, TYPECHECK_ACTIVE_COLOR, TYPECHECK_DONE_COLOR, TYPECHECK_ERROR_COLOR } from "../render.ts";
 import { Method, MethodState } from "./index.ts";
 import { prettifyExpr } from "../util.ts";
 import { lambdacalc } from "../core/index.ts";
@@ -72,8 +72,13 @@ function renderAstNode(
   const node2D = new Label();
   node2D.pos = pos;
 
+  // Apply type check highlighting if active
+  if (astNode.extra?.typeCheckState === "checking") node2D.highlightColor = TYPECHECK_ACTIVE_COLOR;
+  else if (astNode.extra?.typeCheckState === "checked") node2D.highlightColor = TYPECHECK_DONE_COLOR;
+  else if (astNode.extra?.typeCheckState === "error") node2D.highlightColor = TYPECHECK_ERROR_COLOR;
+
   // Store the node2D in the astNode for later use (highlights)
-  astNode.extra = { node2D };
+  astNode.extra = { ...astNode.extra, node2D };
 
   // Initialize the variables list
   let vars: Label[] = [];

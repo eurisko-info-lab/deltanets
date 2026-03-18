@@ -223,6 +223,15 @@ export const OPTIMAL_HIGHLIGHT_COLOR = "#44e00040";
 // Color for suboptimal rules
 export const SUBOPTIMAL_HIGHLIGHT_COLOR = "#ff666645";
 
+// Color for the node currently being type-checked
+export const TYPECHECK_ACTIVE_COLOR = "#3b82f650";
+
+// Color for nodes that have been successfully type-checked
+export const TYPECHECK_DONE_COLOR = "#22c55e30";
+
+// Color for type check errors
+export const TYPECHECK_ERROR_COLOR = "#ef444460";
+
 // Some text.
 export class Text extends Node2D {
   value: string;
@@ -409,6 +418,7 @@ export class Label extends Node2D {
   text: Text;
   mainRect: Rect;
   highlightRect: Rect;
+  highlightColor?: string;
 
   constructor(label: string = "") {
     super();
@@ -457,8 +467,11 @@ export class Label extends Node2D {
   override renderSelf(pos: Pos, theme: "light" | "dark", debug?: boolean) {
     this.highlightRect.attrs = {
       ...this.highlightRect.attrs,
-      fill: OPTIMAL_HIGHLIGHT_COLOR,
+      fill: this.highlightColor ?? OPTIMAL_HIGHLIGHT_COLOR,
     };
+    if (this.highlightColor) {
+      this.highlightRect.attrs.display = "block";
+    }
   }
 }
 
@@ -713,6 +726,7 @@ export class Fan extends Node2D {
   type: "up" | "down";
   text: Text;
   path: Path;
+  highlightColor?: string;
 
   constructor(type: "up" | "down", label: string = "") {
     super();
@@ -749,6 +763,12 @@ export class Fan extends Node2D {
       return -Fan.PORT_DELTA;
     } else {
       return Fan.PORT_DELTA;
+    }
+  }
+
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug?: boolean) {
+    if (this.highlightColor) {
+      this.path.attrs.fill = this.highlightColor;
     }
   }
 }
