@@ -22,7 +22,9 @@ theme light {
 }
 
 render abs {
-  shape: fan(down)
+  shape: fan(up)
+  role: binder
+  level: expr
   width: 28
   fill: #5c6bc0
   label: center
@@ -30,7 +32,9 @@ render abs {
 }
 
 render app {
-  shape: fan(up)
+  shape: fan(down)
+  role: applicator
+  level: expr
   width: 28
   fill: #26a69a
   label: center
@@ -39,6 +43,8 @@ render app {
 
 render var {
   shape: circle
+  role: leaf
+  level: expr
   radius: 8
   fill: #ef5350
   z: 1
@@ -46,6 +52,8 @@ render var {
 
 render root {
   shape: circle
+  role: leaf
+  level: expr
   radius: 5
   fill: wire-color
   z: 3

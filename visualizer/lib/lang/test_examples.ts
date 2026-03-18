@@ -26,6 +26,7 @@ ok = await testFile("lib/lang/examples/lambda-cube.inet", compileCore) && ok;
 // View examples
 ok = await testFile("lib/lang/examples/deltanets.iview", compileView) && ok;
 ok = await testFile("lib/lang/examples/lambda.iview", compileView) && ok;
+ok = await testFile("lib/lang/examples/lambda-cube.iview", compileView) && ok;
 
 if (ok) {
   console.log("\n✓ All example files pass.");

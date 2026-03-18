@@ -1,0 +1,282 @@
+# ═══════════════════════════════════════════════════════════════════
+# Lambda Cube — Visual Configuration
+# Rendering styles for all lambda cube agents across all axes.
+# ═══════════════════════════════════════════════════════════════════
+
+use "lambda-cube.inet"
+
+# ─── Themes ───────────────────────────────────────────────────────
+
+theme dark {
+  background: #1e1e1e
+  text: #e0e0e0
+  wire: #aaaaaa
+  optimal: #4caf50
+  suboptimal: #ff9800
+  typecheck-active: #4488ff
+  typecheck-done: #44cc44
+  typecheck-error: #cc4444
+}
+
+theme light {
+  background: #f5f5f5
+  text: #333333
+  wire: #666666
+  optimal: #2e7d32
+  suboptimal: #e65100
+  typecheck-active: #1565c0
+  typecheck-done: #2e7d32
+  typecheck-error: #c62828
+}
+
+# ─── Base: λ→ agents ─────────────────────────────────────────────
+
+render abs {
+  shape: fan(up)
+  role: binder
+  level: expr
+  width: 30
+  fill: level-color
+  label: center
+  z: 2
+}
+
+render app {
+  shape: fan(down)
+  role: applicator
+  level: expr
+  width: 30
+  fill: level-color
+  label: center
+  z: 2
+}
+
+render var {
+  shape: circle
+  role: leaf
+  level: expr
+  radius: 10
+  fill: #cccccc
+  stroke: #888888
+  label: center
+  z: 1
+}
+
+render era {
+  shape: eraser
+  role: leaf
+  level: expr
+  radius: 8
+  fill: #888888
+  z: 0
+}
+
+render root {
+  shape: circle
+  role: leaf
+  level: expr
+  radius: 6
+  fill: wire-color
+  z: 3
+}
+
+render type-base {
+  shape: circle
+  role: leaf
+  level: type
+  radius: 10
+  fill: #b0bec5
+  label: center
+  z: 1
+}
+
+render type-arrow {
+  shape: fan(up)
+  role: type-constructor
+  level: type
+  fill: #90a4ae
+  label: center
+  z: 1
+}
+
+render type-hole {
+  shape: circle
+  role: leaf
+  level: type
+  radius: 8
+  fill: #78909c
+  stroke: #546e7a
+  label: center
+  z: 1
+}
+
+# ─── Replicators ─────────────────────────────────────────────────
+
+render rep-in {
+  shape: replicator(up)
+  role: replicator
+  level: expr
+  width: 30
+  fill: level-color
+  show-deltas: true
+  z: 1
+}
+
+render rep-out {
+  shape: replicator(down)
+  role: replicator
+  level: expr
+  width: 30
+  fill: level-color
+  show-deltas: true
+  z: 1
+}
+
+# ─── Axis 1: Polymorphism ────────────────────────────────────────
+
+render tyabs {
+  shape: fan(up)
+  role: binder
+  level: type
+  fill: #7986cb
+  label: center
+  z: 2
+}
+
+render tyapp {
+  shape: fan(down)
+  role: applicator
+  level: type
+  fill: #7986cb
+  label: center
+  z: 2
+}
+
+render forall {
+  shape: fan(up)
+  role: binder
+  level: type
+  fill: #9fa8da
+  label: center
+  z: 1
+}
+
+# ─── Axis 2: Dependent Types ────────────────────────────────────
+
+render pi {
+  shape: fan(up)
+  role: type-constructor
+  level: type
+  fill: #80cbc4
+  label: center
+  z: 1
+}
+
+render sigma {
+  shape: fan(up)
+  role: type-constructor
+  level: type
+  fill: #80cbc4
+  label: center
+  z: 1
+}
+
+render pair {
+  shape: fan(up)
+  role: type-constructor
+  level: type
+  fill: #80cbc4
+  label: center
+  z: 1
+}
+
+render fst {
+  shape: fan(down)
+  role: destructor
+  level: type
+  fill: #a5d6a7
+  label: center
+  z: 1
+}
+
+render snd {
+  shape: fan(down)
+  role: destructor
+  level: type
+  fill: #a5d6a7
+  label: center
+  z: 1
+}
+
+# ─── Axis 3: Type Operators ─────────────────────────────────────
+
+render type-abs {
+  shape: fan(up)
+  role: binder
+  level: type
+  fill: #ce93d8
+  label: center
+  z: 2
+}
+
+render type-app {
+  shape: fan(down)
+  role: applicator
+  level: type
+  fill: #ce93d8
+  label: center
+  z: 2
+}
+
+render kind-star {
+  shape: circle
+  role: leaf
+  level: type
+  radius: 10
+  fill: #e1bee7
+  label: center
+  z: 1
+}
+
+render kind-arrow {
+  shape: fan(up)
+  role: type-constructor
+  level: type
+  fill: #e1bee7
+  label: center
+  z: 1
+}
+
+# ─── Wire Styles ─────────────────────────────────────────────────
+
+wire-style {
+  width: 1.5
+  curve: bezier
+}
+
+wire-style type-wire {
+  width: 1
+  curve: bezier
+  dash: [4, 4]
+}
+
+# ─── Level Color Palette ─────────────────────────────────────────
+
+palette {
+  0: #4285f4
+  1: #34a853
+  2: #ea4335
+  3: #fbbc04
+  4: #9c27b0
+  5: #00bcd4
+  6: #ff5722
+  7: #795548
+}
+
+# ─── Layout ──────────────────────────────────────────────────────
+
+layout {
+  spacing: 25
+  depth: 40
+  direction: top-down
+}

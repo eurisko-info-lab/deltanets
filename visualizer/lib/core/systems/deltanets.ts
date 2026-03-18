@@ -53,27 +53,21 @@ function formatRepLabel(level: number, status: RepStatus): string {
 }
 
 function isParentPort(nodePort: NodePort): boolean {
-  return (nodePort.node.type === "rep-out" && nodePort.port === Ports.repOut.principal) ||
-    (nodePort.node.type === "rep-in" && nodePort.port !== Ports.repIn.principal) ||
-    (nodePort.node.type === "abs" && nodePort.port === Ports.abs.principal) ||
-    (nodePort.node.type === "app" && nodePort.port === Ports.app.result) ||
-    (nodePort.node.type === "era" && nodePort.port === Ports.era.principal) ||
-    (nodePort.node.type === "var" && nodePort.port === Ports.var.principal) ||
-    (nodePort.node.type === "type-base" && nodePort.port === Ports.typeBase.principal) ||
-    (nodePort.node.type === "type-arrow" && nodePort.port === Ports.typeArrow.principal) ||
-    (nodePort.node.type === "type-hole" && nodePort.port === Ports.typeHole.principal) ||
-    // Lambda cube agents
-    (nodePort.node.type === "tyabs" && nodePort.port === 0) ||
-    (nodePort.node.type === "tyapp" && nodePort.port === 1) ||
-    (nodePort.node.type === "pi" && nodePort.port === 0) ||
-    (nodePort.node.type === "sigma" && nodePort.port === 0) ||
-    (nodePort.node.type === "pair" && nodePort.port === 0) ||
-    (nodePort.node.type === "fst" && nodePort.port === 1) ||
-    (nodePort.node.type === "snd" && nodePort.port === 1) ||
-    (nodePort.node.type === "type-abs" && nodePort.port === 0) ||
-    (nodePort.node.type === "type-app" && nodePort.port === 1) ||
-    (nodePort.node.type === "kind-star" && nodePort.port === 0) ||
-    (nodePort.node.type === "kind-arrow" && nodePort.port === 0);
+  const { type, ports } = nodePort.node;
+  const port = nodePort.port;
+
+  // Replicators: special handling
+  if (type === "rep-out") return port === 0;
+  if (type === "rep-in") return port !== 0;
+
+  // For all other agents, determine entry port from port count and naming convention:
+  // - 1-port agents (leaf): entry = port 0
+  // - Applicators/destructors (app, tyapp, type-app, fst, snd): entry = port 1
+  // - Everything else (binders, type-constructors): entry = port 0
+  if (ports.length === 1) return port === 0;
+  if (type === "app" || type === "tyapp" || type === "type-app" ||
+      type === "fst" || type === "snd") return port === 1;
+  return port === 0;
 }
 
 function isConnectedToAllErasers(node: Node): boolean {

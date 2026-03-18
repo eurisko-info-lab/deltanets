@@ -27,9 +27,14 @@ export type ShapeDef =
   | { kind: "rect" }
   | { kind: "custom"; name: string };
 
+export type AgentRole = "binder" | "applicator" | "type-constructor" | "destructor" | "leaf" | "replicator";
+export type AgentLevel = "expr" | "type";
+
 export type AgentStyleDef = {
   agent: string;
   shape: ShapeDef;
+  role?: AgentRole;
+  level?: AgentLevel;
   width?: number;
   height?: number;
   radius?: number;
@@ -138,9 +143,13 @@ function evalTheme(decl: AST.ThemeDecl): ThemeDef {
 
 function evalRender(decl: AST.RenderDecl): AgentStyleDef {
   const props = propsToRecord(decl.properties);
+  const roleStr = getOptString(props, "role");
+  const levelStr = getOptString(props, "level");
   return {
     agent: decl.agent,
     shape: parseShape(props.shape),
+    role: roleStr as AgentRole | undefined,
+    level: levelStr as AgentLevel | undefined,
     width: getNumber(props, "width"),
     height: getNumber(props, "height"),
     radius: getNumber(props, "radius"),
@@ -151,7 +160,7 @@ function evalRender(decl: AST.RenderDecl): AgentStyleDef {
     showDeltas: getOptString(props, "show-deltas") === "true",
     extra: getExtraStrings(props, [
       "shape", "width", "height", "radius", "fill", "stroke",
-      "label", "z", "z-index", "show-deltas",
+      "label", "z", "z-index", "show-deltas", "role", "level",
     ]),
   };
 }

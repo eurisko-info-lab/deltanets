@@ -13,6 +13,7 @@ export { parse, ParseError } from "./parser.ts";
 export { evaluate, EvalError } from "./evaluator.ts";
 export type {
   ViewResult, ThemeDef, ShapeDef, AgentStyleDef,
+  AgentRole, AgentLevel,
   WireStyleDef, PaletteDef, LayoutDef,
 } from "./evaluator.ts";
 export type * from "./types.ts";

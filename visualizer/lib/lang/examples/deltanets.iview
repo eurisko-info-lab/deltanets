@@ -34,7 +34,9 @@ theme light {
 # How each agent type is drawn on screen.
 
 render abs {
-  shape: fan(down)
+  shape: fan(up)
+  role: binder
+  level: expr
   width: 30
   fill: level-color
   label: center
@@ -42,7 +44,9 @@ render abs {
 }
 
 render app {
-  shape: fan(up)
+  shape: fan(down)
+  role: applicator
+  level: expr
   width: 30
   fill: level-color
   label: center
@@ -51,6 +55,8 @@ render app {
 
 render rep-in {
   shape: replicator(up)
+  role: replicator
+  level: expr
   width: 30
   fill: level-color
   show-deltas: true
@@ -59,6 +65,8 @@ render rep-in {
 
 render rep-out {
   shape: replicator(down)
+  role: replicator
+  level: expr
   width: 30
   fill: level-color
   show-deltas: true
@@ -67,6 +75,8 @@ render rep-out {
 
 render era {
   shape: eraser
+  role: leaf
+  level: expr
   radius: 8
   fill: #888888
   z: 0
@@ -74,6 +84,8 @@ render era {
 
 render var {
   shape: circle
+  role: leaf
+  level: expr
   radius: 10
   fill: #cccccc
   stroke: #888888
@@ -83,6 +95,8 @@ render var {
 
 render root {
   shape: circle
+  role: leaf
+  level: expr
   radius: 6
   fill: wire-color
   z: 3
@@ -90,6 +104,8 @@ render root {
 
 render type-base {
   shape: rect
+  role: leaf
+  level: type
   width: 24
   height: 18
   fill: #b0bec5
@@ -98,7 +114,9 @@ render type-base {
 }
 
 render type-arrow {
-  shape: rect
+  shape: fan(up)
+  role: type-constructor
+  level: type
   width: 24
   height: 18
   fill: #90a4ae
@@ -108,6 +126,8 @@ render type-arrow {
 
 render type-hole {
   shape: circle
+  role: leaf
+  level: type
   radius: 8
   fill: #78909c
   stroke: #546e7a

@@ -34,8 +34,8 @@ import { useEffect, useRef } from "preact/hooks";
 import loader, { type Monaco } from "@monaco-editor/loader";
 import examples from "../lib/examples.ts";
 import { METHODS, MethodState } from "../lib/methods/index.ts";
-import { typeReductionMode } from "../lib/methods/deltanets.ts";
-import { isINetSource, compileINet, extractGraph } from "../lib/lang/bridge.ts";
+import { typeReductionMode, agentStyles } from "../lib/methods/deltanets.ts";
+import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "../lib/lang/bridge.ts";
 import type { CoreResult } from "../lib/lang/core/index.ts";
 
 // Title of the app
@@ -251,6 +251,9 @@ export default function App() {
     if (isINetSource(source)) {
       const result = compileINet(source);
       if (result.errors.length === 0 && result.graphNames.length > 0) {
+        // Resolve .iview styles for all systems in this source
+        agentStyles.value = resolveAgentStyles(result.core);
+
         const graphName = inetSelectedGraph.peek() && result.graphNames.includes(inetSelectedGraph.peek())
           ? inetSelectedGraph.peek()
           : result.graphNames[result.graphNames.length - 1];
