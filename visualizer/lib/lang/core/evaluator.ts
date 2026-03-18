@@ -107,7 +107,14 @@ export function evaluate(program: AST.Program): CoreResult {
         }
         case "graph":
         case "graph-explicit": {
-          const g = evalGraph(stmt, definitions, ambientAgents);
+          // Merge ambient agents with all system agents for port resolution
+          const allAgents = new Map(ambientAgents);
+          for (const sys of systems.values()) {
+            for (const [name, agent] of sys.agents) {
+              if (!allAgents.has(name)) allAgents.set(name, agent);
+            }
+          }
+          const g = evalGraph(stmt, definitions, allAgents);
           graphs.set(g.name, g);
           break;
         }

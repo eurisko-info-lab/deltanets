@@ -156,28 +156,243 @@ system "λC" = compose "Poly" + "Dependent" + "TyOp" {
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# Example Terms
+# Typing Tests — one section per axis + cross-axis corners
 # ═══════════════════════════════════════════════════════════════════
 
-# ─── λ→ terms (STLC) ─────────────────────────────────────────────
+# ─── λ→ (STLC base) ──────────────────────────────────────────────
+# Typed terms using only arrow types.
 
 def I = \x:A.x                          # id : A → A
 def K = \x:A.\y:B.x                     # const : A → B → A
 def S = \f:A -> B -> C.\g:A -> B.\x:A.f x (g x)
-def Church2 = \f:A -> A.\x:A.f (f x)    # 2 : (A→A) → A → A
-
-# ─── λ→ graphs ───────────────────────────────────────────────────
 
 graph stlc-identity = term I
 graph stlc-const = term K
 graph stlc-s-combinator = term S
-graph stlc-church-two = term Church2
 graph stlc-apply-id = term (\f:A -> B.\x:A.f x) (\y:A.y)
 
-# ─── Untyped examples for comparison ─────────────────────────────
+# ─── Axis 1: Polymorphism (Poly / System F) ──────────────────────
+# Terms that abstract over types — impossible in plain STLC.
 
-def Omega = (\x.x x) (\x.x x)          # No STLC type (self-app)
-def Y = \f.(\x.f (x x)) (\x.f (x x))   # Fixpoint (untypeable in λ→)
+# Polymorphic identity: Λα.λx:α.x : ∀α.α→α
+# The type variable α (bound by tyabs) appears as the type of x.
+graph poly-identity {
+  let r   = root
+  let ta  = tyabs "Λα"
+  let a   = abs "λx"
+  wire r.principal  -- ta.principal
+  wire ta.body      -- a.principal
+  wire a.bind       -- a.body          # identity: x ↦ x
+  wire ta.bind      -- a.type          # α is the type of x
+}
+
+# Type application: (Λα.λx.x)[Bool] →β λx:Bool.x
+# Active pair: tyabs <> tyapp triggers type-level β.
+# After reduction: body flows to result, Bool substitutes for α.
+graph poly-beta {
+  let r    = root
+  let ta   = tyabs "Λα"
+  let tp   = tyapp
+  let a    = abs "λx"
+  let arg  = type-base "Bool"
+  wire ta.principal -- tp.principal    # active pair!
+  wire tp.result    -- r.principal
+  wire ta.body      -- a.principal     # body = λx.x
+  wire a.bind       -- a.body
+  wire tp.arg       -- arg.principal   # applying to Bool
+  wire ta.bind      -- a.type          # α (as type of x) will become Bool
+}
+
+# Universal type ∀α.α→α standing alone
+graph poly-forall-type {
+  let r   = root
+  let fa  = forall "∀α"
+  let arr = type-arrow "α→α"
+  wire r.principal  -- fa.principal
+  wire fa.body      -- arr.principal
+  wire fa.bind      -- arr.domain      # α is the domain
+  # codomain left free (second occurrence would need sharing)
+}
+
+# ─── Axis 2: Dependent Types (Dependent / λP) ────────────────────
+# Types that depend on terms — Π, Σ, pairs, projections.
+
+# Dependent function type Π(A:*).A→A
+# Unlike →, the codomain can mention the domain variable.
+graph dep-pi-type {
+  let r   = root
+  let p   = pi "Π(A:*)"
+  let tb  = type-base "A"
+  let arr = type-arrow "A→A"
+  wire r.principal  -- p.principal
+  wire p.domain     -- tb.principal
+  wire p.codomain   -- arr.principal
+}
+
+# Dependent pair: (a, b) : Σ(x:A).B
+graph dep-sigma-pair {
+  let r   = root
+  let sg  = sigma "Σ"
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  let ta  = type-base "A"
+  let tb  = type-base "B"
+  wire r.principal   -- p.principal
+  wire p.fst         -- a.principal
+  wire p.snd         -- b.principal
+  wire sg.fst-type   -- ta.principal
+  wire sg.snd-type   -- tb.principal
+}
+
+# First projection: fst (a, b) → a
+# Active pair: fst <> pair triggers annihilation.
+graph dep-fst-elim {
+  let r   = root
+  let f   = fst
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  wire f.principal -- p.principal      # active pair!
+  wire f.result    -- r.principal      # result → root
+  wire p.fst       -- a.principal      # first component
+  wire p.snd       -- b.principal      # second component
+}
+
+# Second projection: snd (a, b) → b
+graph dep-snd-elim {
+  let r   = root
+  let s   = snd
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  wire s.principal -- p.principal      # active pair!
+  wire s.result    -- r.principal
+  wire p.fst       -- a.principal
+  wire p.snd       -- b.principal
+}
+
+# ─── Axis 3: Type Operators (TyOp / λω̲) ─────────────────────────
+# Types that abstract over types — type-level functions with kinds.
+
+# Type-level β: (λα:*.α→Nat) Bool → Bool→Nat
+# Active pair: type-abs <> type-app.
+# After reduction: body (α→Nat) flows to result, Bool replaces α.
+graph tyop-beta {
+  let r    = root
+  let ta   = type-abs "λα"
+  let tp   = type-app
+  let arr  = type-arrow "α→Nat"
+  let nat  = type-base "Nat"
+  let arg  = type-base "Bool"
+  wire ta.principal  -- tp.principal   # active pair!
+  wire tp.result     -- r.principal
+  wire ta.body       -- arr.principal  # body is α→Nat
+  wire ta.bind       -- arr.domain     # α is the domain
+  wire arr.codomain  -- nat.principal  # codomain is Nat
+  wire tp.arg        -- arg.principal  # applying to Bool
+}
+
+# Kind of a unary type operator: ★ → ★
+graph tyop-kind {
+  let r   = root
+  let ka  = kind-arrow "★→★"
+  let k1  = kind-star "★"
+  let k2  = kind-star "★"
+  wire r.principal   -- ka.principal
+  wire ka.domain     -- k1.principal
+  wire ka.codomain   -- k2.principal
+}
+
+# Type operator with kind annotation:
+# (λα:★.α→α) : ★→★  — the type-level identity on arrows
+graph tyop-abs-kind {
+  let r   = root
+  let ta  = type-abs "λα:★"
+  let arr = type-arrow "α→α"
+  wire r.principal  -- ta.principal
+  wire ta.body      -- arr.principal   # body is α→α
+  wire ta.bind      -- arr.domain      # α is the domain
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Cross-Axis Tests (Composed Corners)
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── λP2 cross-rule: tyabs <> fst → erase ────────────────────────
+# A polymorphic type abstraction meeting a dependent projection.
+# The cross-rule erases the mismatch.
+graph lp2-cross-erase {
+  let r   = root
+  let f   = fst
+  let ta  = tyabs "Λα"
+  let a   = abs "λx"
+  wire f.principal -- ta.principal     # cross-rule: fst <> tyabs → erase
+  wire f.result    -- r.principal
+  wire ta.body     -- a.principal
+  wire a.bind      -- a.body
+}
+
+# ─── λPω cross-rule: type-abs <> fst → erase ────────────────────
+# A type operator meeting a dependent projection.
+graph lpw-cross-erase {
+  let r    = root
+  let f    = fst
+  let ta   = type-abs "λα"
+  let arr  = type-arrow "α→α"
+  wire f.principal  -- ta.principal    # cross-rule: type-abs <> fst → erase
+  wire f.result     -- r.principal
+  wire ta.body      -- arr.principal
+  wire ta.bind      -- arr.domain
+}
+
+# ─── λω cross-rule: tyapp <> type-abs → annihilate ───────────────
+# Term-level type application meets type-level abstraction.
+# In Fω, polymorphic terms can be applied to type operators.
+# (tyapp applying to type-abs "λα.α→Nat" with arg "Bool")
+graph fw-cross-annihilate {
+  let r    = root
+  let tp   = tyapp
+  let ta   = type-abs "λα"
+  let arr  = type-arrow "α→Nat"
+  let nat  = type-base "Nat"
+  let arg  = type-base "Bool"
+  wire tp.principal  -- ta.principal   # cross-rule: tyapp <> type-abs → annihilate
+  wire tp.result     -- r.principal
+  wire ta.body       -- arr.principal
+  wire ta.bind       -- arr.domain     # α is domain
+  wire arr.codomain  -- nat.principal
+  wire tp.arg        -- arg.principal  # applying to Bool
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# λC (Calculus of Constructions) — Full Corner
+# ═══════════════════════════════════════════════════════════════════
+# Combines all three axes. This graph shows a polymorphic dependent
+# function with type-operator kinds — only typeable in λC.
+
+graph coc-poly-dep-tyop {
+  let r    = root
+  let ta   = tyabs "Λα"               # Poly: type abstraction
+  let a    = abs "λx"                  # λ→: term abstraction
+  let p    = pi "Π"                    # Dependent: Π type
+  let ka   = kind-arrow "★→★"          # TyOp: kind of type operators
+  let k1   = kind-star "★"
+  let k2   = kind-star "★"
+  wire r.principal   -- ta.principal   # outer: Λα
+  wire ta.body       -- a.principal    # body: λx.x
+  wire a.bind        -- a.body         # identity
+  wire ta.bind       -- p.principal    # α bound as Π type
+  wire p.domain      -- ka.principal   # domain is a kind ★→★
+  wire ka.domain     -- k1.principal
+  wire ka.codomain   -- k2.principal
+}
+
+# ─── Untyped baselines for comparison ─────────────────────────────
+# These are NOT typeable in any corner of the cube.
+
+def Omega = (\x.x x) (\x.x x)          # self-application
+def Y = \f.(\x.f (x x)) (\x.f (x x))   # fixpoint combinator
 
 graph omega = term Omega
 graph y-combinator = term Y
