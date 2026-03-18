@@ -300,7 +300,7 @@ graph typed-flip = term flip`,
     name: "INet: Lambda Cube",
     code: `# The Lambda Cube — typed systems via pushout composition
 # Three axes beyond λ→: polymorphism, dependent types, type operators.
-# Each axis is a system; cube corners are compositions.
+# Each axis extends λ→; cube corners are pushout compositions.
 
 system "λ→" {
   agent abs(principal, body, bind, type)
@@ -341,7 +341,20 @@ system "TyOp" extend "λ→" {
   rule type-abs <> type-app -> annihilate
 }
 
-# Apex: Calculus of Constructions = all three axes
+system "λP2" = compose "Poly" + "Dependent" {
+  rule tyabs <> fst -> erase
+  rule tyabs <> snd -> erase
+}
+
+system "λPω" = compose "Dependent" + "TyOp" {
+  rule type-abs <> fst -> erase
+  rule type-abs <> snd -> erase
+}
+
+system "λω" = compose "Poly" + "TyOp" {
+  rule tyapp <> type-abs -> annihilate
+}
+
 system "λC" = compose "Poly" + "Dependent" + "TyOp" {
   rule tyabs <> fst -> erase
   rule tyabs <> snd -> erase
@@ -350,20 +363,180 @@ system "λC" = compose "Poly" + "Dependent" + "TyOp" {
   rule tyapp <> type-abs -> annihilate
 }
 
-# Typed terms
+# ─── λ→ (STLC) ───────────────────────────────────────────────────
+
 def I = \\x:A.x
 def K = \\x:A.\\y:B.x
 def S = \\f:A -> B -> C.\\g:A -> B.\\x:A.f x (g x)
-def Church2 = \\f:A -> A.\\x:A.f (f x)
 
-# Untypeable in λ→
+graph stlc-identity = term I
+graph stlc-const = term K
+graph stlc-s-combinator = term S
+graph stlc-apply-id = term (\\f:A -> B.\\x:A.f x) (\\y:A.y)
+
+# ─── Axis 1: Polymorphism ────────────────────────────────────────
+
+# Λα. λx:α. x  (polymorphic identity)
+graph poly-identity {
+  let r   = root
+  let ta  = tyabs "Λα"
+  let a   = abs "λx"
+  wire r.principal  -- ta.principal
+  wire ta.body      -- a.principal
+  wire a.bind       -- a.body
+  wire ta.bind      -- a.type
+}
+
+# (Λα. λx. x) [Bool]  — active pair: tyabs <> tyapp
+graph poly-beta {
+  let r    = root
+  let ta   = tyabs "Λα"
+  let tp   = tyapp
+  let a    = abs "λx"
+  let arg  = type-base "Bool"
+  wire ta.principal -- tp.principal
+  wire tp.result    -- r.principal
+  wire ta.body      -- a.principal
+  wire a.bind       -- a.body
+  wire tp.arg       -- arg.principal
+  wire ta.bind      -- a.type
+}
+
+# ∀α. α→α  (universal type)
+graph poly-forall-type {
+  let r   = root
+  let fa  = forall "∀α"
+  let arr = type-arrow "α→α"
+  wire r.principal  -- fa.principal
+  wire fa.body      -- arr.principal
+  wire fa.bind      -- arr.domain
+}
+
+# ─── Axis 2: Dependent Types ────────────────────────────────────
+
+# Π(A:*). A→A
+graph dep-pi-type {
+  let r   = root
+  let p   = pi "Π(A:*)"
+  let tb  = type-base "A"
+  let arr = type-arrow "A→A"
+  wire r.principal  -- p.principal
+  wire p.domain     -- tb.principal
+  wire p.codomain   -- arr.principal
+}
+
+# (a, b) : Σ(x:A).B
+graph dep-sigma-pair {
+  let r   = root
+  let sg  = sigma "Σ"
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  let ta  = type-base "A"
+  let tb  = type-base "B"
+  wire r.principal   -- p.principal
+  wire p.fst         -- a.principal
+  wire p.snd         -- b.principal
+  wire sg.fst-type   -- ta.principal
+  wire sg.snd-type   -- tb.principal
+}
+
+# fst (a, b) → a  — active pair: fst <> pair
+graph dep-fst-elim {
+  let r   = root
+  let f   = fst
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  wire f.principal -- p.principal
+  wire f.result    -- r.principal
+  wire p.fst       -- a.principal
+  wire p.snd       -- b.principal
+}
+
+# snd (a, b) → b  — active pair: snd <> pair
+graph dep-snd-elim {
+  let r   = root
+  let s   = snd
+  let p   = pair "(a,b)"
+  let a   = var "a"
+  let b   = var "b"
+  wire s.principal -- p.principal
+  wire s.result    -- r.principal
+  wire p.fst       -- a.principal
+  wire p.snd       -- b.principal
+}
+
+# ─── Axis 3: Type Operators ─────────────────────────────────────
+
+# (λα:*. α→Nat) Bool  — active pair: type-abs <> type-app
+graph tyop-beta {
+  let r    = root
+  let ta   = type-abs "λα"
+  let tp   = type-app
+  let arr  = type-arrow "α→Nat"
+  let nat  = type-base "Nat"
+  let arg  = type-base "Bool"
+  wire ta.principal  -- tp.principal
+  wire tp.result     -- r.principal
+  wire ta.body       -- arr.principal
+  wire ta.bind       -- arr.domain
+  wire arr.codomain  -- nat.principal
+  wire tp.arg        -- arg.principal
+}
+
+# ★ → ★  (kind of unary type operators)
+graph tyop-kind {
+  let r   = root
+  let ka  = kind-arrow "★→★"
+  let k1  = kind-star "★"
+  let k2  = kind-star "★"
+  wire r.principal   -- ka.principal
+  wire ka.domain     -- k1.principal
+  wire ka.codomain   -- k2.principal
+}
+
+# ─── Cross-Axis: λω (tyapp <> type-abs) ─────────────────────────
+
+graph fw-cross-annihilate {
+  let r    = root
+  let tp   = tyapp
+  let ta   = type-abs "λα"
+  let arr  = type-arrow "α→Nat"
+  let nat  = type-base "Nat"
+  let arg  = type-base "Bool"
+  wire tp.principal  -- ta.principal
+  wire tp.result     -- r.principal
+  wire ta.body       -- arr.principal
+  wire ta.bind       -- arr.domain
+  wire arr.codomain  -- nat.principal
+  wire tp.arg        -- arg.principal
+}
+
+# ─── λC: full corner ────────────────────────────────────────────
+
+graph coc-poly-dep-tyop {
+  let r    = root
+  let ta   = tyabs "Λα"
+  let a    = abs "λx"
+  let p    = pi "Π"
+  let ka   = kind-arrow "★→★"
+  let k1   = kind-star "★"
+  let k2   = kind-star "★"
+  wire r.principal   -- ta.principal
+  wire ta.body       -- a.principal
+  wire a.bind        -- a.body
+  wire ta.bind       -- p.principal
+  wire p.domain      -- ka.principal
+  wire ka.domain     -- k1.principal
+  wire ka.codomain   -- k2.principal
+}
+
+# ─── Untyped baselines ──────────────────────────────────────────
+
 def Omega = (\\x.x x) (\\x.x x)
 def Y = \\f.(\\x.f (x x)) (\\x.f (x x))
 
-graph typed-identity = term I
-graph typed-s-comb = term S
-graph typed-church-two = term Church2
-graph apply-id = term (\\f:A -> B.\\x:A.f x) (\\y:A.y)
 graph omega = term Omega
 graph y-combinator = term Y`,
   },

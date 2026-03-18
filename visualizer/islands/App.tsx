@@ -276,6 +276,26 @@ export default function App() {
           });
           return;
         }
+        if (extracted && extracted.kind === "graph") {
+          const initFromGraph = METHODS.deltanets.initFromGraph;
+          if (initFromGraph) {
+            batch(() => {
+              inetMode.value = true;
+              inetCore.value = result.core;
+              inetGraphNames.value = result.graphNames;
+              inetSelectedGraph.value = graphName;
+              exprError.value = false;
+              ast.value = null;
+              typeResult.value = null;
+              typeCheckSteps.value = [];
+              typeCheckMode.value = false;
+              typeCheckStepIdx.value = -1;
+              method.value = "deltanets";
+              METHODS.deltanets.state.value = initFromGraph(extracted.graph);
+            });
+            return;
+          }
+        }
       }
       if (result.errors.length > 0) {
         console.warn("INet Parsing Error(s):", result.errors);
@@ -343,6 +363,24 @@ export default function App() {
         isFirstLoad.value = true;
       });
       center.value = originalCenter;
+    } else if (extracted && extracted.kind === "graph") {
+      const initFromGraph = METHODS.deltanets.initFromGraph;
+      if (initFromGraph) {
+        const originalCenter = center.peek();
+        center.value = true;
+        batch(() => {
+          inetSelectedGraph.value = graphName;
+          ast.value = null;
+          typeResult.value = null;
+          typeCheckSteps.value = [];
+          typeCheckMode.value = false;
+          typeCheckStepIdx.value = -1;
+          method.value = "deltanets";
+          METHODS.deltanets.state.value = initFromGraph(extracted.graph);
+          isFirstLoad.value = true;
+        });
+        center.value = originalCenter;
+      }
     }
   };
 

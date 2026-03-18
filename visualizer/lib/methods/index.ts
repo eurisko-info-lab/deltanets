@@ -1,4 +1,5 @@
 import { AstNode, SystemType } from "../ast.ts";
+import type { Graph } from "../core/types.ts";
 import { Node2D } from "../render.ts";
 import { Signal } from "@preact/signals";
 
@@ -15,6 +16,7 @@ export const METHODS: Record<string, Method<any, any>> = {
 export type Method<Elem, Data> = {
   name: string;
   init: (ast: AstNode, systemType: SystemType, relativeLevel: boolean) => MethodState<Elem, Data>;
+  initFromGraph?: (graph: Graph) => MethodState<Elem, Data>;
   render: (
     state: Signal<MethodState<Elem, Data>>,
     expression: Signal<string>,
