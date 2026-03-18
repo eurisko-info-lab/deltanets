@@ -121,6 +121,84 @@ T`,
 
 λf:B -> C.λg:A -> B.λx:A.f (g x)`,
   },
+  {
+    name: "INet: Δ-Nets",
+    code: `# Δ-Nets system definition (.inet format)
+# This defines the complete delta-nets interaction system
+# with agents, rules, modes, definitions, and example graphs.
+# Use the graph selector dropdown to switch between graphs.
+
+system "delta-nets" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+  agent era(principal)
+  agent var(principal)
+  agent root(principal)
+
+  rule abs <> app -> annihilate
+  rule abs <> era -> erase
+  rule app <> era -> erase
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+  rule rep-in <> rep-out -> annihilate
+  rule rep-in <> rep-in -> commute
+  rule app <> rep-out -> aux-fan
+
+  mode linear   = { -era, -rep-in, -rep-out }
+  mode affine   = { -rep-in, -rep-out }
+  mode relevant = { -era }
+  mode full     = {}
+}
+
+def I = \\x.x
+def T = \\x.\\y.x
+def F = \\x.\\y.y
+def And = \\p.\\q.p q p
+def Or = \\p.\\q.p p q
+def Not = \\p.p F T
+def Church2 = \\f.\\x.f (f x)
+
+graph identity = term I
+graph church-two = term Church2
+graph and-true-false = term And T F
+graph two-squared-twice = term (\\a.a (a a)) (\\f.\\x.f (f x))`,
+  },
+  {
+    name: "INet: Lambda Calculus",
+    code: `# Lambda Calculus system definition (.inet format)
+# Standard lambda calculus with combinators and Church encodings.
+
+system "lambda-calculus" {
+  agent abs(principal, body, bind)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+
+  rule abs <> app -> annihilate
+}
+
+def S = \\f.\\g.\\x.f x (g x)
+def K = \\x.\\y.x
+def I = \\x.x
+
+def True  = \\x.\\y.x
+def False = \\x.\\y.y
+
+def Zero = \\f.\\x.x
+def One  = \\f.\\x.f x
+def Two  = \\f.\\x.f (f x)
+def Three = \\f.\\x.f (f (f x))
+def Succ = \\n.\\f.\\x.f (n f x)
+def Plus = \\m.\\n.\\f.\\x.m f (n f x)
+def Mult = \\m.\\n.\\f.m (n f)
+
+graph succ-two = term Succ Two
+graph two-plus-three = term Plus Two Three
+graph two-times-three = term Mult Two Three
+graph ski-identity = term S K K`,
+  },
 ];
 
 export default examples;

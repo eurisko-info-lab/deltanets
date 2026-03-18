@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════════
+# Lambda Calculus — Core System Definition
+# Standard lambda calculus as an interaction net system,
+# illustrating that the same language can express different calculi.
+# ═══════════════════════════════════════════════════════════════════
+
+system "Lambda Calculus" {
+
+  # Tree-level agents (no replicators — copying is implicit)
+  agent abs(principal, body, bind)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+
+  # The only rule: β-reduction
+  rule abs <> app -> annihilate
+}
+
+# ─── Standard combinators ─────────────────────────────────────────
+
+def S = \f.\g.\x.f x (g x)
+def K = \x.\y.x
+def I = \x.x
+def B = \f.\g.\x.f (g x)
+def C = \f.\x.\y.f y x
+def W = \f.\x.f x x
+
+# Church booleans
+def True  = \x.\y.x
+def False = \x.\y.y
+def If    = \p.\t.\f.p t f
+
+# Church numerals
+def Zero = \f.\x.x
+def One  = \f.\x.f x
+def Two  = \f.\x.f (f x)
+def Three = \f.\x.f (f (f x))
+def Succ = \n.\f.\x.f (n f x)
+def Plus = \m.\n.\f.\x.m f (n f x)
+def Mult = \m.\n.\f.m (n f)
+
+# Church pairs
+def Pair = \x.\y.\f.f x y
+def Fst  = \p.p True
+def Snd  = \p.p False
+
+# ─── Example graphs ──────────────────────────────────────────────
+
+graph succ-two = term Succ Two
+graph two-plus-three = term Plus Two Three
+graph two-times-three = term Mult Two Three
+graph ski-identity = term S K K

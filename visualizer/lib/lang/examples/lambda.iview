@@ -1,0 +1,63 @@
+# ═══════════════════════════════════════════════════════════════════
+# Lambda Calculus — Visual Configuration
+# A simpler visual style for tree-based lambda calculus rendering.
+# ═══════════════════════════════════════════════════════════════════
+
+use "lambda.inet"
+
+theme dark {
+  background: #1a1a2e
+  text: #e0e0e0
+  wire: #bbbbbb
+  optimal: #00e676
+  suboptimal: #ffc107
+}
+
+theme light {
+  background: #fafafa
+  text: #212121
+  wire: #757575
+  optimal: #00c853
+  suboptimal: #ff6d00
+}
+
+render abs {
+  shape: fan(down)
+  width: 28
+  fill: #5c6bc0
+  label: center
+  z: 2
+}
+
+render app {
+  shape: fan(up)
+  width: 28
+  fill: #26a69a
+  label: center
+  z: 2
+}
+
+render var {
+  shape: circle
+  radius: 8
+  fill: #ef5350
+  z: 1
+}
+
+render root {
+  shape: circle
+  radius: 5
+  fill: wire-color
+  z: 3
+}
+
+wire-style {
+  width: 1.5
+  curve: bezier
+}
+
+layout {
+  spacing: 25
+  depth: 40
+  direction: top-down
+}

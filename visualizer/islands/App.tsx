@@ -34,6 +34,8 @@ import { useEffect, useRef } from "preact/hooks";
 import loader, { type Monaco } from "@monaco-editor/loader";
 import examples from "../lib/examples.ts";
 import { METHODS, MethodState } from "../lib/methods/index.ts";
+import { isINetSource, compileINet, extractGraph } from "../lib/lang/bridge.ts";
+import type { CoreResult } from "../lib/lang/core/index.ts";
 
 // Title of the app
 const TITLE = "Interactive λ-Reduction";
@@ -96,6 +98,12 @@ export default function App() {
 
   // Keep track of first load to make sure we always center on first load
   const isFirstLoad = useSignal<boolean>(true);
+
+  // .inet language support
+  const inetMode = useSignal<boolean>(false);
+  const inetCore = useSignal<CoreResult | null>(null);
+  const inetGraphNames = useSignal<string[]>([]);
+  const inetSelectedGraph = useSignal<string>("");
 
   // Keep track of whether the splitter is being dragged
   const isDraggingSplitter = useSignal<boolean>(false);
@@ -238,6 +246,51 @@ export default function App() {
       return;
     }
 
+    // Try .inet format first
+    if (isINetSource(source)) {
+      const result = compileINet(source);
+      if (result.errors.length === 0 && result.graphNames.length > 0) {
+        const graphName = inetSelectedGraph.peek() && result.graphNames.includes(inetSelectedGraph.peek())
+          ? inetSelectedGraph.peek()
+          : result.graphNames[result.graphNames.length - 1];
+        const extracted = extractGraph(result.core, graphName);
+        if (extracted && extracted.kind === "ast") {
+          batch(() => {
+            inetMode.value = true;
+            inetCore.value = result.core;
+            inetGraphNames.value = result.graphNames;
+            inetSelectedGraph.value = graphName;
+            exprError.value = false;
+            ast.value = extracted.ast;
+            systemType.value = getExpressionType(extracted.ast);
+            selectedSystemType.value = systemType.value;
+            typeResult.value = typeCheck(extracted.ast);
+            if (extracted.ast) {
+              tagAstWithTypeCheckIndices(extracted.ast);
+              typeCheckSteps.value = generateTypeCheckSteps(extracted.ast);
+            } else {
+              typeCheckSteps.value = [];
+            }
+            typeCheckMode.value = false;
+            typeCheckStepIdx.value = -1;
+          });
+          return;
+        }
+      }
+      if (result.errors.length > 0) {
+        console.warn("INet Parsing Error(s):", result.errors);
+        exprError.value = true;
+        inetMode.value = false;
+        return;
+      }
+    }
+
+    // Fall back to standard lambda calculus parser
+    inetMode.value = false;
+    inetCore.value = null;
+    inetGraphNames.value = [];
+    inetSelectedGraph.value = "";
+
     // Update AST
     const newAst = parseSource(source);
     // Update AST or exprError
@@ -262,6 +315,34 @@ export default function App() {
         typeCheckMode.value = false;
         typeCheckStepIdx.value = -1;
       });
+    }
+  };
+
+  // When a different .inet graph is selected, re-extract and update AST
+  const selectINetGraph = (graphName: string) => {
+    const core = inetCore.peek();
+    if (!core) return;
+    const extracted = extractGraph(core, graphName);
+    if (extracted && extracted.kind === "ast") {
+      const originalCenter = center.peek();
+      center.value = true;
+      batch(() => {
+        inetSelectedGraph.value = graphName;
+        ast.value = extracted.ast;
+        systemType.value = getExpressionType(extracted.ast);
+        selectedSystemType.value = systemType.value;
+        typeResult.value = typeCheck(extracted.ast);
+        if (extracted.ast) {
+          tagAstWithTypeCheckIndices(extracted.ast);
+          typeCheckSteps.value = generateTypeCheckSteps(extracted.ast);
+        } else {
+          typeCheckSteps.value = [];
+        }
+        typeCheckMode.value = false;
+        typeCheckStepIdx.value = -1;
+        isFirstLoad.value = true;
+      });
+      center.value = originalCenter;
     }
   };
 
@@ -545,6 +626,25 @@ export default function App() {
           </option>
         ))}
       </select>
+      {inetMode.value && inetGraphNames.value.length > 1 && (
+        <select
+          onChange={(e) => {
+            selectINetGraph((e?.target as HTMLSelectElement).value);
+          }}
+          value={inetSelectedGraph.value}
+          class="border-1 rounded px-1 text-xl min-h-[44px] bg-inherit"
+          style={{
+            borderColor: theme.value === "light" ? "#000D" : "#FFF6",
+            background: theme.value === "light" ? "white" : "#1A1A1A",
+          }}
+        >
+          {inetGraphNames.value.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      )}
       <select
         onChange={(e) => {
           const newMethod = (e?.target as HTMLSelectElement).value;
