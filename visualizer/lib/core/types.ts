@@ -1,7 +1,6 @@
-// Universal types and interface for interaction net systems.
-// Any interaction net implementation (Δ-Nets, HVM, etc.) should conform to InteractionSystem.
+// Universal types and interfaces for interaction net systems and tree-based calculi.
 
-import type { AstNode, SystemType } from "../ast.ts";
+import type { AstNode, Abstraction, Variable, SystemType } from "../ast.ts";
 
 // A port of a particular node.
 export type NodePort = { node: Node; port: number };
@@ -23,7 +22,7 @@ export type Graph = Node[];
 export type Redex = { a: Node; b: Node; optimal: boolean; reduce: () => void };
 
 // The interface that any interaction net system must implement.
-// This enables swapping between different implementations (e.g., Δ-Nets, HVM).
+// This enables swapping between different graph implementations (e.g., Δ-Nets, HVM).
 export interface InteractionSystem {
   name: string;
   buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: boolean): Graph;
@@ -35,4 +34,17 @@ export interface InteractionSystem {
   isConnectedToAllErasers(node: Node): boolean;
   countAuxErasers(node: Node): number;
   levelColor(level: number): string | undefined;
+}
+
+// The interface that any tree-based lambda calculus must implement.
+// This enables swapping between different reduction strategies and calculi.
+export interface TreeSystem {
+  name: string;
+  clone(ast: AstNode, parent?: AstNode): AstNode;
+  substitute(tree: AstNode, varName: string, replacement: AstNode, freeVarsInArg: string[]): AstNode;
+  replace(astNode: AstNode, newNode: AstNode): boolean;
+  freeVars(node: AstNode): string[];
+  boundVars(node: AstNode, name: string): Variable[];
+  isAbstractionClosed(node: Abstraction): boolean;
+  astToString(ast: AstNode): string;
 }

@@ -1,18 +1,15 @@
 import { batch, Signal, signal } from "@preact/signals";
 import {
   AstNode,
-  astToString,
-  boundVars,
-  clone,
-  freeVars,
-  replace,
-  substitute,
   SystemType,
 } from "../ast.ts";
 import * as d3 from "d3";
 import { Edge, Enclosure, Label, Node2D, OPTIMAL_HIGHLIGHT_COLOR, Pos, SUBOPTIMAL_HIGHLIGHT_COLOR } from "../render.ts";
 import { Method, MethodState } from "./index.ts";
 import { prettifyExpr } from "../util.ts";
+import { lambdacalc } from "../core/index.ts";
+
+const { clone, substitute, replace, freeVars, boundVars, astToString } = lambdacalc;
 
 // Lambda calculus (naive copying)
 // When an abstraction is applied, the argument is copied N times, where N is
