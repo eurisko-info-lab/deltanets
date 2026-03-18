@@ -61,7 +61,19 @@ function isParentPort(nodePort: NodePort): boolean {
     (nodePort.node.type === "var" && nodePort.port === Ports.var.principal) ||
     (nodePort.node.type === "type-base" && nodePort.port === Ports.typeBase.principal) ||
     (nodePort.node.type === "type-arrow" && nodePort.port === Ports.typeArrow.principal) ||
-    (nodePort.node.type === "type-hole" && nodePort.port === Ports.typeHole.principal);
+    (nodePort.node.type === "type-hole" && nodePort.port === Ports.typeHole.principal) ||
+    // Lambda cube agents
+    (nodePort.node.type === "tyabs" && nodePort.port === 0) ||
+    (nodePort.node.type === "tyapp" && nodePort.port === 1) ||
+    (nodePort.node.type === "pi" && nodePort.port === 0) ||
+    (nodePort.node.type === "sigma" && nodePort.port === 0) ||
+    (nodePort.node.type === "pair" && nodePort.port === 0) ||
+    (nodePort.node.type === "fst" && nodePort.port === 1) ||
+    (nodePort.node.type === "snd" && nodePort.port === 1) ||
+    (nodePort.node.type === "type-abs" && nodePort.port === 0) ||
+    (nodePort.node.type === "type-app" && nodePort.port === 1) ||
+    (nodePort.node.type === "kind-star" && nodePort.port === 0) ||
+    (nodePort.node.type === "kind-arrow" && nodePort.port === 0);
 }
 
 function isConnectedToAllErasers(node: Node): boolean {
@@ -125,6 +137,44 @@ function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
 function isTypeNode(node: Node): boolean {
   return node.type === "type-base" || node.type === "type-arrow" || node.type === "type-hole";
 }
+
+// Whether a node type is an expression-level agent (vs type/lambda-cube agent)
+const EXPR_AGENT_TYPES = new Set(["abs", "app", "var", "era", "root"]);
+function isExprAgent(type: string): boolean {
+  return EXPR_AGENT_TYPES.has(type) || type.startsWith("rep");
+}
+
+// Cross-rule erasure: both agents are erased (all aux ports get erasers)
+function reduceEraseRule(nodeA: Node, nodeB: Node, graph: Graph) {
+  for (let i = 1; i < nodeA.ports.length; i++) {
+    const newEraser: Node = { type: "era", label: "era", ports: [] as any };
+    graph.push(newEraser);
+    link({ node: newEraser, port: 0 }, nodeA.ports[i]);
+  }
+  for (let i = 1; i < nodeB.ports.length; i++) {
+    const newEraser: Node = { type: "era", label: "era", ports: [] as any };
+    graph.push(newEraser);
+    link({ node: newEraser, port: 0 }, nodeB.ports[i]);
+  }
+  removeFromArrayIf(graph, (n) => n === nodeA || n === nodeB);
+}
+
+// Lambda cube annihilation pairs: [agentA, agentB]
+const ANNIHILATION_PAIRS: [string, string][] = [
+  ["tyabs", "tyapp"],
+  ["type-abs", "type-app"],
+  ["fst", "pair"],
+  ["snd", "pair"],
+  ["tyapp", "type-abs"],  // λω cross-rule
+];
+
+// Lambda cube cross-rule erasure pairs: [agentA, agentB]
+const ERASE_RULE_PAIRS: [string, string][] = [
+  ["tyabs", "fst"],   // λP2
+  ["tyabs", "snd"],   // λP2
+  ["type-abs", "fst"], // λPω
+  ["type-abs", "snd"], // λPω
+];
 
 function buildTypeGraph(ty: Type, graph: Graph): NodePort {
   if (ty.kind === "hole") {
@@ -351,6 +401,37 @@ function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean
           node.type === "abs" && node.ports[0].node.type === "app"
         ) {
           createRedex(node, node.ports[0].node, false, () => reduceAnnihilate(node, graph));
+        } else if (
+          ANNIHILATION_PAIRS.some(([a, b]) =>
+            (node.type === a && node.ports[0].node.type === b) ||
+            (node.type === b && node.ports[0].node.type === a)
+          )
+        ) {
+          createRedex(node, node.ports[0].node, false, () => reduceAnnihilate(node, graph));
+        } else if (
+          ERASE_RULE_PAIRS.some(([a, b]) =>
+            (node.type === a && node.ports[0].node.type === b) ||
+            (node.type === b && node.ports[0].node.type === a)
+          )
+        ) {
+          createRedex(node, node.ports[0].node, false, () => reduceEraseRule(node, node.ports[0].node, graph));
+        } else if (
+          node.type.startsWith("rep") && !node.ports[0].node.type.startsWith("rep") &&
+          !isExprAgent(node.ports[0].node.type) && !isTypeNode(node.ports[0].node) &&
+          node.ports[0].node.type !== "var" && node.ports[0].node.type !== "root"
+        ) {
+          // Rep commutation with lambda cube agents
+          const rep = node;
+          const level = parseRepLabel(rep.label!).level;
+          createRedex(node, node.ports[0].node, false, () => {
+            const { nodeClones } = reduceCommute(rep, graph);
+            nodeClones.forEach((clone, i) => {
+              clone.label = formatRepLabel(i === 0 ? level : (relativeLevel ? level + 1 : level), "unknown");
+              if (i > 0) {
+                clone.type = clone.type === "rep-in" ? "rep-out" : "rep-in";
+              }
+            });
+          });
         } else if (
           ((node.type.startsWith("rep") && (node.ports[0].node.type === "abs" ||
             node.ports[0].node.type === "app")))
@@ -680,4 +761,5 @@ export const deltanets: InteractionSystem = {
   countAuxErasers,
   levelColor,
   typeCheck,
+  isExprAgent,
 };

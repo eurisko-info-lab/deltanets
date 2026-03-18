@@ -34,6 +34,7 @@ import { useEffect, useRef } from "preact/hooks";
 import loader, { type Monaco } from "@monaco-editor/loader";
 import examples from "../lib/examples.ts";
 import { METHODS, MethodState } from "../lib/methods/index.ts";
+import { typeReductionMode } from "../lib/methods/deltanets.ts";
 import { isINetSource, compileINet, extractGraph } from "../lib/lang/bridge.ts";
 import type { CoreResult } from "../lib/lang/core/index.ts";
 
@@ -286,7 +287,7 @@ export default function App() {
               inetSelectedGraph.value = graphName;
               exprError.value = false;
               ast.value = null;
-              typeResult.value = null;
+              typeResult.value = { ok: true, type: { kind: "hole" } };
               typeCheckSteps.value = [];
               typeCheckMode.value = false;
               typeCheckStepIdx.value = -1;
@@ -334,6 +335,7 @@ export default function App() {
         }
         typeCheckMode.value = false;
         typeCheckStepIdx.value = -1;
+        typeReductionMode.value = false;
       });
     }
   };
@@ -360,6 +362,7 @@ export default function App() {
         }
         typeCheckMode.value = false;
         typeCheckStepIdx.value = -1;
+        typeReductionMode.value = false;
         isFirstLoad.value = true;
       });
       center.value = originalCenter;
@@ -371,10 +374,11 @@ export default function App() {
         batch(() => {
           inetSelectedGraph.value = graphName;
           ast.value = null;
-          typeResult.value = null;
+          typeResult.value = { ok: true, type: { kind: "hole" } };
           typeCheckSteps.value = [];
           typeCheckMode.value = false;
           typeCheckStepIdx.value = -1;
+          typeReductionMode.value = false;
           method.value = "deltanets";
           METHODS.deltanets.state.value = initFromGraph(extracted.graph);
           isFirstLoad.value = true;
@@ -730,33 +734,45 @@ export default function App() {
         <div
           title={tcActive
             ? (typeCheckSteps.value[tcIdx]?.judgment ?? "Type check mode")
-            : (typeResult.value.ok
-              ? `Type: ${typeToString(typeResult.value.type)}`
-              : `Type error: ${typeResult.value.error}`)}
+            : typeReductionMode.value
+              ? "Type reduction mode — click to switch to expression reduction"
+              : (typeResult.value.ok
+                ? `Type: ${typeToString(typeResult.value.type)} — click to switch to type reduction`
+                : `Type error: ${typeResult.value.error}`)}
           class="border-1 rounded px-2 text-sm min-h-[44px] bg-inherit flex flex-row items-center whitespace-nowrap select-none"
           style={{
-            borderColor: tcActive
+            borderColor: (tcActive || typeReductionMode.value)
               ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
               : (theme.value === "light" ? "#000D" : "#FFF6"),
-            color: tcActive
+            color: (tcActive || typeReductionMode.value)
               ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
               : (typeResult.value.ok
-                ? (hasTypeAnnotations(ast.value!) ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : (theme.value === "light" ? "#666" : "#888"))
+                ? (!ast.value || hasTypeAnnotations(ast.value) ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : (theme.value === "light" ? "#666" : "#888"))
                 : (theme.value === "light" ? "#dc2626" : "#f87171")),
             maxWidth: "360px",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            cursor: typeResult.value.ok && hasTypeAnnotations(ast.value!) ? "pointer" : "default",
-            background: tcActive
+            cursor: typeResult.value.ok ? "pointer" : "default",
+            background: (tcActive || typeReductionMode.value)
               ? (theme.value === "light" ? "#2563eb10" : "#60a5fa10")
               : "transparent",
           }}
           onClick={() => {
-            if (!typeResult.value?.ok || !hasTypeAnnotations(ast.value!)) return;
-            if (typeCheckMode.value) {
-              exitTypeCheckMode();
+            if (!typeResult.value?.ok) return;
+            if (ast.value && hasTypeAnnotations(ast.value)) {
+              // From-term graph with type annotations: toggle type check stepping
+              if (typeCheckMode.value) {
+                exitTypeCheckMode();
+                typeReductionMode.value = false;
+              } else {
+                enterTypeCheckMode();
+                typeReductionMode.value = true;
+              }
             } else {
-              enterTypeCheckMode();
+              // Explicit graph or no type annotations: toggle type reduction mode
+              typeReductionMode.value = !typeReductionMode.value;
+              const ms = METHODS[method.peek()].state.peek();
+              if (ms) METHODS[method.peek()].state.value = { ...ms };
             }
           }}
         >

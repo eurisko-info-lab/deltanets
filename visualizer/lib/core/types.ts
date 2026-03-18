@@ -36,6 +36,18 @@ export const Ports = {
   typeBase:  { principal: 0 },
   typeArrow: { principal: 0, domain: 1, codomain: 2 },
   typeHole:  { principal: 0 },
+  // Lambda cube agents
+  tyabs:     { principal: 0, body: 1, bind: 2 },
+  tyapp:     { principal: 0, result: 1, arg: 2 },
+  pi:        { principal: 0, domain: 1, codomain: 2 },
+  sigma:     { principal: 0, fstType: 1, sndType: 2 },
+  pair:      { principal: 0, fst: 1, snd: 2 },
+  fst:       { principal: 0, result: 1 },
+  snd:       { principal: 0, result: 1 },
+  typeAbs:   { principal: 0, body: 1, bind: 2 },
+  typeApp:   { principal: 0, result: 1, arg: 2 },
+  kindStar:  { principal: 0 },
+  kindArrow: { principal: 0, domain: 1, codomain: 2 },
 } as const;
 
 // A reducible pair of interacting nodes.
@@ -55,6 +67,7 @@ export interface InteractionSystem {
   countAuxErasers(node: Node): number;
   levelColor(level: number): string | undefined;
   typeCheck?(ast: AstNode, env?: TypeEnv): TypeResult;
+  isExprAgent(type: string): boolean;
 }
 
 // The interface that any tree-based lambda calculus must implement.
