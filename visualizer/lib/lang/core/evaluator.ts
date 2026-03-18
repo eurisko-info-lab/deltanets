@@ -7,7 +7,7 @@
 import type * as AST from "./types.ts";
 import type { Graph, Node, NodePort } from "../../core/types.ts";
 import { link } from "../../core/graph.ts";
-import type { AstNode } from "../../ast.ts";
+import type { AstNode, Type } from "../../ast.ts";
 
 // ─── Output types ──────────────────────────────────────────────────
 
@@ -285,6 +285,9 @@ function lamExprToAstNode(
   switch (expr.kind) {
     case "lam": {
       const node: any = { type: "abs", name: expr.param, body: null, parent };
+      if (expr.typeAnnotation) {
+        node.typeAnnotation = typeExprToType(expr.typeAnnotation);
+      }
       node.body = lamExprToAstNode(expr.body, defs, node);
       return node;
     }
@@ -302,6 +305,15 @@ function lamExprToAstNode(
       }
       return { type: "var", name: expr.name, parent } as AstNode;
     }
+  }
+}
+
+// Convert a TypeExpr AST node to the core Type representation.
+function typeExprToType(texpr: AST.TypeExpr): Type {
+  switch (texpr.kind) {
+    case "type-base":  return { kind: "base", name: texpr.name };
+    case "type-arrow": return { kind: "arrow", from: typeExprToType(texpr.from), to: typeExprToType(texpr.to) };
+    case "type-hole":  return { kind: "hole" };
   }
 }
 

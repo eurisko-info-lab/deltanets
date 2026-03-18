@@ -36,6 +36,8 @@ export const TT = {
   COMMA: "COMMA",
   DOT: "DOT",
   BACKSLASH: "BACKSLASH",
+  COLON: "COLON",
+  QUESTION: "QUESTION",   // ?
   MINUS: "MINUS",
   DOTDOT: "DOTDOT",       // ..
   // Literals
@@ -148,6 +150,8 @@ export function tokenize(source: string): Token[] {
       ",": TT.COMMA,
       ".": TT.DOT,
       "\\": TT.BACKSLASH,
+      ":": TT.COLON,
+      "?": TT.QUESTION,
       "-": TT.MINUS,
     };
     if (singles[source[i]]) {

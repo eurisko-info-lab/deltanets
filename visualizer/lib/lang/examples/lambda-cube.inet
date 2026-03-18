@@ -1,0 +1,183 @@
+# ═══════════════════════════════════════════════════════════════════
+# The Lambda Cube — Interaction Net Systems via Pushout Composition
+#
+# The lambda cube (Barendregt 1991) organizes typed lambda calculi
+# along three axes of abstraction:
+#
+#        λC (Calculus of Constructions)
+#       /|
+#      / |
+#    λPω λP2
+#    /| /|
+#   / |/ |
+#  λω λP |
+#  |  | λ2 (System F)
+#  |  |/
+#  λω̲ |     ← λω̲ = type operators only
+#   \ |
+#    \|
+#    λ→ (STLC)
+#
+# Three axes:
+#   λ→ → λ2   Polymorphism    — terms depend on types  (Λα.t, t[A])
+#   λ→ → λP   Dependent types — types depend on terms  (Π(x:A).B)
+#   λ→ → λω̲   Type operators  — types depend on types  (λα:κ.T)
+#
+# Each axis is a system that extends the base. Full corners of the
+# cube are pushout compositions identifying shared structure.
+#
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── Base: λ→ (Simply-Typed Lambda Calculus) ─────────────────────
+# The foundation of the cube. Types classify terms, no dependency.
+# Agents: term-level abs/app + type-level arrow/base/hole.
+
+system "λ→" {
+  # Term agents
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+
+  # Type agents
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+
+  # β-reduction
+  rule abs <> app -> annihilate
+}
+
+# ─── Axis 1: Polymorphism (λ→ → λ2) ─────────────────────────────
+# System F: terms can abstract over types.
+#   Λα.t    — type abstraction (binds a type variable in a term)
+#   t [A]   — type application (instantiates a type abstraction)
+#   ∀α.T    — universal type   (type of a polymorphic term)
+#
+# The ∀-type agent plays the role of Π in the types-over-types
+# dimension, but here it quantifies a type variable in a term's type.
+
+system "Poly" extend "λ→" {
+  agent tyabs(principal, body, bind)         # Λα.t
+  agent tyapp(principal, result, arg)        # t [A]
+  agent forall(principal, body, bind)        # ∀α.T
+
+  # Type-level β: (Λα.t)[A] → t[α := A]
+  rule tyabs <> tyapp -> annihilate
+}
+
+# ─── Axis 2: Dependent Types (λ→ → λP) ──────────────────────────
+# LF / λP: types can depend on terms.
+#   Π(x:A).B  — dependent function type (generalises →)
+#   Σ(x:A).B  — dependent pair type
+#   pair, fst, snd — introduction/elimination for Σ
+#
+# When B doesn't mention x, Π(x:A).B degenerates to A → B.
+
+system "Dependent" extend "λ→" {
+  agent pi(principal, domain, codomain)      # Π(x:A).B
+  agent sigma(principal, fst-type, snd-type) # Σ(x:A).B
+  agent pair(principal, fst, snd)            # (a, b)
+  agent fst(principal, result)               # π₁
+  agent snd(principal, result)               # π₂
+
+  # Σ-elimination: fst/snd meet pair
+  rule fst <> pair -> annihilate
+  rule snd <> pair -> annihilate
+}
+
+# ─── Axis 3: Type Operators (λ→ → λω̲) ───────────────────────────
+# λω̲: types can abstract over types (type-level functions).
+#   λα:κ.T — type-level abstraction
+#   T A    — type-level application
+#   κ → κ  — kind arrow (classifies type operators)
+#
+# Example: the type operator List = λα:*.α → ... constructs
+# List Nat, List Bool, etc.
+
+system "TyOp" extend "λ→" {
+  agent type-abs(principal, body, bind)      # λα:κ.T
+  agent type-app(principal, result, arg)     # F A
+  agent kind-star(principal)                 # * (kind of types)
+  agent kind-arrow(principal, domain, codomain)  # κ₁ → κ₂
+
+  # Type-level β: (λα.T)[A] → T[α := A]
+  rule type-abs <> type-app -> annihilate
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Cube Corners via Pushout Composition
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── λ2 = System F ──────────────────────────────────────────────
+# Just the polymorphism axis (already defined as "Poly" above).
+# Included here for completeness as a named corner.
+
+# ─── λP2 = Polymorphic Dependent Types ──────────────────────────
+# Types depend on terms AND terms depend on types.
+
+system "λP2" = compose "Poly" + "Dependent" {
+  # Cross-rules: polymorphic eliminators meet dependent pairs
+  rule tyabs <> fst -> erase
+  rule tyabs <> snd -> erase
+}
+
+# ─── λPω = Dependent Type Operators ─────────────────────────────
+# Types depend on terms AND types depend on types.
+
+system "λPω" = compose "Dependent" + "TyOp" {
+  # The Π type and type operators share the type-level structure.
+  # Cross-rule: type-level β interacts with dependent eliminators
+  rule type-abs <> fst -> erase
+  rule type-abs <> snd -> erase
+}
+
+# ─── λω = System Fω (Higher-Order Polymorphism) ─────────────────
+# Terms depend on types AND types depend on types.
+
+system "λω" = compose "Poly" + "TyOp" {
+  # Type abstractions at term and type levels share the same
+  # annihilation semantics but at different strata.
+  # Cross-rule: term-level type application meets type operator
+  rule tyapp <> type-abs -> annihilate
+}
+
+# ─── λC = Calculus of Constructions ──────────────────────────────
+# All three axes: the apex of the cube.
+# λC = Poly + Dependent + TyOp with full cross-interaction.
+
+system "λC" = compose "Poly" + "Dependent" + "TyOp" {
+  # Cross-rules from each pairwise composition
+  rule tyabs <> fst -> erase
+  rule tyabs <> snd -> erase
+  rule type-abs <> fst -> erase
+  rule type-abs <> snd -> erase
+  rule tyapp <> type-abs -> annihilate
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Example Terms
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── λ→ terms (STLC) ─────────────────────────────────────────────
+
+def I = \x:A.x                          # id : A → A
+def K = \x:A.\y:B.x                     # const : A → B → A
+def S = \f:A -> B -> C.\g:A -> B.\x:A.f x (g x)
+def Church2 = \f:A -> A.\x:A.f (f x)    # 2 : (A→A) → A → A
+
+# ─── λ→ graphs ───────────────────────────────────────────────────
+
+graph stlc-identity = term I
+graph stlc-const = term K
+graph stlc-s-combinator = term S
+graph stlc-church-two = term Church2
+graph stlc-apply-id = term (\f:A -> B.\x:A.f x) (\y:A.y)
+
+# ─── Untyped examples for comparison ─────────────────────────────
+
+def Omega = (\x.x x) (\x.x x)          # No STLC type (self-app)
+def Y = \f.(\x.f (x x)) (\x.f (x x))   # Fixpoint (untypeable in λ→)
+
+graph omega = term Omega
+graph y-combinator = term Y

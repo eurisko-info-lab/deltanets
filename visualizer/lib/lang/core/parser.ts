@@ -26,9 +26,11 @@
 //   eraseStmt    = "erase" portRef
 //   portRef      = IDENT "." IDENT | IDENT "." NUMBER
 //                | "left" "." IDENT | "right" "." IDENT
-//   lamExpr      = "\" IDENT "." lamExpr | appExpr
+//   lamExpr      = "\" IDENT (":" typeExpr)? "." lamExpr | appExpr
 //   appExpr      = atomExpr+
 //   atomExpr     = IDENT | "(" lamExpr ")"
+//   typeExpr     = typeAtom ("->" typeExpr)?
+//   typeAtom     = "?" | IDENT | "(" typeExpr ")"
 // ═══════════════════════════════════════════════════════════════════
 
 import { TT } from "./lexer.ts";
@@ -326,9 +328,14 @@ class Parser {
     if (this.check(TT.BACKSLASH)) {
       this.advance();
       const param = this.eatIdent();
+      let typeAnnotation: AST.TypeExpr | undefined;
+      if (this.check(TT.COLON)) {
+        this.advance();
+        typeAnnotation = this.parseTypeExpr();
+      }
       this.eat(TT.DOT);
       const body = this.parseLamExpr();
-      return { kind: "lam", param, body };
+      return { kind: "lam", param, typeAnnotation, body };
     }
     return this.parseAppExpr();
   }
@@ -356,6 +363,33 @@ class Parser {
     }
     const name = this.eatIdent();
     return { kind: "var", name };
+  }
+
+  // ─── Type expressions ────────────────────────────────────────────
+
+  parseTypeExpr(): AST.TypeExpr {
+    const left = this.parseTypeAtom();
+    if (this.check(TT.ARROW)) {
+      this.advance();
+      const right = this.parseTypeExpr();
+      return { kind: "type-arrow", from: left, to: right };
+    }
+    return left;
+  }
+
+  parseTypeAtom(): AST.TypeExpr {
+    if (this.check(TT.QUESTION)) {
+      this.advance();
+      return { kind: "type-hole" };
+    }
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      const ty = this.parseTypeExpr();
+      this.eat(TT.RPAREN);
+      return ty;
+    }
+    const name = this.eatIdent();
+    return { kind: "type-base", name };
   }
 }
 

@@ -149,6 +149,7 @@ export type LamExpr =
 export type LamAbs = {
   kind: "lam";
   param: string;
+  typeAnnotation?: TypeExpr;
   body: LamExpr;
 };
 
@@ -161,4 +162,25 @@ export type LamApp = {
 export type LamVar = {
   kind: "var";
   name: string;
+};
+
+// Type expressions for annotations
+export type TypeExpr =
+  | TypeBase
+  | TypeArrow
+  | TypeHole;
+
+export type TypeBase = {
+  kind: "type-base";
+  name: string;
+};
+
+export type TypeArrow = {
+  kind: "type-arrow";
+  from: TypeExpr;
+  to: TypeExpr;
+};
+
+export type TypeHole = {
+  kind: "type-hole";
 };

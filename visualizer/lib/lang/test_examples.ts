@@ -20,6 +20,8 @@ let ok = true;
 ok = await testFile("lib/lang/examples/deltanets.inet", compileCore) && ok;
 ok = await testFile("lib/lang/examples/deltanets-composed.inet", compileCore) && ok;
 ok = await testFile("lib/lang/examples/lambda.inet", compileCore) && ok;
+ok = await testFile("lib/lang/examples/typing.inet", compileCore) && ok;
+ok = await testFile("lib/lang/examples/lambda-cube.inet", compileCore) && ok;
 
 // View examples
 ok = await testFile("lib/lang/examples/deltanets.iview", compileView) && ok;

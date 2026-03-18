@@ -252,6 +252,121 @@ graph church-two = term Church2
 graph and-true-false = term And T F
 graph two-squared-twice = term (\\a.a (a a)) (\\f.\\x.f (f x))`,
   },
+  {
+    name: "INet: Typing (STLC)",
+    code: `# Simply-Typed Lambda Calculus — Typing Examples
+# Type annotations: \\x:T.body   Types: base (A, Nat), arrow (A -> B), hole (?)
+
+system "STLC" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+  rule abs <> app -> annihilate
+}
+
+# Identity: Bool → Bool
+def id-bool = \\x:Bool.x
+
+# Constant: A → B → A
+def const = \\x:A.\\y:B.x
+
+# Apply: (A → B) → A → B
+def apply = \\f:A -> B.\\x:A.f x
+
+# Flip: (A → B → C) → B → A → C
+def flip = \\f:A -> B -> C.\\y:B.\\x:A.f x y
+
+# Church booleans
+def true  = \\x:A.\\y:B.x
+def false = \\x:A.\\y:B.y
+
+# Church numerals: (Nat → Nat) → Nat → Nat
+def zero  = \\f:Nat -> Nat.\\x:Nat.x
+def two   = \\f:Nat -> Nat.\\x:Nat.f (f x)
+def succ  = \\n:?.\\f:Nat -> Nat.\\x:Nat.f (n f x)
+
+graph typed-identity = term id-bool
+graph typed-const = term const
+graph typed-apply = term apply
+graph typed-church-two = term two
+graph typed-succ-two = term succ two
+graph typed-flip = term flip`,
+  },
+  {
+    name: "INet: Lambda Cube",
+    code: `# The Lambda Cube — typed systems via pushout composition
+# Three axes beyond λ→: polymorphism, dependent types, type operators.
+# Each axis is a system; cube corners are compositions.
+
+system "λ→" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+  rule abs <> app -> annihilate
+}
+
+# Axis 1: Polymorphism (System F) — terms abstract over types
+system "Poly" extend "λ→" {
+  agent tyabs(principal, body, bind)
+  agent tyapp(principal, result, arg)
+  agent forall(principal, body, bind)
+  rule tyabs <> tyapp -> annihilate
+}
+
+# Axis 2: Dependent types (λP) — types depend on terms
+system "Dependent" extend "λ→" {
+  agent pi(principal, domain, codomain)
+  agent sigma(principal, fst-type, snd-type)
+  agent pair(principal, fst, snd)
+  agent fst(principal, result)
+  agent snd(principal, result)
+  rule fst <> pair -> annihilate
+  rule snd <> pair -> annihilate
+}
+
+# Axis 3: Type operators (λω̲) — types depend on types
+system "TyOp" extend "λ→" {
+  agent type-abs(principal, body, bind)
+  agent type-app(principal, result, arg)
+  agent kind-star(principal)
+  agent kind-arrow(principal, domain, codomain)
+  rule type-abs <> type-app -> annihilate
+}
+
+# Apex: Calculus of Constructions = all three axes
+system "λC" = compose "Poly" + "Dependent" + "TyOp" {
+  rule tyabs <> fst -> erase
+  rule tyabs <> snd -> erase
+  rule type-abs <> fst -> erase
+  rule type-abs <> snd -> erase
+  rule tyapp <> type-abs -> annihilate
+}
+
+# Typed terms
+def I = \\x:A.x
+def K = \\x:A.\\y:B.x
+def S = \\f:A -> B -> C.\\g:A -> B.\\x:A.f x (g x)
+def Church2 = \\f:A -> A.\\x:A.f (f x)
+
+# Untypeable in λ→
+def Omega = (\\x.x x) (\\x.x x)
+def Y = \\f.(\\x.f (x x)) (\\x.f (x x))
+
+graph typed-identity = term I
+graph typed-s-comb = term S
+graph typed-church-two = term Church2
+graph apply-id = term (\\f:A -> B.\\x:A.f x) (\\y:A.y)
+graph omega = term Omega
+graph y-combinator = term Y`,
+  },
 ];
 
 export default examples;

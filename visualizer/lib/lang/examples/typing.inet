@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════════
+# Simply-Typed Lambda Calculus (STLC) — Typing Examples
+#
+# Type annotations use the syntax:  \x:T.body
+# Types: base names (A, B, Nat, Bool), arrows (A -> B), holes (?)
+#
+# The type checker infers types where possible and verifies
+# consistency of annotations via the interaction net type graph.
+# ═══════════════════════════════════════════════════════════════════
+
+system "STLC" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+
+  # Type agents for the interaction net
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+
+  rule abs <> app -> annihilate
+}
+
+# ─── Typed Definitions ────────────────────────────────────────────
+
+# Identity: A → A
+def id-bool = \x:Bool.x
+
+# Constant: A → B → A
+def const = \x:A.\y:B.x
+
+# Apply: (A → B) → A → B
+def apply = \f:A -> B.\x:A.f x
+
+# Flip: (A → B → C) → B → A → C
+def flip = \f:A -> B -> C.\y:B.\x:A.f x y
+
+# Church booleans with Bool type
+def true  = \x:A.\y:B.x
+def false = \x:A.\y:B.y
+
+# Church numerals with (Nat → Nat) → Nat → Nat
+def zero  = \f:Nat -> Nat.\x:Nat.x
+def one   = \f:Nat -> Nat.\x:Nat.f x
+def two   = \f:Nat -> Nat.\x:Nat.f (f x)
+def three = \f:Nat -> Nat.\x:Nat.f (f (f x))
+def succ  = \n:?.\f:Nat -> Nat.\x:Nat.f (n f x)
+
+# Partially typed — holes where inference can fill in
+def id-hole = \x:?.x
+def app-hole = \f:?.\x:?.f x
+
+# ─── Graphs ──────────────────────────────────────────────────────
+
+graph typed-identity = term id-bool
+graph typed-const = term const
+graph typed-apply = term apply
+graph typed-church-two = term two
+graph typed-succ-two = term succ two
+graph typed-flip = term flip
