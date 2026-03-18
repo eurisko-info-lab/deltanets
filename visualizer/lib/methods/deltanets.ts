@@ -17,17 +17,11 @@ import {
   type Node,
   type NodePort,
   type Redex,
-  buildGraph,
-  cleanupGraph,
-  countAuxErasers,
-  findReachableNodes,
-  getRedex,
-  getRedexes,
-  isConnectedToAllErasers,
-  isParentPort,
-  levelColor,
   reciprocal,
+  deltanets,
 } from "../core/index.ts";
+
+const { buildGraph, cleanupGraph, countAuxErasers, findReachableNodes, getRedex, getRedexes, isConnectedToAllErasers, isParentPort, levelColor } = deltanets;
 
 // Δ-Nets (absolute indexes)
 const method: Method<Graph, Data> = {

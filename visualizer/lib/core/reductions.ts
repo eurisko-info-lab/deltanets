@@ -1,5 +1,9 @@
+// Universal interaction net reduction primitives.
+// These implement the three fundamental reduction patterns shared by all interaction net systems.
+
 import { removeFromArrayIf } from "../util.ts";
-import { Graph, Node, NodePort, link, parseRepLabel, formatRepLabel } from "./graph.ts";
+import type { Graph, Node } from "./types.ts";
+import { link } from "./graph.ts";
 
 // Annihilates two interacting nodes
 export function reduceAnnihilate(node: Node, graph: Graph) {
@@ -97,45 +101,4 @@ export function reduceCommute(node: Node, graph: Graph) {
 
   // Return the new nodes in case the caller wants to do something with them
   return { nodeClones, otherClones };
-}
-
-// Reduces a fan and the node connected to its first auxiliary port (parent port).
-export function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
-  const firstAuxNode = node.ports[1].node;
-
-  if (firstAuxNode.type === "era") {
-    // Create a new eraser and link it to the node connected to the principal port
-    const newEraser0: any = { type: "era", ports: [] };
-    graph.push(newEraser0);
-    link({ node: newEraser0, port: 0 }, node.ports[0]);
-
-    // Create a new eraser and link it to the node connected to the second auxiliary port
-    const newEraser1: any = { type: "era", ports: [] };
-    graph.push(newEraser1);
-    link({ node: newEraser1, port: 0 }, node.ports[2]);
-
-    // Remove the fan node
-    removeFromArrayIf(graph, (n) => (n === node) || (n === firstAuxNode));
-  } else if (firstAuxNode.type.startsWith("rep")) {
-
-    const origPorts = [...node.ports];
-    link({ node, port: 0 }, origPorts[1]);
-    link({ node, port: 1 }, origPorts[2]);
-    link({ node, port: 2 }, origPorts[0]);
-
-    const { nodeClones, otherClones } = reduceCommute(node, graph);
-
-    if (relativeLevel) {
-      const repLevel = parseRepLabel(otherClones[1].label!).level;
-      otherClones[0].label = formatRepLabel(repLevel + 1, "unknown");
-    }
-
-    // Modify all clones of the application node back to the original port configuration
-    nodeClones.forEach((nodeClone) => {
-      const origPorts = [...nodeClone.ports];
-      link({ node: nodeClone, port: 0 }, origPorts[2]);
-      link({ node: nodeClone, port: 1 }, origPorts[0]);
-      link({ node: nodeClone, port: 2 }, origPorts[1]);
-    });
-  }
 }
