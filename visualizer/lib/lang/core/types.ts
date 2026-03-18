@@ -7,6 +7,8 @@ export type Program = Statement[];
 
 export type Statement =
   | SystemDecl
+  | ExtendDecl
+  | ComposeDecl
   | AgentDecl
   | RuleDecl
   | ModeDecl
@@ -18,6 +20,23 @@ export type SystemDecl = {
   kind: "system";
   name: string;
   body: (AgentDecl | RuleDecl | ModeDecl)[];
+};
+
+// system "B" extend "A" { agent..., rule..., mode... }
+export type ExtendDecl = {
+  kind: "extend";
+  name: string;         // new system name
+  base: string;         // system to extend
+  body: (AgentDecl | RuleDecl | ModeDecl)[];
+};
+
+// system "C" = compose "A" + "B" { rule... }
+// The pushout: union agents from A and B, union rules, add cross-rules
+export type ComposeDecl = {
+  kind: "compose";
+  name: string;         // new system name
+  components: string[]; // systems to compose (≥2)
+  body: (AgentDecl | RuleDecl | ModeDecl)[];  // cross-interaction rules
 };
 
 // agent name(port, port, ..variadicPort)

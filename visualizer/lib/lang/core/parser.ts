@@ -4,9 +4,11 @@
 //
 // Grammar:
 //   program      = statement*
-//   statement    = systemDecl | agentDecl | ruleDecl | modeDecl
-//                | graphDecl | defDecl
+//   statement    = systemDecl | extendDecl | composeDecl | agentDecl
+//                | ruleDecl | modeDecl | graphDecl | defDecl
 //   systemDecl   = "system" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
+//   extendDecl   = "system" STRING "extend" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
+//   composeDecl  = "system" STRING "=" "compose" STRING ("+" STRING)* "{" (agentDecl | ruleDecl | modeDecl)* "}"
 //   agentDecl    = "agent" IDENT "(" portList ")"
 //   portList     = portDef ("," portDef)*
 //   portDef      = ".." IDENT | IDENT
@@ -88,7 +90,7 @@ class Parser {
   parseStatement(): AST.Statement {
     const tok = this.peek();
     switch (tok.type) {
-      case TT.SYSTEM: return this.parseSystemDecl();
+      case TT.SYSTEM: return this.parseSystemOrExtendOrCompose();
       case TT.AGENT:  return this.parseAgentDecl();
       case TT.RULE:   return this.parseRuleDecl();
       case TT.MODE:   return this.parseModeDecl();
@@ -99,11 +101,39 @@ class Parser {
     }
   }
 
-  // ─── System ──────────────────────────────────────────────────────
+  // ─── System / Extend / Compose ───────────────────────────────────
 
-  parseSystemDecl(): AST.SystemDecl {
+  parseSystemOrExtendOrCompose(): AST.SystemDecl | AST.ExtendDecl | AST.ComposeDecl {
     this.eat(TT.SYSTEM);
     const name = this.eat(TT.STRING).value;
+
+    // system "B" extend "A" { ... }
+    if (this.check(TT.EXTEND)) {
+      this.advance();
+      const base = this.eat(TT.STRING).value;
+      const body = this.parseSystemBody();
+      return { kind: "extend", name, base, body };
+    }
+
+    // system "C" = compose "A" + "B" + ... { ... }
+    if (this.check(TT.EQ)) {
+      this.advance();
+      this.eat(TT.COMPOSE);
+      const components: string[] = [this.eat(TT.STRING).value];
+      while (this.check(TT.PLUS)) {
+        this.advance();
+        components.push(this.eat(TT.STRING).value);
+      }
+      const body = this.parseSystemBody();
+      return { kind: "compose", name, components, body };
+    }
+
+    // system "X" { ... }
+    const body = this.parseSystemBody();
+    return { kind: "system", name, body };
+  }
+
+  parseSystemBody(): (AST.AgentDecl | AST.RuleDecl | AST.ModeDecl)[] {
     this.eat(TT.LBRACE);
     const body: (AST.AgentDecl | AST.RuleDecl | AST.ModeDecl)[] = [];
     while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
@@ -114,7 +144,7 @@ class Parser {
       else throw new ParseError(`Expected agent/rule/mode, got '${tok.value}'`, tok.line, tok.col);
     }
     this.eat(TT.RBRACE);
-    return { kind: "system", name, body };
+    return body;
   }
 
   // ─── Agent ───────────────────────────────────────────────────────

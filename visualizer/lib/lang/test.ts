@@ -60,6 +60,89 @@ if (coreResult.errors.length > 0) {
 
 // ─── Test View Language ────────────────────────────────────────────
 
+// ─── Test Composition (Pushout) ────────────────────────────────────
+
+const composeSource = `
+system "Lambda" {
+  agent abs(principal, body, bind)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+  rule abs <> app -> annihilate
+  mode linear = {}
+}
+
+system "Erasable" extend "Lambda" {
+  agent era(principal)
+  rule abs <> era -> erase
+  rule app <> era -> erase
+  mode affine = {}
+}
+
+system "Replicable" extend "Lambda" {
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+  rule rep-in <> rep-out -> annihilate
+  rule rep-in <> rep-in -> commute
+  rule app <> rep-out -> aux-fan
+  mode relevant = {}
+}
+
+system "Δ-Nets" = compose "Erasable" + "Replicable" {
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+  mode full = {}
+}
+`;
+
+console.log("\n═══ Composition (Pushout) ═══");
+const compResult = compileCore(composeSource);
+
+if (compResult.errors.length > 0) {
+  console.error("Errors:", compResult.errors);
+  Deno.exit(1);
+} else {
+  const dnets = compResult.systems.get("Δ-Nets");
+  if (!dnets) { console.error("Missing Δ-Nets system!"); Deno.exit(1); }
+
+  const agentNames = [...dnets.agents.keys()].sort();
+  console.log("Agents:", agentNames.join(", "));
+  console.log("Rules:", dnets.rules.length);
+  console.log("Modes:", [...dnets.modes.keys()].join(", "));
+
+  // Verify the composed system has all expected agents
+  const expected = ["abs", "app", "era", "rep-in", "rep-out", "root", "var"];
+  const missing = expected.filter((a) => !dnets.agents.has(a));
+  if (missing.length > 0) { console.error("Missing agents:", missing); Deno.exit(1); }
+
+  // Verify it has the expected cross-rules (era<>rep-in, era<>rep-out)
+  const crossRules = dnets.rules.filter(
+    (r) => (r.agentA === "rep-in" || r.agentA === "rep-out") && r.agentB === "era",
+  );
+  if (crossRules.length !== 2) {
+    console.error("Expected 2 cross-rules, got", crossRules.length);
+    Deno.exit(1);
+  }
+
+  // Verify Lambda system standalone
+  const lambda = compResult.systems.get("Lambda");
+  if (!lambda) { console.error("Missing Lambda system!"); Deno.exit(1); }
+  console.log("Lambda agents:", [...lambda.agents.keys()].join(", "));
+  console.log("Lambda rules:", lambda.rules.length);
+
+  // Verify Erasable extends Lambda
+  const erasable = compResult.systems.get("Erasable");
+  if (!erasable) { console.error("Missing Erasable system!"); Deno.exit(1); }
+  if (!erasable.agents.has("abs")) {
+    console.error("Erasable should inherit abs from Lambda"); Deno.exit(1);
+  }
+  console.log("Erasable agents:", [...erasable.agents.keys()].sort().join(", "));
+
+  console.log("✓ Composition test passed.");
+}
+
+// ─── Test View Language ────────────────────────────────────────────
+
 const viewSource = `
 use "test.inet"
 

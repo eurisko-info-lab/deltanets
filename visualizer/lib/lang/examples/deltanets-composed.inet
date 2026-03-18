@@ -1,0 +1,108 @@
+# ═══════════════════════════════════════════════════════════════════
+# Δ-Nets as a Pushout Composition
+#
+# The delta-nets system decomposes into three components:
+#
+#   Lambda      — core beta-reduction (abs, app, var, root)
+#   Erasable    — garbage collection (era)
+#   Replicable  — sharing / duplication (rep-in, rep-out)
+#
+# Composition identifies shared agents across cross-interaction
+# rules, forming a categorical pushout (colimit):
+#
+#   Δ-Nets = Lambda + Erasable + Replicable
+#
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── Component 1: Lambda ──────────────────────────────────────────
+# Pure lambda calculus with β-reduction only.
+
+system "Lambda" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+
+  # Type system agents
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+
+  # β-reduction: abstraction meets application
+  rule abs <> app -> annihilate
+
+  mode linear = {}
+}
+
+# ─── Component 2: Erasable ────────────────────────────────────────
+# Extends Lambda with garbage collection.
+
+system "Erasable" extend "Lambda" {
+  agent era(principal)
+
+  # Eraser propagates through all agents
+  rule abs <> era -> erase
+  rule app <> era -> erase
+
+  mode affine = {}
+}
+
+# ─── Component 3: Replicable ─────────────────────────────────────
+# Extends Lambda with sharing / duplication.
+
+system "Replicable" extend "Lambda" {
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+
+  # Same-level replicator pair cancels
+  rule rep-in <> rep-out -> annihilate
+
+  # Different-level replicators commute (swap + clone)
+  rule rep-in <> rep-in -> commute
+
+  # Application meets replicator: rotate ports then commute
+  rule app <> rep-out -> aux-fan
+
+  mode relevant = {}
+}
+
+# ─── Pushout: Δ-Nets ─────────────────────────────────────────────
+# Compose the three systems. The pushout identifies the shared
+# agents (abs, app, var, root) from each component and adds
+# cross-interaction rules between erasable and replicable agents.
+
+system "Δ-Nets" = compose "Erasable" + "Replicable" {
+  # Cross-rules: erasers meet replicators
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+
+  # Full mode = all agents enabled
+  mode full = {}
+}
+
+# ─── Lambda Term Definitions ─────────────────────────────────────
+
+def I = \x.x
+def T = \x.\y.x
+def F = \x.\y.y
+def And = \p.\q.p q p
+def Or = \p.\q.p p q
+def Not = \p.p F T
+def Omega = (\x.x x) (\x.x x)
+def Church2 = \f.\x.f (f x)
+
+# ─── Graphs ──────────────────────────────────────────────────────
+
+graph identity = term I
+graph church-two = term Church2
+graph and-true-false = term And T F
+graph omega = term Omega
+graph two-squared-twice = term (\a.a (a a)) (\f.\x.f (f x))
+
+graph manual-identity {
+  let r   = root
+  let a   = abs "λx"
+  let e   = era
+  wire r.principal -- a.principal
+  wire a.bind      -- a.body
+}

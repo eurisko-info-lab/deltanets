@@ -199,6 +199,59 @@ graph two-plus-three = term Plus Two Three
 graph two-times-three = term Mult Two Three
 graph ski-identity = term S K K`,
   },
+  {
+    name: "INet: Δ-Nets (Composed)",
+    code: `# Δ-Nets as a Pushout Composition
+# The delta-nets system decomposes into three components:
+#   Lambda      — core beta-reduction (abs, app, var, root)
+#   Erasable    — garbage collection (era)
+#   Replicable  — sharing / duplication (rep-in, rep-out)
+#
+# Composition via categorical pushout:
+#   Δ-Nets = Lambda + Erasable + Replicable
+
+system "Lambda" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+  rule abs <> app -> annihilate
+  mode linear = {}
+}
+
+system "Erasable" extend "Lambda" {
+  agent era(principal)
+  rule abs <> era -> erase
+  rule app <> era -> erase
+  mode affine = {}
+}
+
+system "Replicable" extend "Lambda" {
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+  rule rep-in <> rep-out -> annihilate
+  rule rep-in <> rep-in -> commute
+  rule app <> rep-out -> aux-fan
+  mode relevant = {}
+}
+
+system "Δ-Nets" = compose "Erasable" + "Replicable" {
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+  mode full = {}
+}
+
+def I = \\x.x
+def T = \\x.\\y.x
+def F = \\x.\\y.y
+def And = \\p.\\q.p q p
+def Church2 = \\f.\\x.f (f x)
+
+graph identity = term I
+graph church-two = term Church2
+graph and-true-false = term And T F
+graph two-squared-twice = term (\\a.a (a a)) (\\f.\\x.f (f x))`,
+  },
 ];
 
 export default examples;

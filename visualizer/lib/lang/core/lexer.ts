@@ -21,11 +21,14 @@ export const TT = {
   AUX_FAN: "AUX_FAN",
   LEFT: "LEFT",
   RIGHT: "RIGHT",
+  EXTEND: "EXTEND",
+  COMPOSE: "COMPOSE",
   // Operators
   INTERACT: "INTERACT",   // <>
   ARROW: "ARROW",         // ->
   WIRE_OP: "WIRE_OP",     // --
   EQ: "EQ",               // =
+  PLUS: "PLUS",           // +
   LPAREN: "LPAREN",
   RPAREN: "RPAREN",
   LBRACE: "LBRACE",
@@ -69,6 +72,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   "aux-fan": TT.AUX_FAN,
   left: TT.LEFT,
   right: TT.RIGHT,
+  extend: TT.EXTEND,
+  compose: TT.COMPOSE,
 };
 
 export class LexError extends Error {
@@ -135,6 +140,7 @@ export function tokenize(source: string): Token[] {
     // Single-character operators
     const singles: Record<string, TokenKind> = {
       "=": TT.EQ,
+      "+": TT.PLUS,
       "(": TT.LPAREN,
       ")": TT.RPAREN,
       "{": TT.LBRACE,
