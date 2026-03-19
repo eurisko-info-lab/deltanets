@@ -6,7 +6,7 @@ import { type Data } from "./config.ts";
 import { render } from "./render.ts";
 
 export { agentStyles, isExprAgentFromStyles, getRole, typeReductionMode } from "./config.ts";
-export { applyReduction } from "./render.ts";
+export { applyReduction } from "./reduction.ts";
 
 type State = MethodState<Graph, Data>;
 
