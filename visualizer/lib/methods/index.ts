@@ -4,7 +4,7 @@ import { Node2D } from "../render.ts";
 import { Signal } from "@preact/signals";
 
 import lambdacalc from "./lambdacalc.ts";
-import deltanets from "./deltanets.ts";
+import deltanets from "./deltanets/index.ts";
 
 // Export all methods
 export const METHODS: Record<string, Method<any, any>> = {

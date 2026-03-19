@@ -5,7 +5,7 @@ import { typeCheck, hasTypeAnnotations, generateTypeCheckSteps, tagAstWithTypeCh
 import type { TypeResult, TypeCheckStep } from "./core/index.ts";
 import { Node2D, Pos } from "./render.ts";
 import { METHODS } from "./methods/index.ts";
-import { typeReductionMode, agentStyles } from "./methods/deltanets.ts";
+import { typeReductionMode, agentStyles } from "./methods/deltanets/index.ts";
 import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "./lang/bridge.ts";
 import type { CoreResult } from "./lang/core/index.ts";
 

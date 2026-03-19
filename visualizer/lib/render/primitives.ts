@@ -1,0 +1,381 @@
+import * as d3 from "d3";
+import {
+  Node2D, D, DEFAULT_LINE_WIDTH, OPTIMAL_HIGHLIGHT_COLOR,
+  applyEntries, defaultStroke, defaultFill,
+  type Pos, type SVG,
+} from "./core.ts";
+
+// Some text.
+export class Text extends Node2D {
+  value: string;
+  attrs: Record<string, any>;
+  styles: Record<string, any>;
+  eventHandlers: Record<string, any>;
+
+  constructor(
+    value: string = "",
+    attrs: Record<string, any> = {},
+    styles: Record<string, any> = {},
+    eventHandlers: Record<string, any> = {},
+  ) {
+    super();
+    this.value = value;
+    this.attrs = attrs;
+    this.styles = styles;
+    this.eventHandlers = eventHandlers;
+  }
+
+  override renderSelf(
+    pos: Pos,
+    theme: "light" | "dark",
+    debug = false,
+  ): SVG | null {
+    const svg = d3
+      .create("svg:text")
+      .text(this.value)
+      .attr("x", pos.x)
+      .attr("y", pos.y)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", defaultStroke(theme))
+      .style("font-size", "20px")
+      .attr("font-family", "Libertinus")
+      .attr("pointer-events", "none");
+    applyEntries(svg, "attr", this.attrs);
+    applyEntries(svg, "style", this.styles);
+    applyEntries(svg, "on", this.eventHandlers);
+    return svg;
+  }
+}
+
+// A rectangle.
+export class Rect extends Node2D {
+  width: number;
+  height: number;
+  rx: number;
+  ry: number;
+  attrs: Record<string, any>;
+  styles: Record<string, any>;
+  eventHandlers: Record<string, any>;
+
+  constructor(
+    width: number,
+    height: number,
+    rx: number = 0,
+    ry: number = 0,
+    attrs: Record<string, any> = {},
+    styles: Record<string, any> = {},
+    eventHandlers: Record<string, any> = {},
+  ) {
+    super();
+    this.width = width;
+    this.height = height;
+    this.rx = rx;
+    this.ry = ry;
+    this.attrs = attrs;
+    this.styles = styles;
+    this.eventHandlers = eventHandlers;
+  }
+
+  override renderSelf(
+    pos: Pos,
+    theme: "light" | "dark",
+    debug = false,
+  ): SVG | null {
+    const svg = d3
+      .create("svg:rect")
+      .attr("x", pos.x)
+      .attr("y", pos.y)
+      .attr("width", this.width)
+      .attr("height", this.height)
+      .attr("rx", this.rx)
+      .attr("ry", this.ry)
+      .attr("fill", defaultFill(theme))
+      .attr("stroke", defaultStroke(theme))
+      .attr("stroke-width", DEFAULT_LINE_WIDTH);
+    applyEntries(svg, "attr", this.attrs);
+    applyEntries(svg, "style", this.styles);
+    applyEntries(svg, "on", this.eventHandlers);
+    return svg;
+  }
+}
+
+// A circle.
+export class Circle extends Node2D {
+  radius: number;
+  attrs: Record<string, any>;
+  styles: Record<string, any>;
+  eventHandlers: Record<string, any>;
+
+  constructor(
+    radius: number,
+    attrs: Record<string, any> = {},
+    styles: Record<string, any> = {},
+    eventHandlers: Record<string, any> = {},
+  ) {
+    super();
+    this.radius = radius;
+    this.attrs = attrs;
+    this.styles = styles;
+    this.eventHandlers = eventHandlers;
+  }
+
+  override renderSelf(
+    pos: Pos,
+    theme: "light" | "dark",
+    debug = false,
+  ): SVG | null {
+    const svg = d3
+      .create("svg:circle")
+      .attr("r", this.radius)
+      .attr("cx", pos.x)
+      .attr("cy", pos.y)
+      .attr("fill", defaultFill(theme))
+      .attr("stroke", defaultStroke(theme))
+      .attr("stroke-width", DEFAULT_LINE_WIDTH);
+    applyEntries(svg, "attr", this.attrs);
+    applyEntries(svg, "style", this.styles);
+    applyEntries(svg, "on", this.eventHandlers);
+    return svg;
+  }
+}
+
+// A path.
+export class Path extends Node2D {
+  path: d3.Path;
+  attrs: Record<string, any>;
+  styles: Record<string, any>;
+  eventHandlers: Record<string, any>;
+  translate = true;
+
+  constructor(
+    path: d3.Path = d3.path(),
+    attrs: Record<string, any> = {},
+    styles: Record<string, any> = {},
+    eventHandlers: Record<string, any> = {},
+  ) {
+    super();
+    this.path = path;
+    this.attrs = attrs;
+    this.styles = styles;
+    this.eventHandlers = eventHandlers;
+    this.attrs["stroke-linejoin"] = "round";
+  }
+
+  override renderSelf(
+    pos: Pos,
+    theme: "light" | "dark",
+    debug = false,
+  ): SVG | null {
+    const svg = d3
+      .create("svg:path")
+      .attr("d", this.path.toString())
+      .attr("fill", "none")
+      .attr("stroke", defaultStroke(theme))
+      .attr("stroke-width", DEFAULT_LINE_WIDTH);
+    if (this.translate) {
+      svg.attr("transform", `translate(${pos.x}, ${pos.y})`);
+    }
+    applyEntries(svg, "attr", this.attrs);
+    applyEntries(svg, "style", this.styles);
+    applyEntries(svg, "on", this.eventHandlers);
+    return svg;
+  }
+}
+
+// A label.
+export class Label extends Node2D {
+  public static readonly SIZE = 15;
+  public static readonly SIZE_HIGHLIGHT = 18;
+
+  text: Text;
+  mainRect: Rect;
+  highlightRect: Rect;
+  highlightColor?: string;
+
+  constructor(label: string = "") {
+    super();
+    this.text = new Text(label);
+    this.text.zIndex = 3;
+
+    // TODO: SCALE RECT TO TEXT SIZE
+    // const tempSVG = this.text.renderSelf();
+    // var bbox = tempSVG.getBBox(); // or getComputedTextLength()
+    // var width = bbox.width;
+    // var height = bbox.height;
+
+    this.mainRect = new Rect(
+      Label.SIZE * 2,
+      Label.SIZE * 2,
+      Label.SIZE,
+      Label.SIZE,
+      {},
+      { stroke: "none" },
+    );
+    this.mainRect.zIndex = 1;
+    this.mainRect.pos.x = -Label.SIZE;
+    this.mainRect.pos.y = -Label.SIZE;
+
+    this.highlightRect = new Rect(
+      Label.SIZE_HIGHLIGHT * 2,
+      Label.SIZE_HIGHLIGHT * 2,
+      Label.SIZE_HIGHLIGHT,
+      Label.SIZE_HIGHLIGHT,
+      { stroke: "none", display: "none" },
+    );
+    this.highlightRect.zIndex = 2;
+    this.highlightRect.pos.x = -18;
+    this.highlightRect.pos.y = -18;
+
+    this.add(this.mainRect);
+    this.add(this.highlightRect);
+    this.add(this.text);
+
+    this.bounds = {
+      min: { x: -D, y: -D },
+      max: { x: D, y: D },
+    };
+  }
+
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug?: boolean) {
+    this.highlightRect.attrs = {
+      ...this.highlightRect.attrs,
+      fill: this.highlightColor ?? OPTIMAL_HIGHLIGHT_COLOR,
+    };
+    if (this.highlightColor) {
+      this.highlightRect.attrs.display = "block";
+    }
+  }
+}
+
+// 8 ports equally distributed around the circle
+export type Port =
+  | "n" // north
+  | "ne" // north-east
+  | "e" // east
+  | "se" // south-east
+  | "s" // south
+  | "sw" // south-west
+  | "w" // weast
+  | "nw"; // north-west
+
+// A simple edge between two points, with optional bezier control points.
+export class Edge extends Node2D {
+  public static readonly PORT_SCALE = 35;
+
+  start: Pos;
+  end: Pos;
+  startPort?: Port;
+  endPort?: Port;
+  // Optional click handler
+  onClick?: () => void;
+  // Used to link a bound variable with its abstraction-application edge redex,
+  // for highlighting the bound variables when hovering over the redex.
+  className = "";
+
+  mainPath: Path;
+  highlightPath: Path;
+
+  constructor(
+    start: Pos,
+    end: Pos,
+    startPort?: Port,
+    endPort?: Port,
+    onClick?: () => void,
+  ) {
+    super();
+
+    this.start = start;
+    this.end = end;
+    this.startPort = startPort;
+    this.endPort = endPort;
+    this.onClick = onClick;
+
+    this.mainPath = new Path(d3.path());
+    this.mainPath.zIndex = 0;
+    this.add(this.mainPath);
+
+    this.highlightPath = new Path(d3.path());
+    this.highlightPath.zIndex = 2;
+    this.add(this.highlightPath);
+  }
+
+  portOffset(port: Port, s: number): Pos {
+    if (port === "n") {
+      return { x: 0, y: -s };
+    } else if (port === "ne") {
+      return { x: Math.SQRT1_2 * s, y: -Math.SQRT1_2 * s };
+    } else if (port === "e") {
+      return { x: s, y: 0 };
+    } else if (port === "se") {
+      return { x: Math.SQRT1_2 * s, y: Math.SQRT1_2 * s };
+    } else if (port === "s") {
+      return { x: 0, y: s };
+    } else if (port === "sw") {
+      return { x: -Math.SQRT1_2 * s, y: Math.SQRT1_2 * s };
+    } else if (port === "w") {
+      return { x: -s, y: 0 };
+    } else {
+      return { x: -Math.SQRT1_2 * s, y: -Math.SQRT1_2 * s }; // port === "nw"
+    }
+  }
+
+  override renderSelf(
+    pos: Pos,
+    theme: "light" | "dark",
+    debug = false,
+  ): SVG | null {
+    // Create path based on start and end points
+    const path = d3.path();
+    const deltaStart = this.startPort
+      ? this.portOffset(this.startPort, Edge.PORT_SCALE)
+      : undefined;
+    const deltaEnd = this.endPort
+      ? this.portOffset(this.endPort, Edge.PORT_SCALE)
+      : undefined;
+    path.moveTo(this.start.x, this.start.y);
+    if (deltaStart !== undefined || deltaEnd !== undefined) {
+      path.bezierCurveTo(
+        this.start.x + (deltaStart?.x ?? 0),
+        this.start.y + (deltaStart?.y ?? 0),
+        this.end.x + (deltaEnd?.x ?? 0),
+        this.end.y + (deltaEnd?.y ?? 0),
+        this.end.x,
+        this.end.y,
+      );
+    } else {
+      path.lineTo(this.end.x, this.end.y);
+    }
+
+    // Update the main Path
+    this.mainPath.path = path;
+
+    if (this.onClick) {
+      this.highlightPath.path = path;
+      this.highlightPath.attrs = {
+        stroke: OPTIMAL_HIGHLIGHT_COLOR,
+        "stroke-width": "36px",
+        "stroke-linecap": "round",
+      };
+      this.highlightPath.eventHandlers = {
+        click: this.onClick,
+        touchend: this.onClick,
+        mousedown: function () {
+          d3.select(this as any).attr("stroke-width", "36px");
+        },
+        mouseup: function () {
+          d3.select(this as any).attr("stroke-width", "40px");
+        },
+        mouseover: function () {
+          d3.select(this as any)
+            .attr("stroke-width", "40px")
+            .attr("cursor", "pointer");
+        },
+        mouseout: function () {
+          d3.select(this as any).attr("stroke-width", "36px");
+        },
+        ...this.highlightPath.eventHandlers,
+      };
+    }
+  }
+}

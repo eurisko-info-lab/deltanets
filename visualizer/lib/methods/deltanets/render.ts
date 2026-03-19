@@ -1,5 +1,5 @@
-import { batch, Signal, signal } from "@preact/signals";
-import { AstNode, SystemType } from "../ast.ts";
+import { batch, Signal } from "@preact/signals";
+import { AstNode, SystemType } from "../../ast.ts";
 import {
   D,
   Eraser,
@@ -13,89 +13,24 @@ import {
   TYPECHECK_DONE_COLOR,
   TYPECHECK_ERROR_COLOR,
   Wire,
-} from "../render.ts";
-import { Method, MethodState } from "./index.ts";
+} from "../../render.ts";
+import { MethodState } from "../index.ts";
 import {
   type Graph,
   type Node,
   type NodePort,
   type Redex,
-  Ports,
   reciprocal,
   deltanets,
-} from "../core/index.ts";
-import type { AgentStyleDef, AgentRole } from "../lang/view/evaluator.ts";
+} from "../../core/index.ts";
+import { agentStyles, isExprAgentFromStyles, getRole, typeReductionMode, type Data } from "./config.ts";
 
-const { buildGraph, cleanupGraph, countAuxErasers, findReachableNodes, getRedex, getRedexes, isConnectedToAllErasers, isParentPort, levelColor } = deltanets;
-
-// Agent visual styles from .iview files
-export const agentStyles = signal<Map<string, AgentStyleDef>>(new Map());
-
-// Style-aware isExprAgent: checks style level, falls back to hardcoded set
-const FALLBACK_EXPR_TYPES = new Set(["abs", "app", "var", "era", "root"]);
-export function isExprAgentFromStyles(type: string): boolean {
-  const style = agentStyles.peek().get(type);
-  if (style?.level) return style.level === "expr";
-  return FALLBACK_EXPR_TYPES.has(type) || type.startsWith("rep");
-}
-
-// Infer agent role from type name (fallback when no style is loaded)
-function inferRole(type: string): AgentRole | undefined {
-  if (type === "var" || type === "era" || type === "type-base" || type === "kind-star" || type === "type-hole") return "leaf";
-  if (type === "abs" || type === "tyabs" || type === "type-abs" || type === "forall") return "binder";
-  if (type === "app" || type === "tyapp" || type === "type-app") return "applicator";
-  if (type === "type-arrow" || type === "pi" || type === "sigma" || type === "kind-arrow" || type === "pair") return "type-constructor";
-  if (type === "fst" || type === "snd") return "destructor";
-  if (type.startsWith("rep")) return "replicator";
-  return undefined;
-}
-
-// Get the role for an agent, from style or fallback
-function getRole(type: string): AgentRole | undefined {
-  const style = agentStyles.peek().get(type);
-  return style?.role ?? inferRole(type);
-}
-
-// Type reduction mode: when true, only type-level redexes are active
-export const typeReductionMode = signal(false);
-
-// Δ-Nets (absolute indexes)
-const method: Method<Graph, Data> = {
-  name: "Δ-Nets (2025)",
-  state: signal(null),
-  init,
-  initFromGraph,
-  render,
-};
-export default method;
-
-type Data = { appliedFinalStep: boolean, isFinalStep: boolean };
+const { cleanupGraph, countAuxErasers, findReachableNodes, getRedex, getRedexes, isConnectedToAllErasers, isParentPort, levelColor } = deltanets;
 
 type State = MethodState<Graph, Data>;
 
-function init(ast: AstNode, systemType: SystemType, relativeLevel: boolean): State {
-  const graph = buildGraph(ast, systemType, relativeLevel);
-  return {
-    back: undefined,
-    forward: undefined,
-    idx: 0,
-    stack: [graph],
-    data: { appliedFinalStep: false, isFinalStep: false },
-  };
-}
-
-function initFromGraph(graph: Graph): State {
-  return {
-    back: undefined,
-    forward: undefined,
-    idx: 0,
-    stack: [graph],
-    data: { appliedFinalStep: false, isFinalStep: false },
-  };
-}
-
 // Renders the current state of the reduction process
-function render(
+export function render(
   state: Signal<State>,
   expression: Signal<string>,
   systemType: SystemType,
