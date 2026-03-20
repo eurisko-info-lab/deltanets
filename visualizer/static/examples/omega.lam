@@ -1,0 +1,2 @@
+# Ω (Non-Normalizing)
+(λa.a a) (λb.b b)

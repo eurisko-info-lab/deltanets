@@ -1,0 +1,41 @@
+# Δ-Nets system definition (.inet format)
+# This defines the complete delta-nets interaction system
+# with agents, rules, modes, definitions, and example graphs.
+# Use the graph selector dropdown to switch between graphs.
+
+system "delta-nets" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+  agent era(principal)
+  agent var(principal)
+  agent root(principal)
+
+  rule abs <> app -> annihilate
+  rule abs <> era -> erase
+  rule app <> era -> erase
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+  rule rep-in <> rep-out -> annihilate
+  rule rep-in <> rep-in -> commute
+  rule app <> rep-out -> aux-fan
+
+  mode linear   = { -era, -rep-in, -rep-out }
+  mode affine   = { -rep-in, -rep-out }
+  mode relevant = { -era }
+  mode full     = {}
+}
+
+def I = \x.x
+def T = \x.\y.x
+def F = \x.\y.y
+def And = \p.\q.p q p
+def Or = \p.\q.p p q
+def Not = \p.p F T
+def Church2 = \f.\x.f (f x)
+
+graph identity = term I
+graph church-two = term Church2
+graph and-true-false = term And T F
+graph two-squared-twice = term (\a.a (a a)) (\f.\x.f (f x))

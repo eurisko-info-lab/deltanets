@@ -1,0 +1,2 @@
+# Two Squared Twice
+(λa.a (a a)) λf.λx.f (f x)

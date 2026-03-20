@@ -1,0 +1,4 @@
+# Simply-Typed Lambda Calculus: Composition
+# compose : (B -> C) -> (A -> B) -> A -> C
+
+λf:B -> C.λg:A -> B.λx:A.f (g x)

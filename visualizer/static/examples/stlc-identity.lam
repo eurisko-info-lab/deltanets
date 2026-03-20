@@ -1,0 +1,6 @@
+# Simply-Typed Lambda Calculus: Identity
+# Type annotations are optional. Use ":" after the parameter name.
+# Use "->" or "→" for arrow types.
+
+# The polymorphic identity on Nat
+λx:Nat.x

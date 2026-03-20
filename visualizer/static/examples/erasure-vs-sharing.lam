@@ -1,0 +1,2 @@
+# Erasure vs Sharing
+(λk.u) (λf.(λx.f (x x)) (λx.f (x x)))

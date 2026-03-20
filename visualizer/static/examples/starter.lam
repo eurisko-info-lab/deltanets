@@ -1,0 +1,15 @@
+# Reduce the net by clicking on highlighted node pairs (green = optimal), using the arrow keys on your keyboard, or clicking the buttons in the toolbar.
+
+# Use backslash ("\") to insert a "λ".
+# Give a name to a lambda term with "=".
+# For example:
+
+I = λx.x # The identity function
+T = λx.λy.x # Boolean True
+F = λx.λy.y # Boolean False
+And = λp.λq.p q p # Logical AND
+Or = λp.λq.p p q # Logical OR
+Not = λp.p F T # Logical NOT
+
+# The last expression (below) is then represented as a graph/net on the right-hand-side of the screen.
+And T F

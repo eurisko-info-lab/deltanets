@@ -1,0 +1,7 @@
+# Simply-Typed Lambda Calculus: Church Booleans
+# Here we encode booleans as Nat -> Nat -> Nat
+
+T = λx:Nat.λy:Nat.x
+F = λx:Nat.λy:Nat.y
+
+T

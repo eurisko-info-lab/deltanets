@@ -1,0 +1,6 @@
+# List Head
+Cons = λa.λb.λf.f a b
+Head = λx.x λa.λb.a
+Tail = λx.x λa.λb.b
+
+Head (Cons one (Cons two three))

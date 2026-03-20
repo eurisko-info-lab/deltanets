@@ -1,0 +1,41 @@
+# Simply-Typed Lambda Calculus — Typing Examples
+# Type annotations: \x:T.body   Types: base (A, Nat), arrow (A -> B), hole (?)
+
+system "STLC" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent var(principal)
+  agent root(principal)
+  agent type-base(principal)
+  agent type-arrow(principal, domain, codomain)
+  agent type-hole(principal)
+  rule abs <> app -> annihilate
+}
+
+# Identity: Bool → Bool
+def id-bool = \x:Bool.x
+
+# Constant: A → B → A
+def const = \x:A.\y:B.x
+
+# Apply: (A → B) → A → B
+def apply = \f:A -> B.\x:A.f x
+
+# Flip: (A → B → C) → B → A → C
+def flip = \f:A -> B -> C.\y:B.\x:A.f x y
+
+# Church booleans
+def true  = \x:A.\y:B.x
+def false = \x:A.\y:B.y
+
+# Church numerals: (Nat → Nat) → Nat → Nat
+def zero  = \f:Nat -> Nat.\x:Nat.x
+def two   = \f:Nat -> Nat.\x:Nat.f (f x)
+def succ  = \n:?.\f:Nat -> Nat.\x:Nat.f (n f x)
+
+graph typed-identity = term id-bool
+graph typed-const = term const
+graph typed-apply = term apply
+graph typed-church-two = term two
+graph typed-succ-two = term succ two
+graph typed-flip = term flip
