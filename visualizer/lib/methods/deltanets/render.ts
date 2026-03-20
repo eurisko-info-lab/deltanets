@@ -15,7 +15,8 @@ import {
 } from "../../core/index.ts";
 import { isExprAgentFromStyles, typeReductionMode, type Data } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
-import { renderNodePort, renderWires } from "./render-agents.ts";
+import { renderNodePort } from "./render-dispatch.ts";
+import { renderWires } from "./render-wires.ts";
 
 const { cleanupGraph, findReachableNodes, getRedex, getRedexes, isConnectedToAllErasers, isParentPort, levelColor } = deltanets;
 

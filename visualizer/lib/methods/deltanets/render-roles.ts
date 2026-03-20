@@ -1,3 +1,9 @@
+// ═══════════════════════════════════════════════════════════════════
+// Role-based Agent Renderers
+// Each function renders a specific agent role (leaf, binder,
+// applicator, type-constructor, destructor, replicator).
+// ═══════════════════════════════════════════════════════════════════
+
 import { Signal } from "@preact/signals";
 import {
   D,
@@ -17,36 +23,16 @@ import {
   type Node,
   type NodePort,
   type Redex,
-  reciprocal,
   deltanets,
 } from "../../core/index.ts";
 import { agentStyles, getRole, type Data } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
+import type { Endpoint } from "./render-wires.ts";
+import { renderNodePort } from "./render-dispatch.ts";
 
 const { countAuxErasers, getRedex, levelColor } = deltanets;
 
 type State = MethodState<any, Data>;
-
-// The type of a graph endpoint
-export type Endpoint = {
-  nodePort: NodePort;
-  node2D: Node2D;
-  level?: number;
-  used?: boolean;
-  redex?: Redex;
-};
-
-// ─── Role-based rendering helpers ──────────────────────────────
-
-// Create a wire endpoint node for already-created or unknown nodes
-function makeWireEndpoint(nodePort: NodePort, level: number): { node2D: Node2D; endpoints: Endpoint[] } {
-  const node2D = new Node2D();
-  const endpoint = new Node2D();
-  endpoint.bounds = { min: { x: -D, y: 0 }, max: { x: D, y: D } };
-  node2D.add(endpoint);
-  (node2D as any).isWireEndpoint = true;
-  return { node2D, endpoints: [{ nodePort, node2D, level }] };
-}
 
 // Apply typecheck highlight to a node
 function applyTypeCheckHighlight(shape: { highlightColor?: string }, node: Node) {
@@ -56,7 +42,7 @@ function applyTypeCheckHighlight(shape: { highlightColor?: string }, node: Node)
 }
 
 // Render a leaf agent (var, era, type-base, kind-star, type-hole, or any 1-port agent)
-function renderLeafAgent(
+export function renderLeafAgent(
   nodePort: NodePort,
 ): { node2D: Node2D; endpoints: Endpoint[] } {
   const node2D = new Node2D();
@@ -79,7 +65,7 @@ function renderLeafAgent(
 
 // Render a binder agent (abs, tyabs, type-abs, forall — entered at port 0)
 // Port layout: 0=principal(entry), 1=body, 2=bind, 3=type(optional)
-function renderBinderAgent(
+export function renderBinderAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -168,7 +154,7 @@ function renderBinderAgent(
 
 // Render an applicator agent (app, tyapp, type-app — entered at port 1)
 // Port layout: 0=func/principal, 1=result(entry), 2=arg
-function renderApplicatorAgent(
+export function renderApplicatorAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -219,7 +205,7 @@ function renderApplicatorAgent(
 
 // Render a type-constructor agent (type-arrow, pi, sigma, kind-arrow, pair — entered at port 0)
 // Port layout: 0=principal(entry), 1=domain/left, 2=codomain/right
-function renderTypeConstructorAgent(
+export function renderTypeConstructorAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -272,7 +258,7 @@ function renderTypeConstructorAgent(
 
 // Render a destructor agent (fst, snd — entered at port 1)
 // Port layout: 0=principal, 1=result(entry)
-function renderDestructorAgent(
+export function renderDestructorAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -305,7 +291,7 @@ function renderDestructorAgent(
 }
 
 // Render a replicator-in agent (rep-in — entered at non-0 port)
-function renderReplicatorInAgent(
+export function renderReplicatorInAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -389,7 +375,7 @@ function renderReplicatorInAgent(
 }
 
 // Render a replicator-out agent (rep-out — entered at port 0)
-function renderReplicatorOutAgent(
+export function renderReplicatorOutAgent(
   nodePort: NodePort,
   state: Signal<State>,
   redexes: Redex[],
@@ -440,127 +426,3 @@ function renderReplicatorOutAgent(
 
   return { node2D, endpoints };
 }
-
-// ─── Main renderNodePort — dispatches by role ──────────────────
-
-// Renders a node port
-export const renderNodePort = (
-  nodePort: NodePort,
-  state: Signal<State>,
-  redexes: Redex[],
-  level: number = 0,
-): { node2D: Node2D; endpoints: Endpoint[] } => {
-  // Already created — wire endpoint
-  if (nodePort.node.isCreated) {
-    return makeWireEndpoint(nodePort, level);
-  }
-
-  // Look up role from style or infer from type name
-  const role = getRole(nodePort.node.type);
-
-  // Dispatch by role
-  switch (role) {
-    case "leaf":
-      return renderLeafAgent(nodePort);
-    case "binder":
-      if (nodePort.port === 0) return renderBinderAgent(nodePort, state, redexes, level);
-      break;
-    case "applicator":
-      if (nodePort.port === 1) return renderApplicatorAgent(nodePort, state, redexes, level);
-      break;
-    case "type-constructor":
-      if (nodePort.port === 0) return renderTypeConstructorAgent(nodePort, state, redexes, level);
-      break;
-    case "destructor":
-      if (nodePort.port === 1) return renderDestructorAgent(nodePort, state, redexes, level);
-      break;
-    case "replicator":
-      if (nodePort.port !== 0) return renderReplicatorInAgent(nodePort, state, redexes, level);
-      if (nodePort.port === 0) return renderReplicatorOutAgent(nodePort, state, redexes, level);
-      break;
-  }
-
-  // Unknown agent or wrong entry port — wire endpoint (will be connected later)
-  return makeWireEndpoint(nodePort, level);
-};
-
-// Renders wires between paired endpoints, and returns the remaining endpoints
-export const renderWires = (node2D: Node2D, endpoints: Endpoint[], state: Signal<MethodState<any, Data>>) => {
-  // Sort endpoints by x position
-  endpoints.sort((a, b) =>
-    a.node2D.globalPosition().x - b.node2D.globalPosition().x
-  );
-
-  // Compile pairs of endpoints that are connected
-  const wiresToCreate: { i: number; j: number, redex?: Redex }[] = [];
-  for (let i = 0; i < endpoints.length; i++) {
-    for (let j = i + 1; j < endpoints.length; j++) {
-      if (endpoints[i].used || endpoints[j].used) {
-        continue;
-      }
-      if (
-        reciprocal(endpoints[i].nodePort).node === endpoints[j].nodePort.node &&
-        reciprocal(endpoints[i].nodePort).port === endpoints[j].nodePort.port
-      ) {
-        endpoints[i].used = true;
-        endpoints[j].used = true;
-        wiresToCreate.push({ i, j, redex: endpoints[i].redex || endpoints[j].redex });
-      }
-    }
-  }
-
-  // Sort wiresToCreate by length
-  wiresToCreate.sort((a, b) => {
-    const horizontalDist = (i: number, j: number) =>
-      endpoints[j].node2D.globalPosition().x -
-      endpoints[i].node2D.globalPosition().x;
-    return horizontalDist(a.i, a.j) - horizontalDist(b.i, b.j);
-  });
-
-  // Create wires
-  const wires: Wire[] = [];
-  wiresToCreate.forEach(({ i, j, redex }) => {
-    const leftX = endpoints[i].node2D.globalPosition().x;
-    const rightX = endpoints[j].node2D.globalPosition().x;
-    // Find wires between the left and right endpoints
-    const wiresBetween = wires.filter((wire) =>
-      !(
-        wire.start.globalPosition().x > rightX ||
-        wire.end.globalPosition().x < leftX
-      )
-    );
-    // Get max height of endpoints in between i and j
-    const maxH = Math.max(
-      endpoints[i].node2D.globalPosition().y +
-        endpoints[i].node2D.bounds.max.y + D,
-      endpoints[j].node2D.globalPosition().y +
-        endpoints[j].node2D.bounds.max.y + D,
-      ...endpoints.slice(i + 1, j).map((endpoint) =>
-        endpoint.node2D.globalPosition().y + endpoint.node2D.bounds.max.y + D
-      ),
-      ...wiresBetween.map((w) => w.start.globalPosition().y + w.viaY + 2 * D),
-    );
-    // Create wire
-    // Set level as undefined if conflicting to indicate issue
-    const level = (endpoints[i].level === endpoints[j].level &&
-        endpoints[i].level !== undefined)
-      ? endpoints[i].level
-      : undefined;
-
-    // TODO: show level even if one side? Would sill need to fix levels out of eraser "roots". And if those are fixed, then probably don't need this.
-    // Set level. Pick the non-undefined level if it exists. if both are defined, then make sure they are equal
-    // const level = endpoints[i].level === undefined ? endpoints[j].level : endpoints[j].level === undefined ? endpoints[i].level : endpoints[i].level// (endpoints[i].level === endpoints[j].level) ? endpoints[i].level : undefined;
-
-    const wire = new Wire(
-      endpoints[i].node2D,
-      endpoints[j].node2D,
-      maxH - endpoints[i].node2D.globalPosition().y,
-      redex ? (() => applyReduction(state, redex.reduce)) : undefined,
-      level !== undefined ? levelColor(level) : undefined,
-    );
-    wires.push(wire);
-    node2D.add(wire);
-    // Update bounds of node2D
-    node2D.bounds.max.y = Math.max(node2D.bounds.max.y, maxH + D);
-  });
-};
