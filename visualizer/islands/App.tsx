@@ -39,6 +39,8 @@ export default function App() {
           <div
             id="editor-container"
             class="border-1 rounded"
+            role="region"
+            aria-label="Code editor"
             style={{
               overflow: "hidden",
               borderColor: theme.value === "light" ? "#000D" : "#FFF6",
@@ -48,6 +50,10 @@ export default function App() {
           </div>
           <div
             id="splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize editor"
+            tabIndex={0}
             class={`hover:(bg-[${theme.value === "light" ? "white" : "#2A2A2A"
               }] cursor-ew-resize)`}
             style={{ width: "8px" }}

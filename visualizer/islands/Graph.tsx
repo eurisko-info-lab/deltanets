@@ -110,6 +110,8 @@ export function Graph(
     <>
       <svg
         id="graph"
+        role="img"
+        aria-label="Interaction net graph visualization"
         class="rounded flex-1 w-full h-full bg-transparent border-1 select-none cursor-grab active:cursor-grabbing"
         style={{
           borderColor: theme === "light" ? "#000D" : "#FFF6",

@@ -82,12 +82,48 @@ export const isDraggingSplitter = signal<boolean>(false);
 // Mutable ref for the Monaco editor instance
 export const codeEditorRef: { current: any } = { current: null };
 
+// --- Internal helpers ---
+
+/** Set AST and compute type-checking state from it (call inside batch). */
+const applyAst = (astNode: AstNode | null) => {
+  ast.value = astNode;
+  if (astNode) {
+    systemType.value = getExpressionType(astNode);
+    selectedSystemType.value = systemType.value;
+    typeResult.value = typeCheck(astNode);
+    tagAstWithTypeCheckIndices(astNode);
+    typeCheckSteps.value = generateTypeCheckSteps(astNode);
+  } else {
+    typeResult.value = null;
+    typeCheckSteps.value = [];
+  }
+  typeCheckMode.value = false;
+  typeCheckStepIdx.value = -1;
+};
+
+/** Set state for a graph extracted from .inet (no AST, deltanets method). Call inside batch. */
+const applyINetGraph = (graph: Parameters<NonNullable<typeof METHODS.deltanets.initFromGraph>>[0]) => {
+  const initFromGraph = METHODS.deltanets.initFromGraph;
+  if (!initFromGraph) return false;
+  ast.value = null;
+  typeResult.value = { ok: true, type: { kind: "hole" } };
+  typeCheckSteps.value = [];
+  typeCheckMode.value = false;
+  typeCheckStepIdx.value = -1;
+  method.value = "deltanets";
+  METHODS.deltanets.state.value = initFromGraph(graph);
+  return true;
+};
+
+/** Format mixed error values into display strings. */
+const formatErrors = (errs: unknown[]): string[] =>
+  errs.map((e) => typeof e === "string" ? e : (e as { message?: string }).message ?? String(e));
+
 // --- Functions ---
 
 export const updateAst = (source: string) => {
   window.localStorage.setItem("source", source);
 
-  // Clear graph if empty expression
   if (source.length === 0) {
     scene.value = null;
     return;
@@ -97,13 +133,13 @@ export const updateAst = (source: string) => {
   if (isINetSource(source)) {
     const result = compileINet(source);
     if (result.errors.length === 0 && result.graphNames.length > 0) {
-      // Resolve .iview styles for all systems in this source
       agentStyles.value = resolveAgentStyles(result.core);
 
       const graphName = inetSelectedGraph.peek() && result.graphNames.includes(inetSelectedGraph.peek())
         ? inetSelectedGraph.peek()
         : result.graphNames[result.graphNames.length - 1];
       const extracted = extractGraph(result.core, graphName);
+
       if (extracted && extracted.kind === "ast") {
         batch(() => {
           inetMode.value = true;
@@ -112,47 +148,27 @@ export const updateAst = (source: string) => {
           inetSelectedGraph.value = graphName;
           exprError.value = false;
           parseErrors.value = [];
-          ast.value = extracted.ast;
-          systemType.value = getExpressionType(extracted.ast);
-          selectedSystemType.value = systemType.value;
-          typeResult.value = typeCheck(extracted.ast);
-          if (extracted.ast) {
-            tagAstWithTypeCheckIndices(extracted.ast);
-            typeCheckSteps.value = generateTypeCheckSteps(extracted.ast);
-          } else {
-            typeCheckSteps.value = [];
-          }
-          typeCheckMode.value = false;
-          typeCheckStepIdx.value = -1;
+          applyAst(extracted.ast);
         });
         return;
       }
       if (extracted && extracted.kind === "graph") {
-        const initFromGraph = METHODS.deltanets.initFromGraph;
-        if (initFromGraph) {
-          batch(() => {
-            inetMode.value = true;
-            inetCore.value = result.core;
-            inetGraphNames.value = result.graphNames;
-            inetSelectedGraph.value = graphName;
-            exprError.value = false;
-            parseErrors.value = [];
-            ast.value = null;
-            typeResult.value = { ok: true, type: { kind: "hole" } };
-            typeCheckSteps.value = [];
-            typeCheckMode.value = false;
-            typeCheckStepIdx.value = -1;
-            method.value = "deltanets";
-            METHODS.deltanets.state.value = initFromGraph(extracted.graph);
-          });
-          return;
-        }
+        batch(() => {
+          inetMode.value = true;
+          inetCore.value = result.core;
+          inetGraphNames.value = result.graphNames;
+          inetSelectedGraph.value = graphName;
+          exprError.value = false;
+          parseErrors.value = [];
+          applyINetGraph(extracted.graph);
+        });
+        return;
       }
     }
     if (result.errors.length > 0) {
       console.warn("INet Parsing Error(s):", result.errors);
       exprError.value = true;
-      parseErrors.value = result.errors.map((e: any) => typeof e === "string" ? e : e.message ?? String(e));
+      parseErrors.value = formatErrors(result.errors);
       inetMode.value = false;
       return;
     }
@@ -164,30 +180,16 @@ export const updateAst = (source: string) => {
   inetGraphNames.value = [];
   inetSelectedGraph.value = "";
 
-  // Update AST
   const newAst = parseSource(source);
-  // Update AST or exprError
   if (newAst === undefined || newAst.errs !== undefined) {
     exprError.value = true;
-    parseErrors.value = (newAst?.errs ?? []).map((e: any) => typeof e === "string" ? e : e.message ?? String(e));
+    parseErrors.value = formatErrors(newAst?.errs ?? []);
     console.warn("Parsing Error(s):", newAst?.errs);
   } else {
     batch(() => {
       exprError.value = false;
       parseErrors.value = [];
-      ast.value = newAst.ast ?? null;
-      systemType.value = getExpressionType(ast.value!);
-      selectedSystemType.value = systemType.value;
-      typeResult.value = ast.value ? typeCheck(ast.value) : null;
-      // Generate type check steps and tag AST nodes with indices
-      if (ast.value) {
-        tagAstWithTypeCheckIndices(ast.value);
-        typeCheckSteps.value = generateTypeCheckSteps(ast.value);
-      } else {
-        typeCheckSteps.value = [];
-      }
-      typeCheckMode.value = false;
-      typeCheckStepIdx.value = -1;
+      applyAst(newAst.ast ?? null);
       typeReductionMode.value = false;
     });
   }
@@ -198,46 +200,28 @@ export const selectINetGraph = (graphName: string) => {
   const core = inetCore.peek();
   if (!core) return;
   const extracted = extractGraph(core, graphName);
-  if (extracted && extracted.kind === "ast") {
+
+  const withCenterReset = (fn: () => void) => {
     const originalCenter = center.peek();
     center.value = true;
-    batch(() => {
+    fn();
+    center.value = originalCenter;
+  };
+
+  if (extracted && extracted.kind === "ast") {
+    withCenterReset(() => batch(() => {
       inetSelectedGraph.value = graphName;
-      ast.value = extracted.ast;
-      systemType.value = getExpressionType(extracted.ast);
-      selectedSystemType.value = systemType.value;
-      typeResult.value = typeCheck(extracted.ast);
-      if (extracted.ast) {
-        tagAstWithTypeCheckIndices(extracted.ast);
-        typeCheckSteps.value = generateTypeCheckSteps(extracted.ast);
-      } else {
-        typeCheckSteps.value = [];
-      }
-      typeCheckMode.value = false;
-      typeCheckStepIdx.value = -1;
+      applyAst(extracted.ast);
       typeReductionMode.value = false;
       isFirstLoad.value = true;
-    });
-    center.value = originalCenter;
+    }));
   } else if (extracted && extracted.kind === "graph") {
-    const initFromGraph = METHODS.deltanets.initFromGraph;
-    if (initFromGraph) {
-      const originalCenter = center.peek();
-      center.value = true;
-      batch(() => {
-        inetSelectedGraph.value = graphName;
-        ast.value = null;
-        typeResult.value = { ok: true, type: { kind: "hole" } };
-        typeCheckSteps.value = [];
-        typeCheckMode.value = false;
-        typeCheckStepIdx.value = -1;
-        typeReductionMode.value = false;
-        method.value = "deltanets";
-        METHODS.deltanets.state.value = initFromGraph(extracted.graph);
-        isFirstLoad.value = true;
-      });
-      center.value = originalCenter;
-    }
+    withCenterReset(() => batch(() => {
+      inetSelectedGraph.value = graphName;
+      applyINetGraph(extracted.graph);
+      typeReductionMode.value = false;
+      isFirstLoad.value = true;
+    }));
   }
 };
 

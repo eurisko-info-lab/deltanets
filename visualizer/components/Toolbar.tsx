@@ -38,7 +38,9 @@ export default function Toolbar() {
     }] disabled:bg-transparent`;
 
   return (
-    <div
+    <nav
+      aria-label="Toolbar"
+      role="toolbar"
       class="flex flex-row bg-inherit gap-[8px]"
       style={{
         overflowX: "scroll",
@@ -46,6 +48,7 @@ export default function Toolbar() {
       }}
     >
       <select
+        aria-label="Load example"
         onChange={(e) => {
           const selectedExampleIndex = parseInt(
             (e?.target as HTMLSelectElement).value,
@@ -92,6 +95,7 @@ export default function Toolbar() {
       </select>
       {inetMode.value && inetGraphNames.value.length > 1 && (
         <select
+          aria-label="Select graph"
           onChange={(e) => {
             selectINetGraph((e?.target as HTMLSelectElement).value);
           }}
@@ -110,6 +114,7 @@ export default function Toolbar() {
         </select>
       )}
       <select
+        aria-label="Reduction method"
         onChange={(e) => {
           const newMethod = (e?.target as HTMLSelectElement).value;
           window.localStorage.setItem("method", newMethod);
@@ -139,6 +144,7 @@ export default function Toolbar() {
         ))}
       </select>
       {method.value === "deltanets" && <select
+        aria-label="Level mode"
         value={relativeLevel.value ? "relative" : "absolute"}
         onChange={(e) => {
           const newRelativeLevel = (e?.target as HTMLSelectElement).value === "relative";
@@ -221,6 +227,7 @@ export default function Toolbar() {
         </div>
       )}
       <select
+        aria-label="System type"
         // This select is just an indicator in the lambda calculus method
         disabled={method.value === "lambdacalc"}
         onChange={(e) => {
@@ -396,6 +403,7 @@ export default function Toolbar() {
         href="https://github.com/danaugrs/deltanets"
         target={"_blank"}
         rel="noopener noreferrer"
+        aria-label="GitHub repository"
       >
         <GitHubIcon />
       </a>
@@ -416,6 +424,6 @@ export default function Toolbar() {
       >
         {theme.value === "light" ? <DarkThemeIcon /> : <LightThemeIcon />}
       </button>
-    </div>
+    </nav>
   );
 }
