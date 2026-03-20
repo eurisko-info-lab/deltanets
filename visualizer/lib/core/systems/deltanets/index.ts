@@ -17,6 +17,7 @@ import {
 } from "./helpers.ts";
 import { buildGraph } from "./build.ts";
 import { getRedex, getRedexes } from "./redexes.ts";
+import { readbackGraph, readbackGraphToString } from "./readback.ts";
 
 // Re-export types and helpers used by consumers
 export type { NodeType, RepStatus, DeltaData };
@@ -26,6 +27,7 @@ export {
   countAuxErasers,
   isExprAgent,
 };
+export { readbackGraph, readbackGraphToString };
 
 // --- Graph analysis ---
 

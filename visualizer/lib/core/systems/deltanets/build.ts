@@ -16,7 +16,7 @@ function buildTypeGraph(ty: Type, graph: Graph): NodePort {
     graph.push(node);
     return { node, port: Ports.typeBase.principal };
   } else if (ty.kind === "arrow") {
-    const node: Node = { type: "type-arrow", label: "\u2192", ports: [] };
+    const node: Node = { type: "type-arrow", label: "→", ports: [] };
     graph.push(node);
     const domainPort = buildTypeGraph(ty.from, graph);
     link(domainPort, { node, port: Ports.typeArrow.domain });

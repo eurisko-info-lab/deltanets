@@ -12,6 +12,7 @@ import { MethodState } from "../index.ts";
 import {
   type Graph,
   deltanets,
+  readbackGraphToString,
 } from "../../core/index.ts";
 import { isExprAgentFromStyles, typeReductionMode, type Data } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
@@ -196,6 +197,9 @@ export function render(
       currState.data.appliedFinalStep = true;
     }
   }
+
+  // Update expression display with readback
+  expression.value = readbackGraphToString(graph);
 
   return node2D;
 }

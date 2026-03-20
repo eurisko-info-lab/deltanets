@@ -343,7 +343,7 @@ export function renderReplicatorInAgent(
   const lastX = node2D.bounds.max.x;
   let i2 = 2;
   for (let i = 1; i < nodePort.node.ports.length; i++) {
-    if (i === nodePort.port) { i2++; continue; }
+    if (i === nodePort.port) { continue; }
     const auxLevel = childLevel + nodePort.node.levelDeltas![i - 1];
     if (nodePort.node.ports[i].node.type === "era") {
       nodePort.node.ports[i].node.isCreated = true;
@@ -364,7 +364,8 @@ export function renderReplicatorInAgent(
       node2D.add(endpoint);
       (endpoint as any).isWireEndpoint = true;
       endpoints.push({ nodePort: nodePort.node.ports[i], node2D: endpoint, level: auxLevel });
-      const wire = new Wire(rep, endpoint, (i2 - nodePort.node.ports.length + 0.5) * 2 * D, undefined, levelColor(auxLevel));
+      const auxViaY = (i2 - nodePort.node.ports.length + 0.5) * 2 * D;
+      const wire = new Wire(rep, endpoint, auxViaY, undefined, levelColor(auxLevel));
       wire.startOffset.x = rep.portDelta(i - 1);
       rep.add(wire);
     }

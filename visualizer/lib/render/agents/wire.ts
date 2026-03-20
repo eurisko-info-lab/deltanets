@@ -70,8 +70,8 @@ export class Wire extends Node2D {
     theme: "light" | "dark",
     debug = false,
   ): SVG | null {
-    // Create path based on start and end points
-    // For now we're just drawing a straight line (TODO: improve)
+    // Create a vertical-horizontal-vertical path with rounded corners,
+    // falling back to bezier when segments are too short for arcs.
     const path = d3.path();
     const globalStart = this.start.globalPosition();
     const globalEnd = this.end.globalPosition();
@@ -90,10 +90,11 @@ export class Wire extends Node2D {
 
     path.moveTo(startX, startY);
     if (
-      (Math.abs(viaY > startY ? viaY - startY : startY - viaY),
-        Math.abs(endY > viaY ? endY - viaY : viaY - endY),
-        Math.abs(endX > startX ? endX - startX : startX - endX) / 2) <
-        Wire.CORNER_RADIUS
+      Math.min(
+        Math.abs(viaY - startY),
+        Math.abs(endY - viaY),
+        Math.abs(endX - startX) / 2,
+      ) < Wire.CORNER_RADIUS
     ) {
       // Draw bezier curve
       if (startX !== endX) {
