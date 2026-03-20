@@ -75,6 +75,8 @@ export class Node2D {
   visible = true;
   // Whether to skip debug bounding box rendering (e.g. for Enclosure)
   skipDebugBounds = false;
+  // Whether this node represents a wire endpoint (used in deltanets rendering)
+  isWireEndpoint = false;
 
   // The width of the node.
   getWidth() {

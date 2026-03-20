@@ -22,9 +22,9 @@ export function Graph(
     if (!graph) return;
 
     // Press group
-    const press = (e: any) => {
+    const press = (e: MouseEvent | TouchEvent) => {
       state.value = "pan";
-      if (e.type === "touchstart") {
+      if (e instanceof TouchEvent) {
         e.preventDefault();
         lastPos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       } else {
@@ -35,22 +35,22 @@ export function Graph(
     graph.addEventListener("touchstart", press);
 
     // Release group
-    const release = (e: any) => {
+    const release = (_e: MouseEvent | TouchEvent) => {
       state.value = "none";
     };
     addEventListener("mouseup", release);
     addEventListener("touchend", release);
 
     // Move group
-    const move = (e: any) => {
+    const move = (e: MouseEvent | TouchEvent) => {
       if (state.value === "pan") {
         center.value = false;
-        if (e.type === "mousemove") {
+        if (e instanceof MouseEvent) {
           translate.value = {
             x: translate.value.x + (e.clientX - lastPos.value.x) / scale.value,
             y: translate.value.y + (e.clientY - lastPos.value.y) / scale.value,
           };
-        } else if (e.type === "touchmove") {
+        } else if (e instanceof TouchEvent) {
           e.preventDefault();
           translate.value = {
             x: translate.value.x +
@@ -61,9 +61,9 @@ export function Graph(
         }
       }
 
-      if (e.type === "mousemove") {
+      if (e instanceof MouseEvent) {
         lastPos.value = { x: e.clientX, y: e.clientY };
-      } else if (e.type === "touchmove") {
+      } else if (e instanceof TouchEvent) {
         lastPos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       }
     };
@@ -71,8 +71,8 @@ export function Graph(
     addEventListener("touchmove", move, { passive: false });
 
     // Mouse wheel
-    const wheel = (e: any) => {
-      const delta = e.wheelDelta ? e.wheelDelta : -e.deltaY;
+    const wheel = (e: WheelEvent) => {
+      const delta = -e.deltaY;
       let newScale = 1;
       if (delta > 0) {
         newScale = Math.min(scale.value * (1 + 0.001 * delta), MAX_SCALE);

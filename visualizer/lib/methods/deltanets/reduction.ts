@@ -1,8 +1,9 @@
 import { batch, Signal } from "@preact/signals";
 import { MethodState } from "../index.ts";
 import { type Data } from "./config.ts";
+import type { Graph } from "../../core/types.ts";
 
-type State = MethodState<any, Data>;
+type State = MethodState<Graph, Data>;
 
 // Applies a reduction to the current state, and updates the navigation functions
 export function applyReduction(

@@ -343,8 +343,9 @@ export default function Toolbar() {
           debug.value = false;
           // Get svg element and serialize
           const svg = document.getElementById("root");
+          if (!svg) return;
           const serializer = new XMLSerializer();
-          let source = serializer.serializeToString(svg as any);
+          let source = serializer.serializeToString(svg);
           // Revert to previous theme and debug mode
           theme.value = currTheme;
           debug.value = currDebug;

@@ -45,6 +45,14 @@ function parseRawType(rawType: TYPE): Type {
 
 // --- AST node types ---
 
+// Extra data that can be attached to AST nodes (e.g. for type check stepping)
+export type AstExtra = {
+  typeCheckIdx?: number;
+  typeCheckState?: "checking" | "checked" | "error";
+  // deno-lint-ignore no-explicit-any
+  [key: string]: any;
+};
+
 // A `Node` is either an `Abstraction`, an `Application` or a `Variable`.
 // TODO: rename to "Expression"
 export type AstNode = Abstraction | Application | Variable;
@@ -56,7 +64,7 @@ export type Abstraction = {
   name: string;
   body: AstNode;
   typeAnnotation?: Type;
-  extra?: any;
+  extra?: AstExtra;
 };
 
 // An application of a function to an argument.
@@ -65,7 +73,7 @@ export type Application = {
   parent?: AstNode;
   func: AstNode;
   arg: AstNode;
-  extra?: any;
+  extra?: AstExtra;
 };
 
 // A variable is a node with a name.
@@ -73,7 +81,7 @@ export type Variable = {
   type: "var";
   parent?: AstNode;
   name: string;
-  extra?: any;
+  extra?: AstExtra;
 };
 
 export type Definitions = { [name: string]: AstNode };
@@ -116,14 +124,14 @@ export function parseSource(
 
 // Parses a raw AST node, updating the AST in place.
 // Returns the index of the newly inserted node.
-function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?: any): AstNode {
+function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?: AstNode): AstNode {
   if (
     rawNode.kind === ASTKinds.APPLICATION
   ) {
     // Application
     const node: Partial<AstNode> = { type: "app", parent };
-    node.func = parseRawExpressionNode(rawNode.func, definitions, node);
-    node.arg = parseRawExpressionNode(rawNode.arg, definitions, node);
+    node.func = parseRawExpressionNode(rawNode.func, definitions, node as AstNode);
+    node.arg = parseRawExpressionNode(rawNode.arg, definitions, node as AstNode);
     return node as AstNode;
   } else if (rawNode.kind === ASTKinds.IDENT) {
     // Check if it's a definition
@@ -145,9 +153,9 @@ function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?
       name: nameToFancyName(rawNode.parameter.identifier),
     };
     if (rawNode.typeAnnotation) {
-      (node as any).typeAnnotation = parseRawType(rawNode.typeAnnotation.type);
+      (node as Partial<Abstraction>).typeAnnotation = parseRawType(rawNode.typeAnnotation.type);
     }
-    node.body = parseRawExpressionNode(rawNode.body, definitions, node);
+    node.body = parseRawExpressionNode(rawNode.body, definitions, node as AstNode);
     return node as AstNode;
   } else if (rawNode.kind === ASTKinds.GROUP) {
     // Group (simply pass through)
@@ -165,7 +173,7 @@ function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?
 }
 
 // Clones a node and its descendants.
-export function clone(astNode: AstNode, parent?: any): AstNode {
+export function clone(astNode: AstNode, parent?: AstNode): AstNode {
   if (astNode.type === "abs") {
     const node: Partial<Abstraction> = {
       type: "abs",
@@ -175,15 +183,15 @@ export function clone(astNode: AstNode, parent?: any): AstNode {
     if (astNode.typeAnnotation) {
       node.typeAnnotation = astNode.typeAnnotation;
     }
-    node.body = clone(astNode.body, node);
+    node.body = clone(astNode.body, node as AstNode);
     return node as AstNode;
   } else if (astNode.type === "app") {
     const node: Partial<AstNode> = {
       type: "app",
       parent,
     };
-    node.func = clone(astNode.func, node);
-    node.arg = clone(astNode.arg, node);
+    node.func = clone(astNode.func, node as AstNode);
+    node.arg = clone(astNode.arg, node as AstNode);
     return node as AstNode;
   } else {
     return {

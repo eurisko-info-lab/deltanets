@@ -90,11 +90,11 @@ export function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
   const firstAuxNode = node.ports[Ports.app.result].node;
 
   if (firstAuxNode.type === "era") {
-    const newEraser0: any = { type: "era", ports: [] };
+    const newEraser0: Node = { type: "era", ports: [] };
     graph.push(newEraser0);
     link({ node: newEraser0, port: 0 }, node.ports[Ports.app.func]);
 
-    const newEraser1: any = { type: "era", ports: [] };
+    const newEraser1: Node = { type: "era", ports: [] };
     graph.push(newEraser1);
     link({ node: newEraser1, port: 0 }, node.ports[Ports.app.arg]);
 
@@ -137,12 +137,12 @@ export function isExprAgent(type: string): boolean {
 // Cross-rule erasure: both agents are erased (all aux ports get erasers)
 export function reduceEraseRule(nodeA: Node, nodeB: Node, graph: Graph) {
   for (let i = 1; i < nodeA.ports.length; i++) {
-    const newEraser: Node = { type: "era", label: "era", ports: [] as any };
+    const newEraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(newEraser);
     link({ node: newEraser, port: 0 }, nodeA.ports[i]);
   }
   for (let i = 1; i < nodeB.ports.length; i++) {
-    const newEraser: Node = { type: "era", label: "era", ports: [] as any };
+    const newEraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(newEraser);
     link({ node: newEraser, port: 0 }, nodeB.ports[i]);
   }

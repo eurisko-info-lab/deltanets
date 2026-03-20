@@ -31,8 +31,8 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
   const redexes: Redex[] = [];
 
   graph.forEach((node) => {
-    (node as any).traversed = undefined;
-    (node as any).traversed2 = undefined;
+    node.traversed = undefined;
+    node.traversed2 = undefined;
   });
 
   const createRedex = (a: Node, b: Node, optimal: boolean, reduce: () => void) => {
@@ -188,9 +188,9 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         }
 
         if (secondUnpaired) {
-          (firstReplicator as any).isToBeMerged = true;
+          firstReplicator.isToBeMerged = true;
           createRedex(firstReplicator, secondReplicator, false, () => {
-            (firstReplicator as any).isToBeMerged = false;
+            firstReplicator.isToBeMerged = false;
 
             firstReplicator.ports.splice(secondReplicatorPort, 1, ...secondReplicator.ports.slice(1));
             firstReplicator.levelDeltas!.splice(secondReplicatorPort - 1, 1, ...secondReplicator.levelDeltas!.map((ld) => ld + levelDeltaBetween));
@@ -253,10 +253,10 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         firstAuxFanReplication = getRedex(node, node.ports[0].node, redexes);
       }
 
-      if ((node as any).traversed) {
+      if (node.traversed) {
         return false;
       }
-      (node as any).traversed = true;
+      node.traversed = true;
       if (node.type === "abs" && port === Ports.abs.principal) {
         if (node.ports[Ports.abs.bind].node.type === "era") {
           if (traverse(node.ports[Ports.abs.bind])) {
@@ -308,10 +308,10 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         }
       }
 
-      if ((node as any).traversed2) {
+      if (node.traversed2) {
         return;
       }
-      (node as any).traversed2 = true;
+      node.traversed2 = true;
       if (node.type === "abs" && port === Ports.abs.principal) {
         if (node.ports[Ports.abs.bind].node.type === "era") {
           traverse2(node.ports[Ports.abs.bind]);

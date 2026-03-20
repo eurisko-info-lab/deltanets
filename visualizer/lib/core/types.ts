@@ -4,7 +4,7 @@ import type { AstNode, Abstraction, Variable, SystemType, Type } from "../ast.ts
 import type { TypeResult, TypeEnv } from "./typechecker.ts";
 
 // A port of a particular node.
-export type NodePort = { node: Node; port: number };
+export type NodePort = { node: Node; port: number; erase?: boolean };
 
 // A node in an interaction net graph.
 // Port 0 is the principal port. Ports >= 1 are auxiliary ports (left to right, clockwise from principal).
@@ -18,6 +18,11 @@ export type Node = {
   astRef?: AstNode;
   // Type check visual state (set during type check stepping)
   typeCheckState?: "checking" | "checked" | "error";
+  // Used during graph traversal to mark visited nodes
+  traversed?: boolean;
+  traversed2?: boolean;
+  // Used to mark replicators that should be merged
+  isToBeMerged?: boolean;
 };
 
 // A graph is a list of nodes.

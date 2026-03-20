@@ -96,10 +96,10 @@ function cleanupGraph(graph: Graph): void {
       if (p.node.type !== "era" || i === 0) {
         return;
       }
-      (p as any).erase = true;
+      p.erase = true;
     })
-    removeFromArrayIf(node.levelDeltas!, (ld, i) => (node.ports[i+1] as any).erase === true)
-    removeFromArrayIf(node.ports, (p) => (p as any).erase === true)
+    removeFromArrayIf(node.levelDeltas!, (ld, i) => node.ports[i+1].erase === true)
+    removeFromArrayIf(node.ports, (p) => p.erase === true)
     node.ports.forEach((p, i) => {
       link(p, { node, port: i })
     })

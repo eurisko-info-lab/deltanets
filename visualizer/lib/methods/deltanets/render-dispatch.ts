@@ -13,6 +13,7 @@ import { MethodState } from "../index.ts";
 import {
   type NodePort,
   type Redex,
+  type Graph,
 } from "../../core/index.ts";
 import { getRole, type Data } from "./config.ts";
 import type { Endpoint } from "./render-wires.ts";
@@ -26,7 +27,7 @@ import {
   renderReplicatorOutAgent,
 } from "./render-roles.ts";
 
-type State = MethodState<any, Data>;
+type State = MethodState<Graph, Data>;
 
 // Create a wire endpoint node for already-created or unknown nodes
 function makeWireEndpoint(nodePort: NodePort, level: number): { node2D: Node2D; endpoints: Endpoint[] } {
@@ -34,7 +35,7 @@ function makeWireEndpoint(nodePort: NodePort, level: number): { node2D: Node2D; 
   const endpoint = new Node2D();
   endpoint.bounds = { min: { x: -D, y: 0 }, max: { x: D, y: D } };
   node2D.add(endpoint);
-  (node2D as any).isWireEndpoint = true;
+  node2D.isWireEndpoint = true;
   return { node2D, endpoints: [{ nodePort, node2D, level }] };
 }
 

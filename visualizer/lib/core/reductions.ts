@@ -46,7 +46,7 @@ export function reduceErase(node: Node, graph: Graph) {
 
   // Create and connect erasers to the auxiliary ports
   for (let i = 1; i < node.ports.length; i++) {
-    const newEraser: any = { type: "era", ports: [] };
+    const newEraser: Node = { type: "era", ports: [] };
     graph.push(newEraser);
     link({ node: newEraser, port: 0 }, node.ports[i]);
   }
@@ -66,7 +66,7 @@ export function reduceCommute(node: Node, graph: Graph) {
   // Create a copy of `other` once for each of the auxiliary ports of `node`
   const otherClones: Node[] = [];
   for (let i = 1; i < node.ports.length; i++) {
-    const clone: any = {
+    const clone: Node = {
       ...other,
       levelDeltas: other.levelDeltas ? [...other.levelDeltas] : undefined,
       ports: [],
@@ -80,7 +80,7 @@ export function reduceCommute(node: Node, graph: Graph) {
   // Create a copy of `node` once for each of the auxiliary ports of `other`
   const nodeClones: Node[] = [];
   for (let i = 1; i < other.ports.length; i++) {
-    const clone: any = {
+    const clone: Node = {
       ...node,
       levelDeltas: node.levelDeltas ? [...node.levelDeltas] : undefined,
       ports: [],

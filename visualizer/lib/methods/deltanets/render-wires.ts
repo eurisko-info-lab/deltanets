@@ -13,6 +13,7 @@ import { MethodState } from "../index.ts";
 import {
   type NodePort,
   type Redex,
+  type Graph,
   reciprocal,
   deltanets,
 } from "../../core/index.ts";
@@ -31,7 +32,7 @@ export type Endpoint = {
 };
 
 // Renders wires between paired endpoints, and returns the remaining endpoints
-export const renderWires = (node2D: Node2D, endpoints: Endpoint[], state: Signal<MethodState<any, Data>>) => {
+export const renderWires = (node2D: Node2D, endpoints: Endpoint[], state: Signal<MethodState<Graph, Data>>) => {
   // Sort endpoints by x position
   endpoints.sort((a, b) =>
     a.node2D.globalPosition().x - b.node2D.globalPosition().x

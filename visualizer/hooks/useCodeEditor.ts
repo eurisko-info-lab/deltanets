@@ -45,7 +45,7 @@ export function useCodeEditor() {
       });
 
       // Replace backslashes with λ
-      codeEditorRef.current.onKeyDown((e: any) => {
+      codeEditorRef.current.onKeyDown((e: { keyCode: number; preventDefault: () => void }) => {
         if (e.keyCode === monaco.KeyCode.Backslash) {
           e.preventDefault();
           const selection = codeEditorRef.current.getSelection();
@@ -67,7 +67,7 @@ export function useCodeEditor() {
     });
 
     // Arrow-key navigation for reduction stepping / type-check stepping
-    const onKey = (e: any) => {
+    const onKey = (e: KeyboardEvent) => {
       if (
         document.activeElement?.tagName === "TEXTAREA" ||
         document.activeElement?.tagName === "INPUT"

@@ -335,7 +335,7 @@ function renderAstNode(
       bVars.forEach(
         (
           b,
-        ) => (b.extra.node2D.highlightRect.attrs.class = "redex-var-" +
+        ) => (b.extra!.node2D.highlightRect.attrs.class = "redex-var-" +
           redexId),
       );
       edge.highlightPath.attrs.class = "redex-edge-" + redexId;
