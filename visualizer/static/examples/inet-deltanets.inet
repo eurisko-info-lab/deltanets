@@ -1,4 +1,4 @@
-# Δ-Nets system definition (.inet format)
+# INet: Δ-Nets
 # This defines the complete delta-nets interaction system
 # with agents, rules, modes, definitions, and example graphs.
 # Use the graph selector dropdown to switch between graphs.

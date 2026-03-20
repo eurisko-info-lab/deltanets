@@ -1,4 +1,4 @@
-# The Lambda Cube — typed systems via pushout composition
+# INet: Lambda Cube
 # Three axes beyond λ→: polymorphism, dependent types, type operators.
 # Each axis extends λ→; cube corners are pushout compositions.
 

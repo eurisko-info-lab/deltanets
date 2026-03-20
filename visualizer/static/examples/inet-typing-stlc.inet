@@ -1,4 +1,4 @@
-# Simply-Typed Lambda Calculus — Typing Examples
+# INet: Typing (STLC)
 # Type annotations: \x:T.body   Types: base (A, Nat), arrow (A -> B), hole (?)
 
 system "STLC" {

@@ -1,4 +1,4 @@
-# Δ-Nets as a Pushout Composition
+# INet: Δ-Nets (Composed)
 # The delta-nets system decomposes into three components:
 #   Lambda      — core beta-reduction (abs, app, var, root)
 #   Erasable    — garbage collection (era)

@@ -1,4 +1,4 @@
-# Lambda Calculus system definition (.inet format)
+# INet: Lambda Calculus
 # Standard lambda calculus with combinators and Church encodings.
 
 system "lambda-calculus" {

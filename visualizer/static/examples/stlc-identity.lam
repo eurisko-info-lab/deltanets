@@ -1,4 +1,5 @@
-# Simply-Typed Lambda Calculus: Identity
+# STLC: Identity
+# Simply-Typed Lambda Calculus
 # Type annotations are optional. Use ":" after the parameter name.
 # Use "->" or "→" for arrow types.
 

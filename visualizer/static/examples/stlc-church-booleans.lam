@@ -1,4 +1,4 @@
-# Simply-Typed Lambda Calculus: Church Booleans
+# STLC: Church Booleans
 # Here we encode booleans as Nat -> Nat -> Nat
 
 T = λx:Nat.λy:Nat.x

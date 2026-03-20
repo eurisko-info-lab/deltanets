@@ -12,7 +12,8 @@ import {
 export function useCodeEditor() {
   useEffect(() => {
     (loader as any).init().then((monaco: Monaco) => {
-      const source = window.localStorage.getItem("source") ?? examples[0].code;
+      const starter = examples.find((e) => e.name === "Starter") ?? examples[0];
+      const source = window.localStorage.getItem("source") ?? starter.code;
 
       const editorEl = document.getElementById("editor");
       if (!editorEl) return;
