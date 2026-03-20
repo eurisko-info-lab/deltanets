@@ -8,9 +8,10 @@ import {
   TITLE, theme, translate, scale, center, isDraggingSplitter,
   exprError,
 } from "../lib/appState.ts";
+import type { Example } from "../routes/index.tsx";
 
-export default function App() {
-  useCodeEditor();
+export default function App({ examples }: { examples: Example[] }) {
+  useCodeEditor(examples);
   useSceneEffects();
   useEditorLayout();
 
@@ -28,7 +29,7 @@ export default function App() {
           fontFamily: "OpenSans",
         }}
       >
-        <Toolbar />
+        <Toolbar examples={examples} />
         <div
           style={{
             display: "flex",

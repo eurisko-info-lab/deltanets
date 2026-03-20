@@ -12,7 +12,7 @@ import { hasTypeAnnotations } from "../lib/core/index.ts";
 import { GitHubIcon, DarkThemeIcon, LightThemeIcon } from "./Icons.tsx";
 import { METHODS } from "../lib/methods/index.ts";
 import { typeReductionMode } from "../lib/methods/deltanets/index.ts";
-import examples from "../lib/examples.ts";
+import type { Example } from "../routes/index.tsx";
 
 import IconArrowBarToLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-bar-to-left.tsx";
 import IconArrowLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-left.tsx";
@@ -25,7 +25,7 @@ import IconDownload from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/downloa
 import IconBug from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug.tsx";
 import IconBugOff from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug-off.tsx";
 
-export default function Toolbar() {
+export default function Toolbar({ examples }: { examples: Example[] }) {
   const deltaNetsData = METHODS[method.value].state.value?.data;
   const isDeltaFinalStep = method.value === "deltanets" && deltaNetsData?.isFinalStep && !deltaNetsData.appliedFinalStep;
 

@@ -1,15 +1,15 @@
 import { useEffect } from "preact/hooks";
 import loader, { type Monaco } from "@monaco-editor/loader";
-import examples from "../lib/examples.ts";
 import { METHODS } from "../lib/methods/index.ts";
 import {
   method, theme, editorWidth, isFirstLoad,
   typeCheckMode, typeCheckSteps, typeCheckStepIdx,
   codeEditorRef, updateAst,
 } from "../lib/appState.ts";
+import type { Example } from "../routes/index.tsx";
 
 /** Monaco editor initialization, content-change listener, backslash→λ key, and keyboard navigation. */
-export function useCodeEditor() {
+export function useCodeEditor(examples: Example[]) {
   useEffect(() => {
     (loader as any).init().then((monaco: Monaco) => {
       const starter = examples.find((e) => e.name === "Starter") ?? examples[0];
