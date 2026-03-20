@@ -102,6 +102,7 @@ export function useSceneEffects() {
     }
     const zSVGs = scene.value.render(theme.value, debug.value);
     const SVGs = render(zSVGs);
-    document.getElementById("root")!.replaceChildren(...SVGs);
+    const root = document.getElementById("root");
+    if (root) root.replaceChildren(...SVGs);
   });
 }

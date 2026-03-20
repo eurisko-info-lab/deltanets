@@ -14,8 +14,10 @@ export function useCodeEditor() {
     (loader as any).init().then((monaco: Monaco) => {
       const source = window.localStorage.getItem("source") ?? examples[0].code;
 
+      const editorEl = document.getElementById("editor");
+      if (!editorEl) return;
       codeEditorRef.current = monaco.editor.create(
-        document.getElementById("editor")!,
+        editorEl,
         {
           value: source,
           language: "elixir",

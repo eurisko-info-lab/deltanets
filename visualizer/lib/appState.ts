@@ -22,6 +22,9 @@ export const lastExpression = signal<string>("");
 // Expression has error
 export const exprError = signal<boolean>(false);
 
+// Parse error messages for display
+export const parseErrors = signal<string[]>([]);
+
 // Reduction method
 const storedMethod = IS_BROWSER && window.localStorage.getItem("method");
 export const method = signal<string>(storedMethod || Object.keys(METHODS)[0]);
@@ -108,6 +111,7 @@ export const updateAst = (source: string) => {
           inetGraphNames.value = result.graphNames;
           inetSelectedGraph.value = graphName;
           exprError.value = false;
+          parseErrors.value = [];
           ast.value = extracted.ast;
           systemType.value = getExpressionType(extracted.ast);
           selectedSystemType.value = systemType.value;
@@ -132,6 +136,7 @@ export const updateAst = (source: string) => {
             inetGraphNames.value = result.graphNames;
             inetSelectedGraph.value = graphName;
             exprError.value = false;
+            parseErrors.value = [];
             ast.value = null;
             typeResult.value = { ok: true, type: { kind: "hole" } };
             typeCheckSteps.value = [];
@@ -147,6 +152,7 @@ export const updateAst = (source: string) => {
     if (result.errors.length > 0) {
       console.warn("INet Parsing Error(s):", result.errors);
       exprError.value = true;
+      parseErrors.value = result.errors.map((e: any) => typeof e === "string" ? e : e.message ?? String(e));
       inetMode.value = false;
       return;
     }
@@ -163,11 +169,12 @@ export const updateAst = (source: string) => {
   // Update AST or exprError
   if (newAst === undefined || newAst.errs !== undefined) {
     exprError.value = true;
-    // Show parsing errors in the console if any (only if expression changed)
+    parseErrors.value = (newAst?.errs ?? []).map((e: any) => typeof e === "string" ? e : e.message ?? String(e));
     console.warn("Parsing Error(s):", newAst?.errs);
   } else {
     batch(() => {
       exprError.value = false;
+      parseErrors.value = [];
       ast.value = newAst.ast ?? null;
       systemType.value = getExpressionType(ast.value!);
       selectedSystemType.value = systemType.value;
@@ -278,7 +285,8 @@ export const exitTypeCheckMode = () => {
 };
 
 export const centerGraph = (node2D: Node2D) => {
-  const graphEl = document.getElementById("graph")!;
+  const graphEl = document.getElementById("graph");
+  if (!graphEl) return;
   const rect = graphEl.getBoundingClientRect();
   const s = Math.min(
     rect.width / node2D.getWidth(),

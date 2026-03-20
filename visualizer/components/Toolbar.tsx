@@ -4,9 +4,10 @@ import {
   relativeLevel, typeResult, typeCheckMode, typeCheckStepIdx, typeCheckSteps,
   ast, inetMode, inetGraphNames, inetSelectedGraph, isFirstLoad, scene,
   codeEditorRef, updateAst, selectINetGraph, enterTypeCheckMode, exitTypeCheckMode,
+  parseErrors,
 } from "../lib/appState.ts";
 import { OPTIMAL_HIGHLIGHT_COLOR } from "../lib/render.ts";
-import { typeToString } from "../lib/ast.ts";
+import { typeToString, type SystemType } from "../lib/ast.ts";
 import { hasTypeAnnotations } from "../lib/core/index.ts";
 import { GitHubIcon, DarkThemeIcon, LightThemeIcon } from "./Icons.tsx";
 import { METHODS } from "../lib/methods/index.ts";
@@ -204,12 +205,27 @@ export default function Toolbar() {
               : `✘ ${typeResult.value.error}`)}
         </div>
       )}
+      {parseErrors.value.length > 0 && (
+        <div
+          class="border-1 rounded px-2 text-sm min-h-[44px] bg-inherit flex flex-row items-center whitespace-nowrap select-none"
+          title={parseErrors.value.join("\n")}
+          style={{
+            borderColor: theme.value === "light" ? "#dc2626" : "#f87171",
+            color: theme.value === "light" ? "#dc2626" : "#f87171",
+            maxWidth: "360px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {`✘ ${parseErrors.value[0]}`}
+        </div>
+      )}
       <select
         // This select is just an indicator in the lambda calculus method
         disabled={method.value === "lambdacalc"}
         onChange={(e) => {
           const newSystemType = (e?.target as HTMLSelectElement).value;
-          selectedSystemType.value = newSystemType as any;
+          selectedSystemType.value = newSystemType as SystemType;
         }}
         tabIndex={-1}
         onFocus={(e) => {

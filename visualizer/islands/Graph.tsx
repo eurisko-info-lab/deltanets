@@ -18,7 +18,8 @@ export function Graph(
 
   // Set up event listeners
   useEffect(() => {
-    const graph = document.getElementById("graph")!;
+    const graph = document.getElementById("graph");
+    if (!graph) return;
 
     // Press group
     const press = (e: any) => {
@@ -95,13 +96,13 @@ export function Graph(
 
     // Return function to remove event listeners
     return () => {
-      removeEventListener("mousedown", press);
-      removeEventListener("touchstart", press);
+      graph.removeEventListener("mousedown", press);
+      graph.removeEventListener("touchstart", press);
       removeEventListener("mouseup", release);
       removeEventListener("touchend", release);
       removeEventListener("mousemove", move);
       removeEventListener("touchmove", move);
-      removeEventListener("wheel", wheel);
+      graph.removeEventListener("wheel", wheel);
     };
   }, []);
 
