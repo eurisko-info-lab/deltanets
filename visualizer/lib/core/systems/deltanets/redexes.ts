@@ -1,4 +1,10 @@
 // Redex detection and traversal for δ-nets.
+//
+// A "redex" (reducible expression) is a pair of nodes interacting via their
+// principal ports. This module scans the graph for all such pairs, classifies
+// each by reduction rule (annihilate, erase, commute, or system-specific),
+// marks the "optimal" (leftmost-outermost) redex, and provides the reduce()
+// closure for each.
 
 import { removeFromArrayIf } from "../../../util.ts";
 import type { SystemType } from "../../../ast.ts";

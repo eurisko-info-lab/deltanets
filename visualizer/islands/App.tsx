@@ -6,6 +6,7 @@ import { useSceneEffects } from "../hooks/useSceneEffects.ts";
 import { useEditorLayout } from "../hooks/useEditorLayout.ts";
 import {
   TITLE, theme, translate, scale, center, isDraggingSplitter,
+  exprError,
 } from "../lib/appState.ts";
 
 export default function App() {
@@ -43,7 +44,10 @@ export default function App() {
             aria-label="Code editor"
             style={{
               overflow: "hidden",
-              borderColor: theme.value === "light" ? "#000D" : "#FFF6",
+              borderColor: exprError.value
+                ? (theme.value === "light" ? "#dc2626" : "#f87171")
+                : (theme.value === "light" ? "#000D" : "#FFF6"),
+              transition: "border-color 0.2s",
             }}
           >
             <div id="editor"></div>
@@ -56,12 +60,22 @@ export default function App() {
             tabIndex={0}
             class={`hover:(bg-[${theme.value === "light" ? "white" : "#2A2A2A"
               }] cursor-ew-resize)`}
-            style={{ width: "8px" }}
+            style={{
+              width: "8px",
+              // Expand touch target beyond visual width
+              touchAction: "none",
+              padding: "0 8px",
+              margin: "0 -8px",
+            }}
             onDragStart={(e) => {
               e.preventDefault();
               isDraggingSplitter.value = true;
             }}
             onMouseDown={(e) => {
+              e.preventDefault();
+              isDraggingSplitter.value = true;
+            }}
+            onTouchStart={(e) => {
               e.preventDefault();
               isDraggingSplitter.value = true;
             }}

@@ -5,7 +5,14 @@ import { removeFromArrayIf } from "../util.ts";
 import type { Graph, Node } from "./types.ts";
 import { link } from "./graph.ts";
 
-// Annihilates two interacting nodes
+/**
+ * Annihilate two interacting nodes of the same type.
+ * Their aux ports are connected pairwise (port i of node ↔ port i of other).
+ * If one node has more ports, excess aux ports are connected to new erasers.
+ *
+ * Before:  ...—[node]—[other]—...
+ * After:   node.aux[i] ↔ other.aux[i] (direct wires), originals removed.
+ */
 export function reduceAnnihilate(node: Node, graph: Graph) {
   const other = node.ports[0].node;
 
@@ -33,6 +40,14 @@ export function reduceAnnihilate(node: Node, graph: Graph) {
   removeFromArrayIf(graph, (n) => n === node || n === other);
 }
 
+/**
+ * Erase a node interacting with an eraser agent.
+ * A new eraser is created for each auxiliary port of the node,
+ * propagating erasure through the net.
+ *
+ * Before:  ...—[node]—[era]
+ * After:   each node.aux[i] gets its own new eraser, originals removed.
+ */
 export function reduceErase(node: Node, graph: Graph) {
   const eraser = node.ports[0].node;
 
@@ -55,6 +70,17 @@ export function reduceErase(node: Node, graph: Graph) {
   removeFromArrayIf(graph, (n) => (n === node) || (n === eraser));
 }
 
+/**
+ * Commute (duplicate) two interacting nodes of different types.
+ * Creates |node.aux| copies of `other` and |other.aux| copies of `node`,
+ * then cross-links their auxiliary ports:
+ *   nodeClones[i].aux[j] ↔ otherClones[j].aux[i]
+ *
+ * This is the key rule that enables sharing/copying in interaction nets.
+ *
+ * Before:  ...—[node]—[other]—...
+ * After:   A grid of clones with cross-connected aux ports.
+ */
 export function reduceCommute(node: Node, graph: Graph) {
   const other = node.ports[0].node;
 

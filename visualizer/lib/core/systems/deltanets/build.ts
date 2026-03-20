@@ -28,6 +28,25 @@ function buildTypeGraph(ty: Type, graph: Graph): NodePort {
   }
 }
 
+/**
+ * Recursively translate an AST node into interaction net agents.
+ *
+ * - Abstraction (λx.body): Creates an abs agent with a bind port initially
+ *   connected to an eraser (in case the variable is unused). When the variable
+ *   is later encountered, the eraser is replaced by a replicator fan-in.
+ *
+ * - Application (f x): Creates an app agent, recursing into func and arg.
+ *   The argument level is incremented to track sharing depth.
+ *
+ * - Variable (x): If bound, connects to the existing bind port. If the bind
+ *   port already has a wire (second+ usage), extends the replicator fan-in.
+ *   If free, creates a var agent with a replicator for potential sharing.
+ *
+ * @param vars Tracks variable bindings: name → { level, nodePort, ... }
+ * @param level Current nesting depth (used for level deltas on replicators)
+ * @param relativeLevel Whether replicator labels show relative vs absolute levels
+ * @returns The principal port of the created agent (to be linked by the caller)
+ */
 function addAstNodeToGraph(
   astNode: AstNode,
   graph: Graph,
@@ -118,6 +137,15 @@ function addAstNodeToGraph(
   }
 }
 
+/**
+ * Build a complete interaction net from a λ-calculus AST.
+ *
+ * Steps:
+ * 1. Recursively translate AST → agent graph (addAstNodeToGraph)
+ * 2. Add a root agent pointing to the term's principal port
+ * 3. Simplify: remove trivial replicators (single-use vars) and,
+ *    for linear/affine systems, remove ALL replicators
+ */
 export function buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: boolean): Graph {
   const graph: Graph = [];
 
