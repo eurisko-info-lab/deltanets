@@ -20,6 +20,7 @@ import {
   typeCheckStepIdx,
   typeCheckSteps,
 } from "../lib/appState.ts";
+import { sonifyStep } from "../lib/audio.ts";
 
 /** All reactive scene effects: init states, update scene, center, and SVG rendering. */
 export function useSceneEffects() {
@@ -102,6 +103,22 @@ export function useSceneEffects() {
       console.error("Scene update failed:", err);
       scene.value = null;
     }
+  });
+
+  // Sonify reduction steps: play a tone when the graph state index advances
+  let prevIdx = -1;
+  useSignalEffect(() => {
+    if (isLaneView.value) return;
+    const currentState = METHODS[method.value].state.value;
+    if (!currentState) { prevIdx = -1; return; }
+    const idx = currentState.idx;
+    if (idx > prevIdx && prevIdx >= 0) {
+      const graph = currentState.stack[idx];
+      if (Array.isArray(graph)) {
+        sonifyStep(idx, graph.map((n: { type: string }) => n.type));
+      }
+    }
+    prevIdx = idx;
   });
 
   // Center graph when scene changes if auto-centering is enabled or if on first load

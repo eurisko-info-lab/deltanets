@@ -1,15 +1,23 @@
 // ═══════════════════════════════════════════════════════════════════
-// MIDI-like Audio Playback
-// Converts lane view music data into scheduled Web Audio tones.
+// Audio Engine
+// 1. Lane view playback — schedules music notation as Web Audio tones
+// 2. Reduction sonification — makes each graph reduction step audible
 // ═══════════════════════════════════════════════════════════════════
 
 import { signal } from "@preact/signals";
+import { IS_BROWSER } from "$fresh/runtime.ts";
 import { parsePitch } from "@deltanets/render";
 import type { LaneViewInput } from "@deltanets/render";
+import { STORAGE_KEYS } from "./config.ts";
 
 // ─── State ─────────────────────────────────────────────────────────
 
 export const isPlaying = signal(false);
+const storedSonify = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.sonify);
+export const sonify = signal(
+  storedSonify !== null ? storedSonify === "true" : false,
+);
 
 // ─── Pitch → frequency ────────────────────────────────────────────
 
@@ -171,5 +179,102 @@ export function stop() {
   // Clear any remaining highlights
   for (const el of document.querySelectorAll(".music-note-active")) {
     el.classList.remove("music-note-active");
+  }
+}
+
+// ─── Reduction sonification ────────────────────────────────────────
+// Maps interaction net agent types to pitches, creating a musical voice
+// for each reduction step. The computation becomes audible.
+//
+//   abs  (λ)     → C4  — the fundamental, binding
+//   app  (@)     → E4  — the major third, application
+//   rep  (δ)     → G4  — the perfect fifth, sharing
+//   era  (*)     → short silence (no sound)
+//   annihilate   → consonant major triad (C+E+G)
+//   commute      → suspended chord (C+D+G)
+//   other        → single note from the scale
+
+// Pitch map: agent type → MIDI note number
+const AGENT_PITCH: Record<string, number> = {
+  abs: 60,   // C4
+  app: 64,   // E4
+  "rep-in": 67,  // G4
+  "rep-out": 67, // G4
+  era: -1,       // silence
+  root: 72,      // C5
+  tyabs: 62,     // D4
+  tyapp: 65,     // F4
+  var: 69,       // A4
+};
+
+// Scale degrees for step-based melody (C major pentatonic, two octaves)
+const STEP_SCALE = [60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84];
+
+function midiToFreq(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+/** Play a short tone at the given MIDI note. */
+function playTone(
+  ctx: AudioContext,
+  midi: number,
+  startTime: number,
+  duration: number,
+  volume: number,
+) {
+  const osc = ctx.createOscillator();
+  osc.type = "triangle";
+  osc.frequency.value = midiToFreq(midi);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(volume, startTime + 0.015);
+  gain.gain.setValueAtTime(volume, startTime + duration - 0.04);
+  gain.gain.linearRampToValueAtTime(0, startTime + duration);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
+/**
+ * Sonify a reduction step. Called when the graph state advances.
+ * @param stepIdx - Current reduction step index (0-based)
+ * @param agentTypes - Types of agents remaining in the current graph
+ */
+export function sonifyStep(stepIdx: number, agentTypes: string[]) {
+  if (!sonify.value) return;
+
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") ctx.resume();
+  const now = ctx.currentTime + 0.02;
+
+  // Primary note: walk up the pentatonic scale
+  const scaleNote = STEP_SCALE[stepIdx % STEP_SCALE.length];
+  playTone(ctx, scaleNote, now, 0.15, 0.2);
+
+  // Harmony: add a note based on the most common agent type
+  const typeCounts = new Map<string, number>();
+  for (const t of agentTypes) {
+    typeCounts.set(t, (typeCounts.get(t) || 0) + 1);
+  }
+
+  // Find the dominant non-root agent type
+  let dominant = "";
+  let maxCount = 0;
+  for (const [t, c] of typeCounts) {
+    if (t === "root" || t === "var") continue;
+    if (c > maxCount) {
+      maxCount = c;
+      dominant = t;
+    }
+  }
+
+  const harmonyMidi = AGENT_PITCH[dominant];
+  if (harmonyMidi && harmonyMidi > 0) {
+    // Offset the harmony note to be near the scale note's octave
+    const octaveShift = Math.floor((scaleNote - harmonyMidi) / 12) * 12;
+    playTone(ctx, harmonyMidi + octaveShift, now, 0.12, 0.1);
   }
 }

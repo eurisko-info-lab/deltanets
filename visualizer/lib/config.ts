@@ -20,4 +20,5 @@ export const STORAGE_KEYS = {
   center: "center",
   debug: "debug",
   source: "source",
+  sonify: "sonify",
 } as const;

@@ -48,7 +48,9 @@ import IconBug from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug.tsx";
 import IconBugOff from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug-off.tsx";
 import IconPlayerPlay from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/player-play.tsx";
 import IconPlayerStop from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/player-stop.tsx";
-import { isPlaying, playLaneView, stop } from "../lib/audio.ts";
+import IconVolume from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/volume.tsx";
+import IconVolumeOff from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/volume-off.tsx";
+import { isPlaying, playLaneView, sonify, stop } from "../lib/audio.ts";
 
 export default function Toolbar({ examples }: { examples: Example[] }) {
   const deltaNetsData = METHODS[method.value].state.value?.data;
@@ -162,6 +164,27 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
           }}
         >
           {isPlaying.value ? <IconPlayerStop /> : <IconPlayerPlay />}
+        </button>
+      )}
+      {!isLaneView.value && (
+        <button
+          type="button"
+          title={sonify.value ? "Mute reduction sounds" : "Sonify reductions"}
+          class={squareButtonClass}
+          style={{
+            borderColor: sonify.value
+              ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
+              : (theme.value === "light" ? "#000D" : "#FFF6"),
+          }}
+          onClick={() => {
+            sonify.value = !sonify.value;
+            window.localStorage.setItem(
+              STORAGE_KEYS.sonify,
+              String(sonify.value),
+            );
+          }}
+        >
+          {sonify.value ? <IconVolume /> : <IconVolumeOff />}
         </button>
       )}
       <select
