@@ -3,6 +3,7 @@ import {
   ast,
   center,
   codeEditorRef,
+  currentLaneView,
   debug,
   enterTypeCheckMode,
   exitTypeCheckMode,
@@ -10,6 +11,7 @@ import {
   inetMode,
   inetSelectedGraph,
   isFirstLoad,
+  isLaneView,
   method,
   parseErrors,
   relativeLevel,
@@ -44,6 +46,9 @@ import IconMaximize from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/maximiz
 import IconDownload from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/download.tsx";
 import IconBug from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug.tsx";
 import IconBugOff from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug-off.tsx";
+import IconPlayerPlay from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/player-play.tsx";
+import IconPlayerStop from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/player-stop.tsx";
+import { isPlaying, playLaneView, stop } from "../lib/audio.ts";
 
 export default function Toolbar({ examples }: { examples: Example[] }) {
   const deltaNetsData = METHODS[method.value].state.value?.data;
@@ -137,6 +142,27 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
             </option>
           ))}
         </select>
+      )}
+      {isLaneView.value && currentLaneView.value && (
+        <button
+          type="button"
+          title={isPlaying.value ? "Stop playback" : "Play music"}
+          class={squareButtonClass}
+          style={{
+            borderColor: isPlaying.value
+              ? (theme.value === "light" ? "#dc2626" : "#f87171")
+              : (theme.value === "light" ? "#000D" : "#FFF6"),
+          }}
+          onClick={() => {
+            if (isPlaying.value) {
+              stop();
+            } else {
+              playLaneView(currentLaneView.value!);
+            }
+          }}
+        >
+          {isPlaying.value ? <IconPlayerStop /> : <IconPlayerPlay />}
+        </button>
       )}
       <select
         aria-label="Reduction method"

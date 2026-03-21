@@ -13,7 +13,12 @@ import {
   typeCheck,
 } from "@deltanets/core";
 import type { TypeCheckStep, TypeResult } from "@deltanets/core";
-import { Node2D, Pos, renderLaneView } from "@deltanets/render";
+import {
+  type LaneViewInput,
+  Node2D,
+  Pos,
+  renderLaneView,
+} from "@deltanets/render";
 import { METHODS } from "@deltanets/methods";
 import { agentStyles, typeReductionMode } from "@deltanets/methods";
 import {
@@ -101,6 +106,7 @@ export const inetCore = signal<CoreResult | null>(null);
 export const inetGraphNames = signal<string[]>([]);
 export const inetSelectedGraph = signal<string>("");
 export const isLaneView = signal<boolean>(false);
+export const currentLaneView = signal<LaneViewInput | null>(null);
 
 // Keep track of whether the splitter is being dragged
 export const isDraggingSplitter = signal<boolean>(false);
@@ -114,6 +120,7 @@ export const codeEditorRef: { current: any } = { current: null };
 /** Set AST and compute type-checking state from it (call inside batch). */
 const applyAst = (astNode: AstNode | null) => {
   isLaneView.value = false;
+  currentLaneView.value = null;
   ast.value = astNode;
   if (astNode) {
     systemType.value = getExpressionType(astNode);
@@ -136,6 +143,7 @@ const applyINetGraph = (
   const initFromGraph = METHODS.deltanets.initFromGraph;
   if (!initFromGraph) return false;
   isLaneView.value = false;
+  currentLaneView.value = null;
   ast.value = null;
   typeResult.value = { ok: true, type: { kind: "hole" } };
   typeCheckSteps.value = [];
@@ -149,6 +157,7 @@ const applyINetGraph = (
 /** Render a lane view directly to the scene (no method state). Call inside batch. */
 const applyLaneView = (laneView: Parameters<typeof renderLaneView>[0]) => {
   isLaneView.value = true;
+  currentLaneView.value = laneView;
   ast.value = null;
   typeResult.value = null;
   typeCheckSteps.value = [];
