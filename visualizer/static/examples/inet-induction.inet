@@ -1,12 +1,14 @@
 # Inductive Proofs — Proof Construction by Recursion
 #
-# Introduces the first inductive proof agent: plus_zero_right.
-# Given a natural number n, it *constructs* a proof that n + 0 = n
-# by structural recursion on n.
+# Two inductive proof agents that construct equality proofs
+# by structural recursion on natural numbers:
 #
-# Key insight: induction is just interaction.  The agent walks down
-# the number, emitting one cong_succ per Succ, until it hits Zero
-# and emits refl.  Then the chain of cong_succ's collapses to refl.
+#   plus_zero_right(n):  n + 0 = n           (steps = 2n + 1)
+#   plus_succ_right(n, m): n + S(m) = S(n + m)  (steps = 2n + m + 2)
+#
+# Key insight: induction is just interaction.  Each agent walks
+# down the number, emitting one cong_succ per Succ, until it
+# hits Zero and emits refl.  Then the chain collapses to refl.
 #
 # Watch the reduction: you can literally see the induction unfold.
 
@@ -102,6 +104,36 @@ system "Induction" extend "NatEq" {
     wire cs.principal -- pzr.result
     relink right.pred pzr.principal
   }
+
+  # plus_succ_right: ∀ n m. n + S(m) = S(n + m)
+  #
+  #   Eats a Nat n on its principal port, carries an auxiliary m,
+  #   and emits an Eq proof on its result port.
+  #
+  #   Base case  (n = Zero):
+  #     0 + S(m) = S(0 + m) = S(m) = S(m), so refl.
+  #     The m argument is erased (not needed in the proof term).
+  #
+  #   Step case  (n = Succ(k)):
+  #     By recursion we get p : k + S(m) = S(k + m).
+  #     Apply cong_succ: S(k + S(m)) = S(S(k + m)).
+  #     Since add(S(k), S(m)) = S(add(k, S(m))), QED.
+  agent plus_succ_right(principal, result, m)
+
+  rule plus_succ_right <> Zero -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.m
+  }
+
+  rule plus_succ_right <> Succ -> {
+    let psr = plus_succ_right
+    let cs  = cong_succ
+    relink left.result cs.result
+    wire cs.principal -- psr.result
+    relink right.pred psr.principal
+    relink left.m psr.m
+  }
 }
 
 # ─── Example Graphs ───────────────────────────────────────────────
@@ -193,4 +225,126 @@ graph verify-two-plus-zero {
   wire s1.pred       -- s2.principal
   wire s2.pred       -- z1.principal
   wire a.accum       -- z2.principal
+}
+
+# ═════════════════════════════════════════════════════════════════
+# plus_succ_right examples
+# ═════════════════════════════════════════════════════════════════
+#
+# plus_succ_right(n, m) proves n + S(m) = S(n + m).
+# Steps = 2n + m + 2:  n unwinds of Succ, 1 base case,
+# (m + 1) erase steps for m, then n cong_succ collapses.
+
+# ─── (n=0, m=0): two steps ───────────────────────────────────────
+# plus_succ_right(Zero, Zero)
+#   → refl, erase Zero                        (2 steps)
+graph psr-zero-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# ─── (n=1, m=0): four steps ──────────────────────────────────────
+# plus_succ_right(Succ(Zero), Zero)
+#   → cong_succ(psr(Zero, Zero))
+#   → cong_succ(refl) + erase Zero
+#   → refl                                    (4 steps)
+graph psr-one-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let s   = Succ
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s.principal
+  wire s.pred        -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# ─── (n=0, m=2): four steps ──────────────────────────────────────
+# plus_succ_right(Zero, Succ(Succ(Zero)))
+#   → refl, erase Succ(Succ(Zero))            (4 steps)
+# Shows the eraser propagating through m.
+graph psr-zero-two {
+  let r   = root
+  let psr = plus_succ_right
+  let z1  = Zero
+  let s1  = Succ
+  let s2  = Succ
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- z1.principal
+  wire psr.m         -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z2.principal
+}
+
+# ─── (n=2, m=1): seven steps ─────────────────────────────────────
+# plus_succ_right(Succ(Succ(Zero)), Succ(Zero))
+#   2 unwinds + 1 base + 2 erase + 2 cong_succ     (7 steps)
+graph psr-two-one {
+  let r   = root
+  let psr = plus_succ_right
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let sm  = Succ
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z1.principal
+  wire psr.m         -- sm.principal
+  wire sm.pred       -- z2.principal
+}
+
+# ─── (n=3, m=2): ten steps ───────────────────────────────────────
+# plus_succ_right(3, 2): 2·3 + 2 + 2 = 10 steps
+graph psr-three-two {
+  let r   = root
+  let psr = plus_succ_right
+  let s1  = Succ
+  let s2  = Succ
+  let s3  = Succ
+  let z1  = Zero
+  let m1  = Succ
+  let m2  = Succ
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- s3.principal
+  wire s3.pred       -- z1.principal
+  wire psr.m         -- m1.principal
+  wire m1.pred       -- m2.principal
+  wire m2.pred       -- z2.principal
+}
+
+# ─── Verification: 2 + S(1) = S(2 + 1) ──────────────────────────
+# Compute add(2, S(1)) = add(2, 2) via subst(refl, ...).
+# Result should be Succ(Succ(Succ(Succ(Zero)))) = 4.
+graph verify-two-succ-one {
+  let r   = root
+  let sub = subst
+  let rf  = refl
+  let a   = add
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let sm  = Succ
+  let s3  = Succ
+  let z2  = Zero
+  wire r.principal   -- sub.result
+  wire sub.principal -- rf.principal
+  wire sub.value     -- a.result
+  wire a.principal   -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z1.principal
+  wire a.accum       -- sm.principal
+  wire sm.pred       -- s3.principal
+  wire s3.pred       -- z2.principal
 }
