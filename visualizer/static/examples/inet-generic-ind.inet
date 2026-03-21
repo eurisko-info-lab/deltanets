@@ -1,0 +1,261 @@
+# Generic Nat Eliminator — Abstracting the Proof Pattern
+#
+# We've seen the same pattern across Nat proofs:
+#   1. Walk down the Nat (one rule per constructor)
+#   2. Base case (Zero): emit refl (or some base proof)
+#   3. Step case (Succ): wrap in cong_succ, recurse on predecessor
+#
+# Can we factor this out?  YES — for the common case.
+#
+# nat_ind(n, base):
+#   Generic Nat induction with step = cong_succ(IH).
+#   nat_ind(n, refl) IS plus_zero_right(n).
+#
+# nat_ind_param(n, base, param):
+#   Same, but threads one parameter through and erases it at base.
+#   nat_ind_param(n, refl, m) IS plus_succ_right(n, m).
+#
+# Limitation: these only handle step = cong_succ(IH).  For
+# plus_comm, the step case is more complex (trans + sym + psr),
+# so it still needs a custom agent.  This shows WHY custom agents
+# exist: the step function varies per theorem.
+#
+# Key tutorial insight: the generic eliminator captures the COMMON
+# case.  Custom agents handle the GENERAL case.  A proof tactic
+# (Phase 13) will automate generating custom agents.
+
+include "prelude"
+
+# ─── Nat system ───────────────────────────────────────────────────
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> {
+    relink left.result left.accum
+  }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+# ─── Eq system ────────────────────────────────────────────────────
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent cong(principal, result, func)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> {
+    relink left.result left.value
+  }
+  rule sym <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+  rule cong <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.func
+  }
+  rule trans <> refl -> {
+    relink left.result left.second
+  }
+}
+
+# ─── NatEq: congruence for Succ ──────────────────────────────────
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ─── GenericInd: the generic eliminators ──────────────────────────
+
+system "GenericInd" extend "NatEq" {
+
+  # nat_ind(n, result, base)
+  #
+  #   Generic Nat induction.  Recurses down n, wrapping each
+  #   step in cong_succ, and connects the base proof at Zero.
+  #
+  #   Base (n = Zero): connect result ← base
+  #   Step (n = Succ(k)): result ← cong_succ(nat_ind(k, base))
+  #
+  #   Equivalent to plus_zero_right when base = refl:
+  #     nat_ind(n, refl)  ≡  plus_zero_right(n)
+  agent nat_ind(principal, result, base)
+
+  rule nat_ind <> Zero -> {
+    relink left.result left.base
+  }
+  rule nat_ind <> Succ -> {
+    let ni = nat_ind
+    let cs = cong_succ
+    relink left.result cs.result
+    wire cs.principal -- ni.result
+    relink right.pred ni.principal
+    relink left.base ni.base
+  }
+
+  # nat_ind_param(n, result, base, param)
+  #
+  #   Nat induction with one auxiliary parameter.
+  #   The parameter is threaded through each step and erased
+  #   at the base case.
+  #
+  #   Base (n = Zero): connect result ← base, erase param
+  #   Step (n = Succ(k)): result ← cong_succ(nat_ind_param(k, base, param))
+  #
+  #   Equivalent to plus_succ_right when base = refl:
+  #     nat_ind_param(n, refl, m)  ≡  plus_succ_right(n, m)
+  agent nat_ind_param(principal, result, base, param)
+
+  rule nat_ind_param <> Zero -> {
+    relink left.result left.base
+    erase left.param
+  }
+  rule nat_ind_param <> Succ -> {
+    let ni = nat_ind_param
+    let cs = cong_succ
+    relink left.result cs.result
+    wire cs.principal -- ni.result
+    relink right.pred ni.principal
+    relink left.base ni.base
+    relink left.param ni.param
+  }
+}
+
+# ─── Example Graphs ───────────────────────────────────────────────
+
+# ═════════════════════════════════════════════════════════════════
+# nat_ind examples — generic plus_zero_right
+# ═════════════════════════════════════════════════════════════════
+#
+# nat_ind(n, refl) proves n + 0 = n.
+# Steps = 2n + 1 — same formula as plus_zero_right!
+
+# nat_ind(0, refl) → refl                       (1 step)
+graph ni-zero {
+  let r  = root
+  let ni = nat_ind
+  let z  = Zero
+  let rf = refl
+  wire r.principal  -- ni.result
+  wire ni.principal -- z.principal
+  wire ni.base      -- rf.principal
+}
+
+# nat_ind(1, refl) → refl                       (3 steps)
+graph ni-one {
+  let r  = root
+  let ni = nat_ind
+  let s  = Succ
+  let z  = Zero
+  let rf = refl
+  wire r.principal  -- ni.result
+  wire ni.principal -- s.principal
+  wire s.pred       -- z.principal
+  wire ni.base      -- rf.principal
+}
+
+# nat_ind(2, refl) → refl                       (5 steps)
+graph ni-two {
+  let r  = root
+  let ni = nat_ind
+  let s1 = Succ
+  let s2 = Succ
+  let z  = Zero
+  let rf = refl
+  wire r.principal  -- ni.result
+  wire ni.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z.principal
+  wire ni.base      -- rf.principal
+}
+
+# nat_ind(3, refl) → refl                       (7 steps)
+graph ni-three {
+  let r  = root
+  let ni = nat_ind
+  let s1 = Succ
+  let s2 = Succ
+  let s3 = Succ
+  let z  = Zero
+  let rf = refl
+  wire r.principal  -- ni.result
+  wire ni.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- s3.principal
+  wire s3.pred      -- z.principal
+  wire ni.base      -- rf.principal
+}
+
+# ═════════════════════════════════════════════════════════════════
+# nat_ind_param examples — generic plus_succ_right
+# ═════════════════════════════════════════════════════════════════
+#
+# nat_ind_param(n, refl, m) proves n + S(m) = S(n + m).
+# Steps = 2n + m + 2 — same formula as plus_succ_right!
+
+# nat_ind_param(0, refl, 0) → refl              (2 steps)
+graph nip-zero-zero {
+  let r  = root
+  let ni = nat_ind_param
+  let z1 = Zero
+  let rf = refl
+  let z2 = Zero
+  wire r.principal  -- ni.result
+  wire ni.principal -- z1.principal
+  wire ni.base      -- rf.principal
+  wire ni.param     -- z2.principal
+}
+
+# nat_ind_param(1, refl, 0) → refl              (4 steps)
+graph nip-one-zero {
+  let r  = root
+  let ni = nat_ind_param
+  let s  = Succ
+  let z1 = Zero
+  let rf = refl
+  let z2 = Zero
+  wire r.principal  -- ni.result
+  wire ni.principal -- s.principal
+  wire s.pred       -- z1.principal
+  wire ni.base      -- rf.principal
+  wire ni.param     -- z2.principal
+}
+
+# nat_ind_param(2, refl, 1) → refl              (7 steps)
+graph nip-two-one {
+  let r  = root
+  let ni = nat_ind_param
+  let s1 = Succ
+  let s2 = Succ
+  let z1 = Zero
+  let rf = refl
+  let sm = Succ
+  let z2 = Zero
+  wire r.principal  -- ni.result
+  wire ni.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z1.principal
+  wire ni.base      -- rf.principal
+  wire ni.param     -- sm.principal
+  wire sm.pred      -- z2.principal
+}
