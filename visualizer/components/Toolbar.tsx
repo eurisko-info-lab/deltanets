@@ -1,16 +1,34 @@
 import { batch } from "@preact/signals";
 import {
-  method, theme, center, debug, selectedSystemType, systemType,
-  relativeLevel, typeResult, typeCheckMode, typeCheckStepIdx, typeCheckSteps,
-  ast, inetMode, inetGraphNames, inetSelectedGraph, isFirstLoad, scene,
-  codeEditorRef, updateAst, selectINetGraph, enterTypeCheckMode, exitTypeCheckMode,
+  ast,
+  center,
+  codeEditorRef,
+  debug,
+  enterTypeCheckMode,
+  exitTypeCheckMode,
+  inetGraphNames,
+  inetMode,
+  inetSelectedGraph,
+  isFirstLoad,
+  method,
   parseErrors,
+  relativeLevel,
+  scene,
+  selectedSystemType,
+  selectINetGraph,
+  systemType,
+  theme,
+  typeCheckMode,
+  typeCheckStepIdx,
+  typeCheckSteps,
+  typeResult,
+  updateAst,
 } from "../lib/appState.ts";
 import { STORAGE_KEYS } from "../lib/config.ts";
 import { OPTIMAL_HIGHLIGHT_COLOR } from "@deltanets/render";
-import { typeToString, type SystemType } from "@deltanets/core";
+import { type SystemType, typeToString } from "@deltanets/core";
 import { hasTypeAnnotations } from "@deltanets/core";
-import { GitHubIcon, DarkThemeIcon, LightThemeIcon } from "./Icons.tsx";
+import { DarkThemeIcon, GitHubIcon, LightThemeIcon } from "./Icons.tsx";
 import { METHODS } from "@deltanets/methods";
 import { typeReductionMode } from "@deltanets/methods";
 import type { Example } from "../routes/index.tsx";
@@ -28,14 +46,16 @@ import IconBugOff from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/bug-off.t
 
 export default function Toolbar({ examples }: { examples: Example[] }) {
   const deltaNetsData = METHODS[method.value].state.value?.data;
-  const isDeltaFinalStep = method.value === "deltanets" && deltaNetsData?.isFinalStep && !deltaNetsData.appliedFinalStep;
+  const isDeltaFinalStep = method.value === "deltanets" &&
+    deltaNetsData?.isFinalStep && !deltaNetsData.appliedFinalStep;
 
   const tcActive = typeCheckMode.value;
   const tcIdx = tcActive ? typeCheckStepIdx.value : -1;
   const tcLen = typeCheckSteps.value.length;
 
   const squareButtonClass =
-    `border-1 rounded p-2 text-xl min-h-[44px] min-w-[44px] bg-inherit flex flex-row justify-center items-center disabled:opacity-[0.4] disabled:cursor-not-allowed hover:bg-[${theme.value === "light" ? "white" : "#2A2A2A"
+    `border-1 rounded p-2 text-xl min-h-[44px] min-w-[44px] bg-inherit flex flex-row justify-center items-center disabled:opacity-[0.4] disabled:cursor-not-allowed hover:bg-[${
+      theme.value === "light" ? "white" : "#2A2A2A"
     }] disabled:bg-transparent`;
 
   return (
@@ -74,8 +94,9 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
           // Reset centering
           center.value = originalCenter;
         }}
-        class={`border-1 rounded px-1 text-xl min-h-[44px] bg-inherit w-[120px] bg-transparent hover:bg-[${theme.value === "light" ? "white" : "#2A2A2A"
-          }] disabled:bg-transparent`}
+        class={`border-1 rounded px-1 text-xl min-h-[44px] bg-inherit w-[120px] bg-transparent hover:bg-[${
+          theme.value === "light" ? "white" : "#2A2A2A"
+        }] disabled:bg-transparent`}
         style={{
           borderColor: theme.value === "light" ? "#FAFAFA" : "#222",
         }}
@@ -144,30 +165,36 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
           </option>
         ))}
       </select>
-      {method.value === "deltanets" && <select
-        aria-label="Level mode"
-        value={relativeLevel.value ? "relative" : "absolute"}
-        onChange={(e) => {
-          const newRelativeLevel = (e?.target as HTMLSelectElement).value === "relative";
-          relativeLevel.value = newRelativeLevel;
-        }}
-        class="border-1 rounded px-1 text-xl min-h-[44px] bg-inherit"
-        style={{
-          borderColor: theme.value === "light" ? "#000D" : "#FFF6",
-          background: theme.value === "light" ? "white" : "#1A1A1A",
-        }}>
-        <option value="absolute">Absolute levels (default)</option>
-        <option value="relative">Relative levels</option>
-      </select>}
+      {method.value === "deltanets" && (
+        <select
+          aria-label="Level mode"
+          value={relativeLevel.value ? "relative" : "absolute"}
+          onChange={(e) => {
+            const newRelativeLevel =
+              (e?.target as HTMLSelectElement).value === "relative";
+            relativeLevel.value = newRelativeLevel;
+          }}
+          class="border-1 rounded px-1 text-xl min-h-[44px] bg-inherit"
+          style={{
+            borderColor: theme.value === "light" ? "#000D" : "#FFF6",
+            background: theme.value === "light" ? "white" : "#1A1A1A",
+          }}
+        >
+          <option value="absolute">Absolute levels (default)</option>
+          <option value="relative">Relative levels</option>
+        </select>
+      )}
       {typeResult.value && (
         <div
           title={tcActive
             ? (typeCheckSteps.value[tcIdx]?.judgment ?? "Type check mode")
             : typeReductionMode.value
-              ? "Type reduction mode — click to switch to expression reduction"
-              : (typeResult.value.ok
-                ? `Type: ${typeToString(typeResult.value.type)} — click to switch to type reduction`
-                : `Type error: ${typeResult.value.error}`)}
+            ? "Type reduction mode — click to switch to expression reduction"
+            : (typeResult.value.ok
+              ? `Type: ${
+                typeToString(typeResult.value.type)
+              } — click to switch to type reduction`
+              : `Type error: ${typeResult.value.error}`)}
           class="border-1 rounded px-2 text-sm min-h-[44px] bg-inherit flex flex-row items-center whitespace-nowrap select-none"
           style={{
             borderColor: (tcActive || typeReductionMode.value)
@@ -176,7 +203,9 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
             color: (tcActive || typeReductionMode.value)
               ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
               : (typeResult.value.ok
-                ? (!ast.value || hasTypeAnnotations(ast.value) ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : (theme.value === "light" ? "#666" : "#888"))
+                ? (!ast.value || hasTypeAnnotations(ast.value)
+                  ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
+                  : (theme.value === "light" ? "#666" : "#888"))
                 : (theme.value === "light" ? "#dc2626" : "#f87171")),
             maxWidth: "360px",
             overflow: "hidden",
@@ -245,10 +274,25 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
           background: theme.value === "light" ? "white" : "#1A1A1A",
-        }}>
-        <option value="linear" disabled={systemType.value !== "linear"}>Linear (L)</option>
-        <option value="affine" disabled={systemType.value === "relevant" || systemType.value === "full"}>Affine (A)</option>
-        <option value="relevant" disabled={systemType.value === "affine" || systemType.value === "full"}>Relevant (I)</option>
+        }}
+      >
+        <option value="linear" disabled={systemType.value !== "linear"}>
+          Linear (L)
+        </option>
+        <option
+          value="affine"
+          disabled={systemType.value === "relevant" ||
+            systemType.value === "full"}
+        >
+          Affine (A)
+        </option>
+        <option
+          value="relevant"
+          disabled={systemType.value === "affine" ||
+            systemType.value === "full"}
+        >
+          Relevant (I)
+        </option>
         <option value="full">Full (K)</option>
       </select>
       <button
@@ -258,8 +302,14 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={tcActive ? (() => { typeCheckStepIdx.value = 0; }) : METHODS[method.value].state.value?.reset}
-        disabled={tcActive ? tcIdx <= 0 : !METHODS[method.value].state.value?.reset}
+        onClick={tcActive
+          ? (() => {
+            typeCheckStepIdx.value = 0;
+          })
+          : METHODS[method.value].state.value?.reset}
+        disabled={tcActive
+          ? tcIdx <= 0
+          : !METHODS[method.value].state.value?.reset}
       >
         <IconArrowBarToLeft />
       </button>
@@ -270,8 +320,14 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={tcActive ? (() => { typeCheckStepIdx.value = Math.max(0, typeCheckStepIdx.peek() - 1); }) : METHODS[method.value].state.value?.back}
-        disabled={tcActive ? tcIdx <= 0 : !METHODS[method.value].state.value?.back}
+        onClick={tcActive
+          ? (() => {
+            typeCheckStepIdx.value = Math.max(0, typeCheckStepIdx.peek() - 1);
+          })
+          : METHODS[method.value].state.value?.back}
+        disabled={tcActive
+          ? tcIdx <= 0
+          : !METHODS[method.value].state.value?.back}
       >
         <IconArrowLeft />
       </button>
@@ -279,15 +335,19 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         class="border-0 rounded text-xl min-h-[44px] bg-inherit flex flex-row justify-center items-end font-mono p-1"
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
-          color: tcActive ? (theme.value === "light" ? "#2563eb" : "#60a5fa") : "inherit",
+          color: tcActive
+            ? (theme.value === "light" ? "#2563eb" : "#60a5fa")
+            : "inherit",
         }}
       >
-        {tcActive && tcLen > 0
-          ? `${tcIdx}/${tcLen - 1}`
-          : <>{METHODS[method.value].state.value?.idx ?? 0}/
-        {METHODS[method.value].state.value?.stack?.length
-          ? METHODS[method.value].state.value?.stack?.length! - 1
-          : 0}</>}
+        {tcActive && tcLen > 0 ? `${tcIdx}/${tcLen - 1}` : (
+          <>
+            {METHODS[method.value].state.value?.idx ?? 0}/
+            {METHODS[method.value].state.value?.stack?.length
+              ? METHODS[method.value].state.value?.stack?.length! - 1
+              : 0}
+          </>
+        )}
       </div>
       <button
         type="button"
@@ -295,15 +355,27 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         class={squareButtonClass}
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
-          background: !tcActive && isDeltaFinalStep ? OPTIMAL_HIGHLIGHT_COLOR : "transparent"
+          background: !tcActive && isDeltaFinalStep
+            ? OPTIMAL_HIGHLIGHT_COLOR
+            : "transparent",
         }}
-        onClick={tcActive ? (() => { typeCheckStepIdx.value = Math.min(typeCheckSteps.peek().length - 1, typeCheckStepIdx.peek() + 1); }) : METHODS[method.value].state.value?.forward}
-        disabled={tcActive ? tcIdx >= tcLen - 1 : !METHODS[method.value].state.value?.forward}
+        onClick={tcActive
+          ? (() => {
+            typeCheckStepIdx.value = Math.min(
+              typeCheckSteps.peek().length - 1,
+              typeCheckStepIdx.peek() + 1,
+            );
+          })
+          : METHODS[method.value].state.value?.forward}
+        disabled={tcActive
+          ? tcIdx >= tcLen - 1
+          : !METHODS[method.value].state.value?.forward}
       >
         {tcActive
           ? <IconArrowRight />
           : ((METHODS[method.value].state.value?.idx! <
-            METHODS[method.value].state.value?.stack.length! - 1) || METHODS[method.value].state.value?.forward === undefined
+              METHODS[method.value].state.value?.stack.length! - 1) ||
+              METHODS[method.value].state.value?.forward === undefined
             ? <IconArrowRight />
             : <IconArrowRightToArc />)}
       </button>
@@ -314,22 +386,32 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
-        onClick={tcActive ? (() => { typeCheckStepIdx.value = typeCheckSteps.peek().length - 1; }) : METHODS[method.value].state.value?.last}
-        disabled={tcActive ? tcIdx >= tcLen - 1 : !METHODS[method.value].state.value?.last}
+        onClick={tcActive
+          ? (() => {
+            typeCheckStepIdx.value = typeCheckSteps.peek().length - 1;
+          })
+          : METHODS[method.value].state.value?.last}
+        disabled={tcActive
+          ? tcIdx >= tcLen - 1
+          : !METHODS[method.value].state.value?.last}
       >
         <IconArrowBarToRight />
       </button>
       <button
         type="button"
-        title={`Toggle auto-centering (currently ${center.value ? "ON" : "OFF"
-          })`}
+        title={`Toggle auto-centering (currently ${
+          center.value ? "ON" : "OFF"
+        })`}
         class={squareButtonClass}
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
         onClick={() => {
           const newCenter = !center.peek();
-          window.localStorage.setItem(STORAGE_KEYS.center, newCenter ? "true" : "false");
+          window.localStorage.setItem(
+            STORAGE_KEYS.center,
+            newCenter ? "true" : "false",
+          );
           center.value = newCenter;
         }}
       >
@@ -382,15 +464,19 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
       </button>
       <button
         type="button"
-        title={`Toggle visual debugging helpers (currently ${debug.value ? "ON" : "OFF"
-          })`}
+        title={`Toggle visual debugging helpers (currently ${
+          debug.value ? "ON" : "OFF"
+        })`}
         class={squareButtonClass}
         style={{
           borderColor: theme.value === "light" ? "#000D" : "#FFF6",
         }}
         onClick={() => {
           const newDebug = !debug.peek();
-          window.localStorage.setItem(STORAGE_KEYS.debug, newDebug ? "true" : "false");
+          window.localStorage.setItem(
+            STORAGE_KEYS.debug,
+            newDebug ? "true" : "false",
+          );
           debug.value = newDebug;
         }}
       >

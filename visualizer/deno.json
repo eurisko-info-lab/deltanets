@@ -1,5 +1,10 @@
 {
-  "workspace": ["./packages/core", "./packages/lang", "./packages/render", "./packages/methods"],
+  "workspace": [
+    "./packages/core",
+    "./packages/lang",
+    "./packages/render",
+    "./packages/methods"
+  ],
   "tasks": {
     "check": "deno fmt --check && deno lint && deno check **/*.ts && deno check **/*.tsx",
     "check:core": "deno check packages/core/**/*.ts",

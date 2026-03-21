@@ -2,28 +2,28 @@
   font-family: "Libertinus";
   font-weight: 400;
   font-style: normal;
-  src: url("/LibertinusMath-Regular.otf") format("opentype"),
+  src: url("/LibertinusMath-Regular.otf") format("opentype"), ;
 }
 
 @font-face {
   font-family: "NewComputerModern";
   font-weight: 400;
   font-style: normal;
-  src: url("/NewCM10-Regular.otf") format("opentype"),
+  src: url("/NewCM10-Regular.otf") format("opentype"), ;
 }
 
 @font-face {
   font-family: "Inter";
   font-weight: 400;
   font-style: normal;
-  src: url("/Inter-Regular.woff2") format("woff2"),
+  src: url("/Inter-Regular.woff2") format("woff2"), ;
 }
 
 @font-face {
   font-family: "OpenSans";
   font-weight: 400;
   font-style: normal;
-  src: url("/OpenSans-VariableFont_wdth,wght.ttf") format("truetype"),
+  src: url("/OpenSans-VariableFont_wdth,wght.ttf") format("truetype"), ;
 }
 
 button:focus {

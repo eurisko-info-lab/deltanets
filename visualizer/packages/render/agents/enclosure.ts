@@ -1,8 +1,5 @@
-import {
-  Node2D, D,
-  type Pos, type SVG, type Bounds,
-} from "../core.ts";
-import { Rect, Path, Label } from "../primitives.ts";
+import { type Bounds, D, Node2D, type Pos, type SVG } from "../core.ts";
+import { Label, Path, Rect } from "../primitives.ts";
 import { Wire } from "./wire.ts";
 
 // A function enclosure, used by the Naive method.

@@ -2,9 +2,11 @@
 
 import * as d3 from "d3";
 import {
-  Node2D, D,
+  D,
+  Node2D,
   OPTIMAL_HIGHLIGHT_COLOR,
-  type Pos, type SVG,
+  type Pos,
+  type SVG,
 } from "../core.ts";
 import { Path } from "../primitives.ts";
 

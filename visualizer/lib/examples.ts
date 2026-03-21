@@ -5,7 +5,9 @@
 const examplesDir = new URL("../static/examples/", import.meta.url).pathname;
 
 const files = [...Deno.readDirSync(examplesDir)]
-  .filter((e) => e.isFile && (e.name.endsWith(".lam") || e.name.endsWith(".inet")))
+  .filter((e) =>
+    e.isFile && (e.name.endsWith(".lam") || e.name.endsWith(".inet"))
+  )
   .map((e) => e.name);
 
 // .lam files first, then .inet files, alphabetical within each group.

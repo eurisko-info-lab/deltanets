@@ -1,11 +1,13 @@
 import * as d3 from "d3";
 import {
-  Node2D, D, DEFAULT_LINE_WIDTH,
-  OPTIMAL_HIGHLIGHT_COLOR,
+  D,
+  DEFAULT_LINE_WIDTH,
   defaultFill,
+  Node2D,
+  OPTIMAL_HIGHLIGHT_COLOR,
   type Pos,
 } from "../core.ts";
-import { Text, Rect, Path } from "../primitives.ts";
+import { Path, Rect, Text } from "../primitives.ts";
 
 // A twine is a sequence of boxes, each with an integer and a pointer (and arrow point out of the box to another twine).
 // The integer represents the level of the pointed-to twine. As such, a twine's level is stored in all of the twines which point to it.

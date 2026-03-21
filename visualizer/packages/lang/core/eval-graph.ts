@@ -49,9 +49,16 @@ function lamExprToAstNode(
 // Convert a TypeExpr AST node to the core Type representation.
 function typeExprToType(texpr: AST.TypeExpr): Type {
   switch (texpr.kind) {
-    case "type-base":  return { kind: "base", name: texpr.name };
-    case "type-arrow": return { kind: "arrow", from: typeExprToType(texpr.from), to: typeExprToType(texpr.to) };
-    case "type-hole":  return { kind: "hole" };
+    case "type-base":
+      return { kind: "base", name: texpr.name };
+    case "type-arrow":
+      return {
+        kind: "arrow",
+        from: typeExprToType(texpr.from),
+        to: typeExprToType(texpr.to),
+      };
+    case "type-hole":
+      return { kind: "hole" };
   }
 }
 
@@ -116,16 +123,16 @@ function buildExplicitGraph(
 // definitions and well-known port names from the core type system.
 
 const WELL_KNOWN_PORTS: Record<string, Record<string, number>> = {
-  abs:        { principal: 0, body: 1, bind: 2, type: 3 },
-  app:        { func: 0, result: 1, arg: 2 },
-  "rep-in":   { principal: 0 },
-  "rep-out":  { principal: 0 },
-  era:        { principal: 0 },
-  var:        { principal: 0 },
-  root:       { principal: 0 },
-  "type-base":  { principal: 0 },
+  abs: { principal: 0, body: 1, bind: 2, type: 3 },
+  app: { func: 0, result: 1, arg: 2 },
+  "rep-in": { principal: 0 },
+  "rep-out": { principal: 0 },
+  era: { principal: 0 },
+  var: { principal: 0 },
+  root: { principal: 0 },
+  "type-base": { principal: 0 },
   "type-arrow": { principal: 0, domain: 1, codomain: 2 },
-  "type-hole":  { principal: 0 },
+  "type-hole": { principal: 0 },
 };
 
 function resolvePort(
@@ -148,5 +155,7 @@ function resolvePort(
   const wk = WELL_KNOWN_PORTS[node.type];
   if (wk && wk[portName] !== undefined) return wk[portName];
 
-  throw new EvalError(`Unknown port '${portName}' on agent type '${node.type}'`);
+  throw new EvalError(
+    `Unknown port '${portName}' on agent type '${node.type}'`,
+  );
 }

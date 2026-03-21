@@ -7,5 +7,9 @@ export * from "./types.ts";
 export * from "./graph.ts";
 export * from "./reductions.ts";
 export * from "./typechecker.ts";
-export { deltanets, readbackGraph, readbackGraphToString } from "./systems/deltanets/index.ts";
+export {
+  deltanets,
+  readbackGraph,
+  readbackGraphToString,
+} from "./systems/deltanets/index.ts";
 export { lambdacalc } from "./systems/lambdacalc.ts";

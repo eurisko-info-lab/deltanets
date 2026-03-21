@@ -9,14 +9,14 @@ import { reduceCommute } from "../../reductions.ts";
 // --- Delta-nets specific types ---
 
 export type NodeType =
-  | "abs"        // Abstraction (3 auxiliary ports: body, bind, type)
-  | "app"        // Application (2 auxiliary ports: func, arg)
-  | "rep-in"     // Replicator Fan-In (any number of auxiliary ports)
-  | "rep-out"    // Replicator Fan-Out (any number of auxiliary ports)
-  | "era"        // Eraser (0 auxiliary ports)
-  | "var"        // Variable (0 auxiliary ports)
-  | "root"       // Root (0 auxiliary ports)
-  | "type-base"  // Base type (0 auxiliary ports)
+  | "abs" // Abstraction (3 auxiliary ports: body, bind, type)
+  | "app" // Application (2 auxiliary ports: func, arg)
+  | "rep-in" // Replicator Fan-In (any number of auxiliary ports)
+  | "rep-out" // Replicator Fan-Out (any number of auxiliary ports)
+  | "era" // Eraser (0 auxiliary ports)
+  | "var" // Variable (0 auxiliary ports)
+  | "root" // Root (0 auxiliary ports)
+  | "type-base" // Base type (0 auxiliary ports)
   | "type-arrow" // Arrow type (2 auxiliary ports: domain, codomain)
   | "type-hole"; // Unknown/hole type (0 auxiliary ports)
 
@@ -26,7 +26,9 @@ export type DeltaData = { appliedFinalStep: boolean; isFinalStep: boolean };
 
 // --- Delta-nets specific helpers ---
 
-export function parseRepLabel(label: string): { level: number; status: RepStatus } {
+export function parseRepLabel(
+  label: string,
+): { level: number; status: RepStatus } {
   let level: number;
   let status: RepStatus;
   const marker = label[label.length - 1];
@@ -61,8 +63,10 @@ export function isParentPort(nodePort: NodePort): boolean {
   // - Applicators/destructors (app, tyapp, type-app, fst, snd): entry = port 1
   // - Everything else (binders, type-constructors): entry = port 0
   if (ports.length === 1) return port === 0;
-  if (type === "app" || type === "tyapp" || type === "type-app" ||
-      type === "fst" || type === "snd") return port === 1;
+  if (
+    type === "app" || type === "tyapp" || type === "type-app" ||
+    type === "fst" || type === "snd"
+  ) return port === 1;
   return port === 0;
 }
 
@@ -125,7 +129,8 @@ export function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
 // --- Type graph helpers ---
 
 export function isTypeNode(node: Node): boolean {
-  return node.type === "type-base" || node.type === "type-arrow" || node.type === "type-hole";
+  return node.type === "type-base" || node.type === "type-arrow" ||
+    node.type === "type-hole";
 }
 
 // Whether a node type is an expression-level agent (vs type/lambda-cube agent)
@@ -155,13 +160,13 @@ export const ANNIHILATION_PAIRS: [string, string][] = [
   ["type-abs", "type-app"],
   ["fst", "pair"],
   ["snd", "pair"],
-  ["tyapp", "type-abs"],  // λω cross-rule
+  ["tyapp", "type-abs"], // λω cross-rule
 ];
 
 // Lambda cube cross-rule erasure pairs: [agentA, agentB]
 export const ERASE_RULE_PAIRS: [string, string][] = [
-  ["tyabs", "fst"],   // λP2
-  ["tyabs", "snd"],   // λP2
+  ["tyabs", "fst"], // λP2
+  ["tyabs", "snd"], // λP2
   ["type-abs", "fst"], // λPω
   ["type-abs", "snd"], // λPω
 ];

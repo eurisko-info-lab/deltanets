@@ -1,9 +1,9 @@
 // Tests for the universal interaction net reduction primitives.
 
 import { assertEquals, assertThrows } from "$std/assert/mod.ts";
-import { reduceAnnihilate, reduceErase, reduceCommute } from "./reductions.ts";
+import { reduceAnnihilate, reduceCommute, reduceErase } from "./reductions.ts";
 import { link } from "./graph.ts";
-import type { Node, Graph } from "./types.ts";
+import type { Graph, Node } from "./types.ts";
 
 /** Create a node with the given type and number of ports (unlinked). */
 function makeNode(type: string, numPorts: number): Node {

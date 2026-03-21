@@ -2,31 +2,26 @@
 
 import { removeFromArrayIf } from "../../util.ts";
 import { Ports } from "../../types.ts";
-import type { Graph, Node, NodePort, InteractionSystem } from "../../types.ts";
+import type { Graph, InteractionSystem, Node, NodePort } from "../../types.ts";
 import { link } from "../../graph.ts";
 import { typeCheck } from "../../typechecker.ts";
 
 import {
+  countAuxErasers,
+  type DeltaData,
+  isConnectedToAllErasers,
+  isExprAgent,
+  isParentPort,
   type NodeType,
   type RepStatus,
-  type DeltaData,
-  isParentPort,
-  isConnectedToAllErasers,
-  countAuxErasers,
-  isExprAgent,
 } from "./helpers.ts";
 import { buildGraph } from "./build.ts";
 import { getRedex, getRedexes } from "./redexes.ts";
 import { readbackGraph, readbackGraphToString } from "./readback.ts";
 
 // Re-export types and helpers used by consumers
-export type { NodeType, RepStatus, DeltaData };
-export {
-  isParentPort,
-  isConnectedToAllErasers,
-  countAuxErasers,
-  isExprAgent,
-};
+export type { DeltaData, NodeType, RepStatus };
+export { countAuxErasers, isConnectedToAllErasers, isExprAgent, isParentPort };
 export { readbackGraph, readbackGraphToString };
 
 // --- Graph analysis ---
@@ -52,7 +47,9 @@ function findReachableNodes(graph: Graph): Set<Node> {
     } else if (node.type === "app" && port === Ports.app.result) {
       traverse(node.ports[Ports.app.func]);
       traverse(node.ports[Ports.app.arg]);
-    } else if (node.type === "type-arrow" && port === Ports.typeArrow.principal) {
+    } else if (
+      node.type === "type-arrow" && port === Ports.typeArrow.principal
+    ) {
       traverse(node.ports[Ports.typeArrow.domain]);
       traverse(node.ports[Ports.typeArrow.codomain]);
     } else if (node.type === "type-base" || node.type === "type-hole") {
@@ -97,18 +94,22 @@ function cleanupGraph(graph: Graph): void {
         return;
       }
       p.erase = true;
-    })
-    removeFromArrayIf(node.levelDeltas!, (ld, i) => node.ports[i+1].erase === true)
-    removeFromArrayIf(node.ports, (p) => p.erase === true)
+    });
+    removeFromArrayIf(
+      node.levelDeltas!,
+      (ld, i) => node.ports[i + 1].erase === true,
+    );
+    removeFromArrayIf(node.ports, (p) => p.erase === true);
     node.ports.forEach((p, i) => {
-      link(p, { node, port: i })
-    })
-  })
+      link(p, { node, port: i });
+    });
+  });
 
   const nodesToRemove: Node[] = [];
   graph.forEach((node) => {
-    if (node.type.startsWith("rep") &&
-        (node.ports.length === 2 && node.levelDeltas![0] === 0)
+    if (
+      node.type.startsWith("rep") &&
+      (node.ports.length === 2 && node.levelDeltas![0] === 0)
     ) {
       link(node.ports[0], node.ports[1]);
       nodesToRemove.push(node);
@@ -130,7 +131,6 @@ const levelColors = [
 ];
 
 function levelColor(level: number): string | undefined {
-  return undefined
   return levelColors[level % levelColors.length];
 }
 

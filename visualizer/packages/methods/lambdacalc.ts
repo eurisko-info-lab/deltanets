@@ -1,14 +1,23 @@
 import { batch, Signal, signal } from "@preact/signals";
-import {
-  AstNode,
-  SystemType,
-} from "@deltanets/core";
+import { AstNode, SystemType } from "@deltanets/core";
 import * as d3 from "d3";
-import { Edge, Enclosure, Label, Node2D, OPTIMAL_HIGHLIGHT_COLOR, Pos, SUBOPTIMAL_HIGHLIGHT_COLOR, TYPECHECK_ACTIVE_COLOR, TYPECHECK_DONE_COLOR, TYPECHECK_ERROR_COLOR } from "@deltanets/render";
+import {
+  Edge,
+  Enclosure,
+  Label,
+  Node2D,
+  OPTIMAL_HIGHLIGHT_COLOR,
+  Pos,
+  SUBOPTIMAL_HIGHLIGHT_COLOR,
+  TYPECHECK_ACTIVE_COLOR,
+  TYPECHECK_DONE_COLOR,
+  TYPECHECK_ERROR_COLOR,
+} from "@deltanets/render";
 import { Method, MethodState } from "./index.ts";
 import { lambdacalc } from "@deltanets/core";
 
-const { clone, substitute, replace, freeVars, boundVars, astToString } = lambdacalc;
+const { clone, substitute, replace, freeVars, boundVars, astToString } =
+  lambdacalc;
 
 // Lambda calculus (naive copying)
 // When an abstraction is applied, the argument is copied N times, where N is
@@ -27,7 +36,11 @@ type State = MethodState<AstNode, null>;
 
 // Initialize the state by copying the initial AST.
 // Ignores configuration options - they are hidden in the UI.
-function init(ast: AstNode, systemType: SystemType, relativeLevel: boolean): State {
+function init(
+  ast: AstNode,
+  systemType: SystemType,
+  relativeLevel: boolean,
+): State {
   return { idx: 0, stack: [clone(ast)], data: null };
 }
 
@@ -40,7 +53,13 @@ function render(
   relativeLevel: boolean,
 ): Node2D {
   const currState = state.peek()!;
-  const tree = renderAstNode(state, currState.stack[currState.idx], { x: 0, y: 0 }, { rc: 0 }, systemType);
+  const tree = renderAstNode(
+    state,
+    currState.stack[currState.idx],
+    { x: 0, y: 0 },
+    { rc: 0 },
+    systemType,
+  );
 
   // If forward is undefined, set it to reduce the next redex in normal-order
   if (currState.forward === undefined && tree.redexes.length > 0) {
@@ -70,9 +89,13 @@ function renderAstNode(
   node2D.pos = pos;
 
   // Apply type check highlighting if active
-  if (astNode.extra?.typeCheckState === "checking") node2D.highlightColor = TYPECHECK_ACTIVE_COLOR;
-  else if (astNode.extra?.typeCheckState === "checked") node2D.highlightColor = TYPECHECK_DONE_COLOR;
-  else if (astNode.extra?.typeCheckState === "error") node2D.highlightColor = TYPECHECK_ERROR_COLOR;
+  if (astNode.extra?.typeCheckState === "checking") {
+    node2D.highlightColor = TYPECHECK_ACTIVE_COLOR;
+  } else if (astNode.extra?.typeCheckState === "checked") {
+    node2D.highlightColor = TYPECHECK_DONE_COLOR;
+  } else if (astNode.extra?.typeCheckState === "error") {
+    node2D.highlightColor = TYPECHECK_ERROR_COLOR;
+  }
 
   // Store the node2D in the astNode for later use (highlights)
   astNode.extra = { ...astNode.extra, node2D };
@@ -94,7 +117,7 @@ function renderAstNode(
       astNode.body,
       { x: 0, y: DY },
       redexCount,
-      systemType
+      systemType,
     );
     node2D.add(body.node2D);
 
@@ -144,12 +167,14 @@ function renderAstNode(
     const argAstNode = astNode.arg;
     const isFuncAbs = funcAstNode.type === "abs";
 
-    let redexId = "0"
+    let redexId = "0";
     let isOptimal = true;
     if (isFuncAbs) {
       redexCount.rc += 1;
       // In linear and affine systems all redexes are optimal
-      if ((systemType == "relevant" || systemType === "full") && redexCount.rc > 1) {
+      if (
+        (systemType == "relevant" || systemType === "full") && redexCount.rc > 1
+      ) {
         isOptimal = false;
       }
       redexId = redexCount.rc.toString();
@@ -161,14 +186,14 @@ function renderAstNode(
       astNode.func,
       { x: 0, y: DY },
       redexCount,
-      systemType
+      systemType,
     );
     const arg = renderAstNode(
       state,
       astNode.arg,
       { x: 0, y: DY },
       redexCount,
-      systemType
+      systemType,
     );
 
     const spread = (func.node2D.bounds.max.x - arg.node2D.bounds.min.x) / 2;
@@ -324,7 +349,10 @@ function renderAstNode(
           d3.select(this as any)
             .attr("stroke-width", "40px")
             .attr("cursor", "pointer");
-          d3.selectAll(".redex-var-" + redexId).attr("display", null).attr("fill", isOptimal ? OPTIMAL_HIGHLIGHT_COLOR : SUBOPTIMAL_HIGHLIGHT_COLOR);
+          d3.selectAll(".redex-var-" + redexId).attr("display", null).attr(
+            "fill",
+            isOptimal ? OPTIMAL_HIGHLIGHT_COLOR : SUBOPTIMAL_HIGHLIGHT_COLOR,
+          );
         },
         mouseout: function () {
           d3.select(this as any).attr("stroke-width", "36px");

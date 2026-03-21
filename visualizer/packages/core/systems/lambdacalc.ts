@@ -1,12 +1,8 @@
 // Standard λ-calculus tree system implementation.
 // Beta reduction via naive copying with capture-avoiding substitution.
 
-import type {
-  Abstraction,
-  AstNode,
-  Variable,
-} from "../ast.ts";
-import { clone, astToString } from "../ast.ts";
+import type { Abstraction, AstNode, Variable } from "../ast.ts";
+import { astToString, clone } from "../ast.ts";
 import { nameToFancyName } from "../util.ts";
 import type { TreeSystem } from "../types.ts";
 import { typeCheck } from "../typechecker.ts";

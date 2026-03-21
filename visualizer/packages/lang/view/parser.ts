@@ -37,16 +37,23 @@ class Parser {
   pos = 0;
   constructor(private tokens: Token[]) {}
 
-  peek(): Token { return this.tokens[this.pos]; }
-  advance(): Token { return this.tokens[this.pos++]; }
-  check(type: TokenKind): boolean { return this.peek().type === type; }
+  peek(): Token {
+    return this.tokens[this.pos];
+  }
+  advance(): Token {
+    return this.tokens[this.pos++];
+  }
+  check(type: TokenKind): boolean {
+    return this.peek().type === type;
+  }
 
   eat(type: TokenKind): Token {
     const tok = this.peek();
     if (tok.type !== type) {
       throw new ParseError(
         `Expected ${type} but got '${tok.value || tok.type}'`,
-        tok.line, tok.col,
+        tok.line,
+        tok.col,
       );
     }
     return this.advance();
@@ -65,14 +72,24 @@ class Parser {
   parseStatement(): AST.Statement {
     const tok = this.peek();
     switch (tok.type) {
-      case TT.USE:        return this.parseUseDecl();
-      case TT.THEME:      return this.parseThemeDecl();
-      case TT.RENDER:     return this.parseRenderDecl();
-      case TT.WIRE_STYLE: return this.parseWireStyleDecl();
-      case TT.PALETTE:    return this.parsePaletteDecl();
-      case TT.LAYOUT:     return this.parseLayoutDecl();
+      case TT.USE:
+        return this.parseUseDecl();
+      case TT.THEME:
+        return this.parseThemeDecl();
+      case TT.RENDER:
+        return this.parseRenderDecl();
+      case TT.WIRE_STYLE:
+        return this.parseWireStyleDecl();
+      case TT.PALETTE:
+        return this.parsePaletteDecl();
+      case TT.LAYOUT:
+        return this.parseLayoutDecl();
       default:
-        throw new ParseError(`Unexpected '${tok.value || tok.type}'`, tok.line, tok.col);
+        throw new ParseError(
+          `Unexpected '${tok.value || tok.type}'`,
+          tok.line,
+          tok.col,
+        );
     }
   }
 
@@ -186,7 +203,11 @@ class Parser {
       return { kind: "ident", value: tok.value };
     }
 
-    throw new ParseError(`Expected value, got '${tok.value || tok.type}'`, tok.line, tok.col);
+    throw new ParseError(
+      `Expected value, got '${tok.value || tok.type}'`,
+      tok.line,
+      tok.col,
+    );
   }
 
   parseArray(): AST.ArrayValue {

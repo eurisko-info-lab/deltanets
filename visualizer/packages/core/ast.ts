@@ -1,4 +1,10 @@
-import { ASTKinds, type EXPR, type TYPE, parse, SyntaxErr } from "./parser.gen.ts";
+import {
+  ASTKinds,
+  type EXPR,
+  parse,
+  SyntaxErr,
+  type TYPE,
+} from "./parser.gen.ts";
 import { fancyNameToName, nameToFancyName } from "./util.ts";
 
 // --- Type representation for optional typing (STLC / interaction type theory) ---
@@ -13,7 +19,9 @@ export type HoleType = { kind: "hole" };
 export function typeToString(ty: Type): string {
   if (ty.kind === "hole") return "?";
   if (ty.kind === "base") return ty.name;
-  const fromStr = ty.from.kind === "arrow" ? `(${typeToString(ty.from)})` : typeToString(ty.from);
+  const fromStr = ty.from.kind === "arrow"
+    ? `(${typeToString(ty.from)})`
+    : typeToString(ty.from);
   return `${fromStr} → ${typeToString(ty.to)}`;
 }
 
@@ -31,7 +39,11 @@ export function typesEqual(a: Type, b: Type): boolean {
 // Converts a raw parser TYPE node into an internal Type representation.
 function parseRawType(rawType: TYPE): Type {
   if (rawType.kind === ASTKinds.ARROW_TYPE) {
-    return { kind: "arrow", from: parseRawType(rawType.from), to: parseRawType(rawType.to) };
+    return {
+      kind: "arrow",
+      from: parseRawType(rawType.from),
+      to: parseRawType(rawType.to),
+    };
   } else if (rawType.kind === ASTKinds.TYPE_GROUP) {
     return parseRawType(rawType.type);
   } else if (rawType.kind === ASTKinds.HOLE_TYPE) {
@@ -90,7 +102,7 @@ export type Definitions = { [name: string]: AstNode };
 // Returns an array of `SyntaxErr` instead if there are parsing errors.
 export function parseSource(
   source: string,
-): { ast?: AstNode | null, errs?: SyntaxErr[] } {
+): { ast?: AstNode | null; errs?: SyntaxErr[] } {
   // Parse using tsPEG
   const rawAst = parse(source);
 
@@ -99,7 +111,7 @@ export function parseSource(
     return { errs: rawAst.errs };
   }
 
-  const definitions: Definitions = {}
+  const definitions: Definitions = {};
   let lastExpr: EXPR | null = null;
 
   // Loop through statements, storing definitions and the last expression
@@ -107,8 +119,10 @@ export function parseSource(
   // If a definition is referenced before it is defined, it is assumed to be a free variable
   for (const stmt of rawAst.ast!.statements) {
     if (stmt.stmt.kind === ASTKinds.DEF) {
-      definitions[stmt.stmt.identifier.identifier] =
-        parseRawExpressionNode(stmt.stmt.value, definitions);
+      definitions[stmt.stmt.identifier.identifier] = parseRawExpressionNode(
+        stmt.stmt.value,
+        definitions,
+      );
     } else {
       lastExpr = stmt.stmt;
     }
@@ -124,14 +138,26 @@ export function parseSource(
 
 // Parses a raw AST node, updating the AST in place.
 // Returns the index of the newly inserted node.
-function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?: AstNode): AstNode {
+function parseRawExpressionNode(
+  rawNode: EXPR,
+  definitions: Definitions,
+  parent?: AstNode,
+): AstNode {
   if (
     rawNode.kind === ASTKinds.APPLICATION
   ) {
     // Application
     const node: Partial<AstNode> = { type: "app", parent };
-    node.func = parseRawExpressionNode(rawNode.func, definitions, node as AstNode);
-    node.arg = parseRawExpressionNode(rawNode.arg, definitions, node as AstNode);
+    node.func = parseRawExpressionNode(
+      rawNode.func,
+      definitions,
+      node as AstNode,
+    );
+    node.arg = parseRawExpressionNode(
+      rawNode.arg,
+      definitions,
+      node as AstNode,
+    );
     return node as AstNode;
   } else if (rawNode.kind === ASTKinds.IDENT) {
     // Check if it's a definition
@@ -153,9 +179,15 @@ function parseRawExpressionNode(rawNode: EXPR, definitions: Definitions, parent?
       name: nameToFancyName(rawNode.parameter.identifier),
     };
     if (rawNode.typeAnnotation) {
-      (node as Partial<Abstraction>).typeAnnotation = parseRawType(rawNode.typeAnnotation.type);
+      (node as Partial<Abstraction>).typeAnnotation = parseRawType(
+        rawNode.typeAnnotation.type,
+      );
     }
-    node.body = parseRawExpressionNode(rawNode.body, definitions, node as AstNode);
+    node.body = parseRawExpressionNode(
+      rawNode.body,
+      definitions,
+      node as AstNode,
+    );
     return node as AstNode;
   } else if (rawNode.kind === ASTKinds.GROUP) {
     // Group (simply pass through)
@@ -206,7 +238,9 @@ export function clone(astNode: AstNode, parent?: AstNode): AstNode {
 export const astToString = (astNode: AstNode): string => {
   if (astNode.type === "abs") {
     const paramStr = fancyNameToName(astNode.name);
-    const typeStr = astNode.typeAnnotation ? ":" + typeToString(astNode.typeAnnotation) : "";
+    const typeStr = astNode.typeAnnotation
+      ? ":" + typeToString(astNode.typeAnnotation)
+      : "";
     return "λ" + paramStr + typeStr + "." + astToString(astNode.body);
   } else if (astNode.type === "app") {
     let funcString = astToString(astNode.func);
@@ -246,7 +280,7 @@ export const getExpressionType = (astNode: AstNode): SystemType => {
     } else if (node.type === "app") {
       visit(node.func, boundVars);
       visit(node.arg, boundVars);
-    } else /* if (node.type === "var") */ {
+    } /* if (node.type === "var") */ else {
       const count = boundVars.get(node.name);
       if (count !== undefined) {
         const newCount = count + 1;
@@ -259,7 +293,6 @@ export const getExpressionType = (astNode: AstNode): SystemType => {
   };
   visit(astNode, new Map());
 
-  console.debug(sharing, erasure);
   if (sharing) {
     if (erasure) {
       return "full";

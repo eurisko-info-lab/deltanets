@@ -1,12 +1,27 @@
 import { batch, signal } from "@preact/signals";
 import { IS_BROWSER } from "$fresh/runtime.ts";
-import { AstNode, getExpressionType, parseSource, SystemType } from "@deltanets/core";
-import { typeCheck, hasTypeAnnotations, generateTypeCheckSteps, tagAstWithTypeCheckIndices } from "@deltanets/core";
-import type { TypeResult, TypeCheckStep } from "@deltanets/core";
+import {
+  AstNode,
+  getExpressionType,
+  parseSource,
+  SystemType,
+} from "@deltanets/core";
+import {
+  generateTypeCheckSteps,
+  hasTypeAnnotations,
+  tagAstWithTypeCheckIndices,
+  typeCheck,
+} from "@deltanets/core";
+import type { TypeCheckStep, TypeResult } from "@deltanets/core";
 import { Node2D, Pos } from "@deltanets/render";
 import { METHODS } from "@deltanets/methods";
-import { typeReductionMode, agentStyles } from "@deltanets/methods";
-import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "@deltanets/lang";
+import { agentStyles, typeReductionMode } from "@deltanets/methods";
+import {
+  compileINet,
+  extractGraph,
+  isINetSource,
+  resolveAgentStyles,
+} from "@deltanets/lang";
 import type { CoreResult } from "@deltanets/lang";
 import { MAX_AUTO_SCALE, MIN_PANE_SIZE, STORAGE_KEYS } from "./config.ts";
 
@@ -24,20 +39,25 @@ export const exprError = signal<boolean>(false);
 export const parseErrors = signal<string[]>([]);
 
 // Reduction method
-const storedMethod = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.method);
+const storedMethod = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.method);
 export const method = signal<string>(storedMethod || Object.keys(METHODS)[0]);
 export const systemType = signal<SystemType>("full");
 export const selectedSystemType = signal<SystemType>("full");
 export const relativeLevel = signal<boolean>(false);
 
 // Theme
-const storedTheme = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.theme);
+const storedTheme = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.theme);
 export const theme = signal<"light" | "dark">(
   (storedTheme as "light" | "dark") || "dark",
 );
 
-const storedEditorWidth = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.editorWidth);
-export const editorWidth = signal<number>(parseFloat(storedEditorWidth || "500"));
+const storedEditorWidth = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.editorWidth);
+export const editorWidth = signal<number>(
+  parseFloat(storedEditorWidth || "500"),
+);
 
 // AST
 export const ast = signal<AstNode | null>(null);
@@ -49,12 +69,18 @@ export const typeResult = signal<TypeResult | null>(null);
 export const scene = signal<Node2D | null>(null);
 
 // Whether to automatically center the graph
-const storedCenter = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.center);
-export const center = signal<boolean>(storedCenter !== null ? storedCenter === "true" : true);
+const storedCenter = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.center);
+export const center = signal<boolean>(
+  storedCenter !== null ? storedCenter === "true" : true,
+);
 
 // Whether to render debugging helpers
-const storedDebug = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.debug);
-export const debug = signal<boolean>(storedDebug !== null ? storedDebug === "true" : false);
+const storedDebug = IS_BROWSER &&
+  window.localStorage.getItem(STORAGE_KEYS.debug);
+export const debug = signal<boolean>(
+  storedDebug !== null ? storedDebug === "true" : false,
+);
 
 // Type check stepping mode
 export const typeCheckMode = signal<boolean>(false);
@@ -78,6 +104,7 @@ export const inetSelectedGraph = signal<string>("");
 export const isDraggingSplitter = signal<boolean>(false);
 
 // Mutable ref for the Monaco editor instance
+// deno-lint-ignore no-explicit-any
 export const codeEditorRef: { current: any } = { current: null };
 
 // --- Internal helpers ---
@@ -100,7 +127,9 @@ const applyAst = (astNode: AstNode | null) => {
 };
 
 /** Set state for a graph extracted from .inet (no AST, deltanets method). Call inside batch. */
-const applyINetGraph = (graph: Parameters<NonNullable<typeof METHODS.deltanets.initFromGraph>>[0]) => {
+const applyINetGraph = (
+  graph: Parameters<NonNullable<typeof METHODS.deltanets.initFromGraph>>[0],
+) => {
   const initFromGraph = METHODS.deltanets.initFromGraph;
   if (!initFromGraph) return false;
   ast.value = null;
@@ -115,7 +144,9 @@ const applyINetGraph = (graph: Parameters<NonNullable<typeof METHODS.deltanets.i
 
 /** Format mixed error values into display strings. */
 const formatErrors = (errs: unknown[]): string[] =>
-  errs.map((e) => typeof e === "string" ? e : (e as { message?: string }).message ?? String(e));
+  errs.map((e) =>
+    typeof e === "string" ? e : (e as { message?: string }).message ?? String(e)
+  );
 
 // --- Functions ---
 
@@ -133,7 +164,8 @@ export const updateAst = (source: string) => {
     if (result.errors.length === 0 && result.graphNames.length > 0) {
       agentStyles.value = resolveAgentStyles(result.core);
 
-      const graphName = inetSelectedGraph.peek() && result.graphNames.includes(inetSelectedGraph.peek())
+      const graphName = inetSelectedGraph.peek() &&
+          result.graphNames.includes(inetSelectedGraph.peek())
         ? inetSelectedGraph.peek()
         : result.graphNames[result.graphNames.length - 1];
       const extracted = extractGraph(result.core, graphName);
@@ -207,19 +239,23 @@ export const selectINetGraph = (graphName: string) => {
   };
 
   if (extracted && extracted.kind === "ast") {
-    withCenterReset(() => batch(() => {
-      inetSelectedGraph.value = graphName;
-      applyAst(extracted.ast);
-      typeReductionMode.value = false;
-      isFirstLoad.value = true;
-    }));
+    withCenterReset(() =>
+      batch(() => {
+        inetSelectedGraph.value = graphName;
+        applyAst(extracted.ast);
+        typeReductionMode.value = false;
+        isFirstLoad.value = true;
+      })
+    );
   } else if (extracted && extracted.kind === "graph") {
-    withCenterReset(() => batch(() => {
-      inetSelectedGraph.value = graphName;
-      applyINetGraph(extracted.graph);
-      typeReductionMode.value = false;
-      isFirstLoad.value = true;
-    }));
+    withCenterReset(() =>
+      batch(() => {
+        inetSelectedGraph.value = graphName;
+        applyINetGraph(extracted.graph);
+        typeReductionMode.value = false;
+        isFirstLoad.value = true;
+      })
+    );
   }
 };
 
@@ -230,7 +266,11 @@ export const initializeStates = (astValue: AstNode | null) => {
   }
   batch(() =>
     Object.keys(METHODS).forEach((m) => {
-      METHODS[m].state.value = METHODS[m].init(astValue, selectedSystemType.value, relativeLevel.value);
+      METHODS[m].state.value = METHODS[m].init(
+        astValue,
+        selectedSystemType.value,
+        relativeLevel.value,
+      );
     })
   );
 };

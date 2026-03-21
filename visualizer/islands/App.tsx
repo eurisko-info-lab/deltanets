@@ -5,8 +5,13 @@ import { useCodeEditor } from "../hooks/useCodeEditor.ts";
 import { useSceneEffects } from "../hooks/useSceneEffects.ts";
 import { useEditorLayout } from "../hooks/useEditorLayout.ts";
 import {
-  TITLE, theme, translate, scale, center, isDraggingSplitter,
+  center,
   exprError,
+  isDraggingSplitter,
+  scale,
+  theme,
+  TITLE,
+  translate,
 } from "../lib/appState.ts";
 import type { Example } from "../routes/index.tsx";
 
@@ -59,8 +64,9 @@ export default function App({ examples }: { examples: Example[] }) {
             aria-orientation="vertical"
             aria-label="Resize editor"
             tabIndex={0}
-            class={`hover:(bg-[${theme.value === "light" ? "white" : "#2A2A2A"
-              }] cursor-ew-resize)`}
+            class={`hover:(bg-[${
+              theme.value === "light" ? "white" : "#2A2A2A"
+            }] cursor-ew-resize)`}
             style={{
               width: "8px",
               // Expand touch target beyond visual width

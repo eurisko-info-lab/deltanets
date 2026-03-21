@@ -4,18 +4,14 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { Signal } from "@preact/signals";
-import {
-  D,
-  Node2D,
-  Wire,
-} from "@deltanets/render";
+import { D, Node2D, Wire } from "@deltanets/render";
 import { MethodState } from "../index.ts";
 import {
-  type NodePort,
-  type Redex,
-  type Graph,
-  reciprocal,
   deltanets,
+  type Graph,
+  type NodePort,
+  reciprocal,
+  type Redex,
 } from "@deltanets/core";
 import type { Data } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
@@ -32,14 +28,18 @@ export type Endpoint = {
 };
 
 // Renders wires between paired endpoints, and returns the remaining endpoints
-export const renderWires = (node2D: Node2D, endpoints: Endpoint[], state: Signal<MethodState<Graph, Data>>) => {
+export const renderWires = (
+  node2D: Node2D,
+  endpoints: Endpoint[],
+  state: Signal<MethodState<Graph, Data>>,
+) => {
   // Sort endpoints by x position
   endpoints.sort((a, b) =>
     a.node2D.globalPosition().x - b.node2D.globalPosition().x
   );
 
   // Compile pairs of endpoints that are connected
-  const wiresToCreate: { i: number; j: number, redex?: Redex }[] = [];
+  const wiresToCreate: { i: number; j: number; redex?: Redex }[] = [];
   for (let i = 0; i < endpoints.length; i++) {
     for (let j = i + 1; j < endpoints.length; j++) {
       if (endpoints[i].used || endpoints[j].used) {
@@ -51,7 +51,11 @@ export const renderWires = (node2D: Node2D, endpoints: Endpoint[], state: Signal
       ) {
         endpoints[i].used = true;
         endpoints[j].used = true;
-        wiresToCreate.push({ i, j, redex: endpoints[i].redex || endpoints[j].redex });
+        wiresToCreate.push({
+          i,
+          j,
+          redex: endpoints[i].redex || endpoints[j].redex,
+        });
       }
     }
   }

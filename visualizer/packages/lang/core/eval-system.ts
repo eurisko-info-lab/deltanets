@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
-import type { AgentDef, RuleDef, ModeDef, SystemDef } from "./evaluator.ts";
+import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
 
 export function evalSystem(decl: AST.SystemDecl): SystemDef {
@@ -107,7 +107,9 @@ export function evalCompose(
   // Union: merge all agents, rules, modes from each component
   for (const compName of decl.components) {
     const comp = systems.get(compName);
-    if (!comp) throw new EvalError(`Cannot compose unknown system '${compName}'`);
+    if (!comp) {
+      throw new EvalError(`Cannot compose unknown system '${compName}'`);
+    }
 
     // Agents: shared agents (same name) are identified (pushout colimit)
     for (const [name, agent] of comp.agents) {

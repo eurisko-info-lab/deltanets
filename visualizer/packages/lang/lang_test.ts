@@ -1,6 +1,6 @@
 // Tests for the core and view language compilers.
 
-import { assertEquals, assert } from "$std/assert/mod.ts";
+import { assert, assertEquals } from "$std/assert/mod.ts";
 import { compileCore, compileView } from "./index.ts";
 
 // ─── Core Language ─────────────────────────────────────────────────
@@ -55,7 +55,13 @@ Deno.test("core: parses definitions", () => {
 Deno.test("core: parses graphs", () => {
   const result = compileCore(coreSource);
   const graphNames = [...result.graphs.keys()].sort();
-  assertEquals(graphNames, ["apply-id", "church-two", "identity", "k-true", "manual"]);
+  assertEquals(graphNames, [
+    "apply-id",
+    "church-two",
+    "identity",
+    "k-true",
+    "manual",
+  ]);
 });
 
 // ─── Composition (Pushout) ─────────────────────────────────────────
@@ -106,7 +112,8 @@ Deno.test("compose: Δ-Nets has cross-rules", () => {
   const result = compileCore(composeSource);
   const dnets = result.systems.get("Δ-Nets")!;
   const crossRules = dnets.rules.filter(
-    (r) => (r.agentA === "rep-in" || r.agentA === "rep-out") && r.agentB === "era",
+    (r) =>
+      (r.agentA === "rep-in" || r.agentA === "rep-out") && r.agentB === "era",
   );
   assertEquals(crossRules.length, 2);
 });
@@ -181,4 +188,39 @@ Deno.test("view: parses render styles", () => {
 Deno.test("view: parses palette", () => {
   const result = compileView(viewSource);
   assertEquals(result.palette.colors.size, 2);
+});
+
+// ─── Error paths: Core ─────────────────────────────────────────────
+
+Deno.test("core error: invalid agent declaration", () => {
+  const result = compileCore(`system "Bad" { agent 123 }`);
+  assert(result.errors.length > 0, "should report errors");
+});
+
+Deno.test("core error: empty source compiles with no systems", () => {
+  const result = compileCore("");
+  assertEquals(result.systems.size, 0);
+});
+
+Deno.test("core error: undefined rule agent compiles", () => {
+  const result = compileCore(`
+    system "X" {
+      agent a(principal)
+      rule a <> b -> annihilate
+    }
+  `);
+  // The compiler currently accepts undeclared agents in rules
+  assertEquals(result.systems.size, 1);
+});
+
+// ─── Error paths: View ─────────────────────────────────────────────
+
+Deno.test("view error: malformed render block", () => {
+  const result = compileView(`render { }`);
+  assert(result.errors.length > 0, "should report errors");
+});
+
+Deno.test("view error: empty source compiles with no styles", () => {
+  const result = compileView("");
+  assertEquals(result.styles.size, 0);
 });

@@ -1,16 +1,25 @@
 import { signal } from "@preact/signals";
 import { AstNode, SystemType } from "@deltanets/core";
-import { type Graph, deltanets } from "@deltanets/core";
+import { deltanets, type Graph } from "@deltanets/core";
 import { type Method, type MethodState } from "../index.ts";
 import { type Data } from "./config.ts";
 import { render } from "./render.ts";
 
-export { agentStyles, isExprAgentFromStyles, getRole, typeReductionMode } from "./config.ts";
+export {
+  agentStyles,
+  getRole,
+  isExprAgentFromStyles,
+  typeReductionMode,
+} from "./config.ts";
 export { applyReduction } from "./reduction.ts";
 
 type State = MethodState<Graph, Data>;
 
-function init(ast: AstNode, systemType: SystemType, relativeLevel: boolean): State {
+function init(
+  ast: AstNode,
+  systemType: SystemType,
+  relativeLevel: boolean,
+): State {
   const graph = deltanets.buildGraph(ast, systemType, relativeLevel);
   return {
     back: undefined,

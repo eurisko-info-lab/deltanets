@@ -1,7 +1,7 @@
 import { batch, Signal, useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { defaultStroke, Pos } from "@deltanets/render";
-import { MIN_SCALE, MAX_SCALE } from "../lib/config.ts";
+import { MAX_SCALE, MIN_SCALE } from "../lib/config.ts";
 
 export function Graph(
   { theme, translate, scale, center }: {
@@ -13,8 +13,6 @@ export function Graph(
 ) {
   const state = useSignal<"none" | "pan">("none");
   const lastPos = useSignal<Pos>({ x: 0, y: 0 });
-
-
 
   // Set up event listeners
   useEffect(() => {
@@ -119,10 +117,24 @@ export function Graph(
         }}
       >
         <defs>
-          <marker id="arrowEnd" refX="6" refY="6" markerWidth="12" markerHeight="12" orient="auto">
+          <marker
+            id="arrowEnd"
+            refX="6"
+            refY="6"
+            markerWidth="12"
+            markerHeight="12"
+            orient="auto"
+          >
             <path d="M2,2 L10,6 L2,10" fill={defaultStroke(theme)} />
           </marker>
-          <marker id="arrowStart" refX="6" refY="6" markerWidth="12" markerHeight="12" orient="auto">
+          <marker
+            id="arrowStart"
+            refX="6"
+            refY="6"
+            markerWidth="12"
+            markerHeight="12"
+            orient="auto"
+          >
             <path d="M10,2 L2,6 L10,10" fill={defaultStroke(theme)} />
           </marker>
         </defs>

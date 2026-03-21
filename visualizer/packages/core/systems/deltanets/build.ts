@@ -50,16 +50,27 @@ function buildTypeGraph(ty: Type, graph: Graph): NodePort {
 function addAstNodeToGraph(
   astNode: AstNode,
   graph: Graph,
-  vars: Map<string, { level: number; nodePort: NodePort; firstUsageLevel?: number }>,
+  vars: Map<
+    string,
+    { level: number; nodePort: NodePort; firstUsageLevel?: number }
+  >,
   level: number,
   relativeLevel: boolean,
 ): NodePort {
   if (astNode.type === "abs") {
     const eraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(eraser);
-    const node: Node = { type: "abs", label: "λ" + astNode.name, ports: [], astRef: astNode };
+    const node: Node = {
+      type: "abs",
+      label: "λ" + astNode.name,
+      ports: [],
+      astRef: astNode,
+    };
     graph.push(node);
-    link({ node: eraser, port: Ports.era.principal }, { node, port: Ports.abs.bind });
+    link({ node: eraser, port: Ports.era.principal }, {
+      node,
+      port: Ports.abs.bind,
+    });
 
     // Build type subgraph and connect to abs type port
     const typeAnnotation: Type = astNode.typeAnnotation || { kind: "hole" };
@@ -69,7 +80,13 @@ function addAstNodeToGraph(
     const orig = vars.get(astNode.name);
     vars.set(astNode.name, { level, nodePort: { node, port: Ports.abs.bind } });
 
-    const bodyPort = addAstNodeToGraph(astNode.body, graph, vars, level, relativeLevel);
+    const bodyPort = addAstNodeToGraph(
+      astNode.body,
+      graph,
+      vars,
+      level,
+      relativeLevel,
+    );
     link(bodyPort, { node, port: Ports.abs.body });
 
     if (orig) {
@@ -83,10 +100,22 @@ function addAstNodeToGraph(
     const node: Node = { type: "app", label: "@", ports: [], astRef: astNode };
     graph.push(node);
 
-    const funcPort = addAstNodeToGraph(astNode.func, graph, vars, level, relativeLevel);
+    const funcPort = addAstNodeToGraph(
+      astNode.func,
+      graph,
+      vars,
+      level,
+      relativeLevel,
+    );
     link(funcPort, { node, port: Ports.app.func });
 
-    const argPort = addAstNodeToGraph(astNode.arg, graph, vars, level + 1, relativeLevel);
+    const argPort = addAstNodeToGraph(
+      astNode.arg,
+      graph,
+      vars,
+      level + 1,
+      relativeLevel,
+    );
     link(argPort, { node, port: Ports.app.arg });
 
     return { node, port: Ports.app.result };
@@ -114,7 +143,12 @@ function addAstNodeToGraph(
 
       return sourceNodePort;
     } else {
-      const node: Node = { type: "var", label: astNode.name, ports: [], astRef: astNode };
+      const node: Node = {
+        type: "var",
+        label: astNode.name,
+        ports: [],
+        astRef: astNode,
+      };
       graph.push(node);
       let portToReturn = { node, port: 0 };
 
@@ -146,7 +180,11 @@ function addAstNodeToGraph(
  * 3. Simplify: remove trivial replicators (single-use vars) and,
  *    for linear/affine systems, remove ALL replicators
  */
-export function buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: boolean): Graph {
+export function buildGraph(
+  ast: AstNode,
+  systemType: SystemType,
+  relativeLevel: boolean,
+): Graph {
   const graph: Graph = [];
 
   const rootPort = addAstNodeToGraph(ast, graph, new Map(), 0, relativeLevel);
@@ -155,7 +193,8 @@ export function buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: 
   graph.push(rootNode);
   link(rootPort, { node: rootNode, port: 0 });
 
-  let removeAllReps: boolean = systemType === "linear" || systemType === "affine";
+  let removeAllReps: boolean = systemType === "linear" ||
+    systemType === "affine";
   graph.forEach((node) => {
     if (node.type.startsWith("rep") && node.ports.length !== 2) {
       removeAllReps = false;
@@ -164,7 +203,8 @@ export function buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: 
 
   const nodesToRemove: Node[] = [];
   graph.forEach((node) => {
-    if (node.type.startsWith("rep") &&
+    if (
+      node.type.startsWith("rep") &&
       (removeAllReps === true ||
         (node.ports.length === 2 && node.levelDeltas![0] === 0))
     ) {

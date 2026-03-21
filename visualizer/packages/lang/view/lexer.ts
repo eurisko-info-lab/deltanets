@@ -85,9 +85,12 @@ export function tokenize(source: string): Token[] {
       if (i + 1 < source.length && /[0-9a-fA-F]/.test(source[i + 1])) {
         const startCol2 = col;
         let hex = "#";
-        i++; col++;
+        i++;
+        col++;
         while (i < source.length && /[0-9a-fA-F]/.test(source[i])) {
-          hex += source[i]; i++; col++;
+          hex += source[i];
+          i++;
+          col++;
         }
         tokens.push({ type: TT.COLOR, value: hex, line, col: startCol2 });
         continue;
@@ -111,17 +114,26 @@ export function tokenize(source: string): Token[] {
       ",": TT.COMMA,
     };
     if (singles[source[i]]) {
-      tokens.push({ type: singles[source[i]], value: source[i], line, col: startCol });
-      i++; col++; continue;
+      tokens.push({
+        type: singles[source[i]],
+        value: source[i],
+        line,
+        col: startCol,
+      });
+      i++;
+      col++;
+      continue;
     }
 
     // String literal
     if (source[i] === '"') {
       let val = "";
-      i++; col++;
+      i++;
+      col++;
       while (i < source.length && source[i] !== '"') {
         if (source[i] === "\\") {
-          i++; col++;
+          i++;
+          col++;
           const c = source[i] ?? "";
           if (c === "n") val += "\n";
           else if (c === "t") val += "\t";
@@ -129,28 +141,49 @@ export function tokenize(source: string): Token[] {
           else if (c === '"') val += '"';
           else val += c;
         } else {
-          if (source[i] === "\n") { line++; col = 0; }
+          if (source[i] === "\n") {
+            line++;
+            col = 0;
+          }
           val += source[i];
         }
-        i++; col++;
+        i++;
+        col++;
       }
-      if (i >= source.length) throw new LexError("Unterminated string", line, startCol);
-      i++; col++;
+      if (i >= source.length) {
+        throw new LexError("Unterminated string", line, startCol);
+      }
+      i++;
+      col++;
       tokens.push({ type: TT.STRING, value: val, line, col: startCol });
       continue;
     }
 
     // Number literal (supports negative and decimal)
-    if (/[0-9]/.test(source[i]) || (source[i] === "-" && i + 1 < source.length && /[0-9]/.test(source[i + 1]))) {
+    if (
+      /[0-9]/.test(source[i]) ||
+      (source[i] === "-" && i + 1 < source.length &&
+        /[0-9]/.test(source[i + 1]))
+    ) {
       let num = "";
-      if (source[i] === "-") { num += "-"; i++; col++; }
+      if (source[i] === "-") {
+        num += "-";
+        i++;
+        col++;
+      }
       while (i < source.length && /[0-9]/.test(source[i])) {
-        num += source[i]; i++; col++;
+        num += source[i];
+        i++;
+        col++;
       }
       if (i < source.length && source[i] === ".") {
-        num += "."; i++; col++;
+        num += ".";
+        i++;
+        col++;
         while (i < source.length && /[0-9]/.test(source[i])) {
-          num += source[i]; i++; col++;
+          num += source[i];
+          i++;
+          col++;
         }
       }
       tokens.push({ type: TT.NUMBER, value: num, line, col: startCol });
@@ -161,11 +194,17 @@ export function tokenize(source: string): Token[] {
     if (/[a-zA-Z_]/.test(source[i])) {
       let ident = "";
       while (i < source.length && /[a-zA-Z0-9_]/.test(source[i])) {
-        ident += source[i]; i++; col++;
+        ident += source[i];
+        i++;
+        col++;
         // Allow hyphen if followed by a letter
-        if (i < source.length && source[i] === "-" &&
-            i + 1 < source.length && /[a-zA-Z]/.test(source[i + 1])) {
-          ident += source[i]; i++; col++;
+        if (
+          i < source.length && source[i] === "-" &&
+          i + 1 < source.length && /[a-zA-Z]/.test(source[i + 1])
+        ) {
+          ident += source[i];
+          i++;
+          col++;
         }
       }
       const kw = KEYWORDS[ident];

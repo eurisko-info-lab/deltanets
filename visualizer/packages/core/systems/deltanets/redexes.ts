@@ -11,20 +11,28 @@ import type { SystemType } from "../../ast.ts";
 import { Ports } from "../../types.ts";
 import type { Graph, Node, NodePort, Redex } from "../../types.ts";
 import { link, reciprocal } from "../../graph.ts";
-import { reduceAnnihilate, reduceErase, reduceCommute } from "../../reductions.ts";
 import {
-  parseRepLabel,
-  formatRepLabel,
-  isTypeNode,
-  isExprAgent,
-  reduceEraseRule,
+  reduceAnnihilate,
+  reduceCommute,
+  reduceErase,
+} from "../../reductions.ts";
+import {
   ANNIHILATION_PAIRS,
   ERASE_RULE_PAIRS,
-  reduceAuxFan,
+  formatRepLabel,
+  isExprAgent,
   isParentPort,
+  isTypeNode,
+  parseRepLabel,
+  reduceAuxFan,
+  reduceEraseRule,
 } from "./helpers.ts";
 
-export function getRedex(a: Node, b: Node, redexes: Redex[]): Redex | undefined {
+export function getRedex(
+  a: Node,
+  b: Node,
+  redexes: Redex[],
+): Redex | undefined {
   for (const redex of redexes) {
     if ((redex.a === a && redex.b === b) || (redex.a === b && redex.b === a)) {
       return redex;
@@ -33,7 +41,11 @@ export function getRedex(a: Node, b: Node, redexes: Redex[]): Redex | undefined 
   return undefined;
 }
 
-export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean): Redex[] {
+export function getRedexes(
+  graph: Graph,
+  systemType: SystemType,
+  relativeLevel: boolean,
+): Redex[] {
   const redexes: Redex[] = [];
 
   graph.forEach((node) => {
@@ -41,25 +53,49 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
     node.traversed2 = undefined;
   });
 
-  const createRedex = (a: Node, b: Node, optimal: boolean, reduce: () => void) => {
-    if (redexes.some((redex) => {
-      if ((redex.a === a && redex.b === b) || (redex.a === b && redex.b === a)) {
-        if (redex.optimal !== optimal) {
-          console.error("Error: mismatching optimality for redex", redex, a, b, optimal, reduce);
+  const createRedex = (
+    a: Node,
+    b: Node,
+    optimal: boolean,
+    reduce: () => void,
+  ) => {
+    if (
+      redexes.some((redex) => {
+        if (
+          (redex.a === a && redex.b === b) || (redex.a === b && redex.b === a)
+        ) {
+          if (redex.optimal !== optimal) {
+            console.error(
+              "Error: mismatching optimality for redex",
+              redex,
+              a,
+              b,
+              optimal,
+              reduce,
+            );
+          }
+          return true;
         }
-        return true;
-      }
-      return false;
-    })) {
+        return false;
+      })
+    ) {
       return;
     }
-    redexes.push({ a, b, optimal, reduce: () => {
-      if (graph.find((n) => n === a) === undefined || graph.find((n) => n === b) === undefined) {
-        return;
-      }
-      reduce();
-    }});
-  }
+    redexes.push({
+      a,
+      b,
+      optimal,
+      reduce: () => {
+        if (
+          graph.find((n) => n === a) === undefined ||
+          graph.find((n) => n === b) === undefined
+        ) {
+          return;
+        }
+        reduce();
+      },
+    });
+  };
 
   // Linear system
   if (systemType === "linear") {
@@ -71,53 +107,99 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         if (node.type.startsWith("rep")) {
           console.error("Error: rep in linear system", node);
         }
-        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root" || isTypeNode(node) || isTypeNode(node.ports[0].node)) {
-          continue
+        if (
+          node.type === "var" || node.ports[0].node.type === "var" ||
+          node.type === "root" || node.ports[0].node.type === "root" ||
+          isTypeNode(node) || isTypeNode(node.ports[0].node)
+        ) {
+          continue;
         }
-        if (node.type === "abs" && node.ports[0].node.type !== "app" || node.type === "app" && node.ports[0].node.type !== "abs") {
-          console.error("Error: non app-abs annihilation pair in linear system", node, node.ports[0].node);
+        if (
+          node.type === "abs" && node.ports[0].node.type !== "app" ||
+          node.type === "app" && node.ports[0].node.type !== "abs"
+        ) {
+          console.error(
+            "Error: non app-abs annihilation pair in linear system",
+            node,
+            node.ports[0].node,
+          );
         }
-        createRedex(node, node.ports[0].node, true, () => reduceAnnihilate(node, graph));
+        createRedex(
+          node,
+          node.ports[0].node,
+          true,
+          () => reduceAnnihilate(node, graph),
+        );
       }
     }
-  }
-
-  // Affine/Relevant/Full systems
+  } // Affine/Relevant/Full systems
   else {
     for (const node of graph) {
       if (systemType === "relevant" && node.type === "era") {
         console.error("Error: eraser in relevant system", node);
       }
       if (node.ports[0].port === 0) {
-        if (node.type === "var" || node.ports[0].node.type === "var" || node.type === "root" || node.ports[0].node.type === "root" || isTypeNode(node) || isTypeNode(node.ports[0].node)) {
-          continue
+        if (
+          node.type === "var" || node.ports[0].node.type === "var" ||
+          node.type === "root" || node.ports[0].node.type === "root" ||
+          isTypeNode(node) || isTypeNode(node.ports[0].node)
+        ) {
+          continue;
         }
         if (node.type === "era") {
-          createRedex(node, node.ports[0].node, false, () => reduceErase(node.ports[0].node, graph));
+          createRedex(
+            node,
+            node.ports[0].node,
+            false,
+            () => reduceErase(node.ports[0].node, graph),
+          );
         } else if (node.ports[0].node.type === "era") {
-          createRedex(node, node.ports[0].node, false, () => reduceErase(node, graph));
+          createRedex(
+            node,
+            node.ports[0].node,
+            false,
+            () => reduceErase(node, graph),
+          );
         } else if (
           node.type === "abs" && node.ports[0].node.type === "app"
         ) {
-          createRedex(node, node.ports[0].node, false, () => reduceAnnihilate(node, graph));
+          createRedex(
+            node,
+            node.ports[0].node,
+            false,
+            () => reduceAnnihilate(node, graph),
+          );
         } else if (
           ANNIHILATION_PAIRS.some(([a, b]) =>
             (node.type === a && node.ports[0].node.type === b) ||
             (node.type === b && node.ports[0].node.type === a)
           )
         ) {
-          createRedex(node, node.ports[0].node, false, () => reduceAnnihilate(node, graph));
+          createRedex(
+            node,
+            node.ports[0].node,
+            false,
+            () => reduceAnnihilate(node, graph),
+          );
         } else if (
           ERASE_RULE_PAIRS.some(([a, b]) =>
             (node.type === a && node.ports[0].node.type === b) ||
             (node.type === b && node.ports[0].node.type === a)
           )
         ) {
-          createRedex(node, node.ports[0].node, false, () => reduceEraseRule(node, node.ports[0].node, graph));
+          createRedex(
+            node,
+            node.ports[0].node,
+            false,
+            () => reduceEraseRule(node, node.ports[0].node, graph),
+          );
         } else if (
-          node.type.startsWith("rep") && !node.ports[0].node.type.startsWith("rep") &&
-          !isExprAgent(node.ports[0].node.type) && !isTypeNode(node.ports[0].node) &&
-          node.ports[0].node.type !== "var" && node.ports[0].node.type !== "root"
+          node.type.startsWith("rep") &&
+          !node.ports[0].node.type.startsWith("rep") &&
+          !isExprAgent(node.ports[0].node.type) &&
+          !isTypeNode(node.ports[0].node) &&
+          node.ports[0].node.type !== "var" &&
+          node.ports[0].node.type !== "root"
         ) {
           // Rep commutation with lambda cube agents
           const rep = node;
@@ -125,30 +207,39 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
           createRedex(node, node.ports[0].node, false, () => {
             const { nodeClones } = reduceCommute(rep, graph);
             nodeClones.forEach((clone, i) => {
-              clone.label = formatRepLabel(i === 0 ? level : (relativeLevel ? level + 1 : level), "unknown");
+              clone.label = formatRepLabel(
+                i === 0 ? level : (relativeLevel ? level + 1 : level),
+                "unknown",
+              );
               if (i > 0) {
                 clone.type = clone.type === "rep-in" ? "rep-out" : "rep-in";
               }
             });
           });
         } else if (
-          ((node.type.startsWith("rep") && (node.ports[0].node.type === "abs" ||
-            node.ports[0].node.type === "app")))
+          (node.type.startsWith("rep") && (node.ports[0].node.type === "abs" ||
+            node.ports[0].node.type === "app"))
         ) {
           const rep = node.type.startsWith("rep") ? node : node.ports[0].node;
           const level = parseRepLabel(rep.label!).level;
           createRedex(node, node.ports[0].node, false, () => {
             const { nodeClones } = reduceCommute(rep, graph);
             nodeClones[0].label = formatRepLabel(level, "unknown");
-            nodeClones[1].label = formatRepLabel(relativeLevel ? level + 1 :level, "unknown");
-            nodeClones[1].type = nodeClones[1].type === "rep-in" ? "rep-out" : "rep-in";
+            nodeClones[1].label = formatRepLabel(
+              relativeLevel ? level + 1 : level,
+              "unknown",
+            );
+            nodeClones[1].type = nodeClones[1].type === "rep-in"
+              ? "rep-out"
+              : "rep-in";
             // Handle type port replicator for abs nodes (3 aux ports)
             if (nodeClones.length > 2) {
               nodeClones[2].label = formatRepLabel(level, "unknown");
             }
           });
         } else if (
-          node.type.startsWith("rep") && node.ports[0].node.type.startsWith("rep")
+          node.type.startsWith("rep") &&
+          node.ports[0].node.type.startsWith("rep")
         ) {
           const a = node;
           const b = node.ports[0].node;
@@ -165,7 +256,10 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
                 });
               } else {
                 nodeClones.forEach((node, i) => {
-                  node.label = formatRepLabel(bottom + a.levelDeltas![i], bottomFlag);
+                  node.label = formatRepLabel(
+                    bottom + a.levelDeltas![i],
+                    bottomFlag,
+                  );
                 });
               }
             });
@@ -198,16 +292,31 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
           createRedex(firstReplicator, secondReplicator, false, () => {
             firstReplicator.isToBeMerged = false;
 
-            firstReplicator.ports.splice(secondReplicatorPort, 1, ...secondReplicator.ports.slice(1));
-            firstReplicator.levelDeltas!.splice(secondReplicatorPort - 1, 1, ...secondReplicator.levelDeltas!.map((ld) => ld + levelDeltaBetween));
+            firstReplicator.ports.splice(
+              secondReplicatorPort,
+              1,
+              ...secondReplicator.ports.slice(1),
+            );
+            firstReplicator.levelDeltas!.splice(
+              secondReplicatorPort - 1,
+              1,
+              ...secondReplicator.levelDeltas!.map((ld) =>
+                ld + levelDeltaBetween
+              ),
+            );
 
-            const portsWithLevelDeltas: { nodePort: NodePort; levelDelta: number }[] = firstReplicator.ports.slice(1).map((nodePort, i) => {
+            const portsWithLevelDeltas: {
+              nodePort: NodePort;
+              levelDelta: number;
+            }[] = firstReplicator.ports.slice(1).map((nodePort, i) => {
               return { nodePort, levelDelta: firstReplicator.levelDeltas![i] };
             });
 
-            portsWithLevelDeltas.sort(({ levelDelta: levelDeltaA }, { levelDelta: levelDeltaB }) => {
-              return levelDeltaA - levelDeltaB;
-            });
+            portsWithLevelDeltas.sort(
+              ({ levelDelta: levelDeltaA }, { levelDelta: levelDeltaB }) => {
+                return levelDeltaA - levelDeltaB;
+              },
+            );
 
             const auxPorts: NodePort[] = [];
             const levelDeltas: number[] = [];
@@ -219,16 +328,24 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
             firstReplicator.ports = [firstReplicator.ports[0], ...auxPorts];
             firstReplicator.levelDeltas = [...levelDeltas];
 
-            firstReplicator.ports.forEach((p, i) => link(p, { node: firstReplicator, port: i }));
+            firstReplicator.ports.forEach((p, i) =>
+              link(p, { node: firstReplicator, port: i })
+            );
 
             removeFromArrayIf(graph, (n) => n === secondReplicator);
           });
         }
       } else if (
         node.type.startsWith("rep") &&
-        node.ports[0].node.type === "app" && node.ports[0].port === Ports.app.result
+        node.ports[0].node.type === "app" &&
+        node.ports[0].port === Ports.app.result
       ) {
-        createRedex(node, node.ports[0].node, false, () => reduceAuxFan(node.ports[0].node, graph, relativeLevel));
+        createRedex(
+          node,
+          node.ports[0].node,
+          false,
+          () => reduceAuxFan(node.ports[0].node, graph, relativeLevel),
+        );
       }
     }
 
@@ -239,15 +356,24 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
       const node = nodePort.node;
       const port = nodePort.port;
 
-      if (nodePort.port === 0 && nodePort.node.ports[0].node.ports[0].node === nodePort.node) {
-        const redex = getRedex(nodePort.node, nodePort.node.ports[0].node, redexes);
+      if (
+        nodePort.port === 0 &&
+        nodePort.node.ports[0].node.ports[0].node === nodePort.node
+      ) {
+        const redex = getRedex(
+          nodePort.node,
+          nodePort.node.ports[0].node,
+          redexes,
+        );
         if (redex) {
           redex.optimal = true;
           return true;
         }
       }
 
-      if (node.type.startsWith("rep") && node.ports[0].node.type.startsWith("rep")) {
+      if (
+        node.type.startsWith("rep") && node.ports[0].node.type.startsWith("rep")
+      ) {
         const redex = getRedex(node, node.ports[0].node, redexes);
         if (redex) {
           redex.optimal = true;
@@ -255,7 +381,11 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         }
       }
 
-      if (firstAuxFanReplication === undefined && node.type.startsWith("rep") && node.ports[0].node.type === "app" && node.ports[0].port === Ports.app.result) {
+      if (
+        firstAuxFanReplication === undefined && node.type.startsWith("rep") &&
+        node.ports[0].node.type === "app" &&
+        node.ports[0].port === Ports.app.result
+      ) {
         firstAuxFanReplication = getRedex(node, node.ports[0].node, redexes);
       }
 
@@ -293,11 +423,11 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         // nothing to do
       }
       return false;
-    }
+    };
     const res = traverse(rootNode.ports[0]);
     if (res === false && firstAuxFanReplication !== undefined) {
       (firstAuxFanReplication as Redex).optimal = true;
-    };
+    }
 
     redexes.sort((a, b) => a.optimal ? -1 : b.optimal ? 1 : 0);
 
@@ -307,7 +437,13 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
       const port = nodePort.port;
       const other = nodePort.node.ports[0].node;
 
-      if (port === 0 && other.ports[0].node === node && (!node.type.startsWith("rep") || parseRepLabel(node.label!).status === "unknown") && (!other.type.startsWith("rep") || parseRepLabel(other.label!).status === "unknown")) {
+      if (
+        port === 0 && other.ports[0].node === node &&
+        (!node.type.startsWith("rep") ||
+          parseRepLabel(node.label!).status === "unknown") &&
+        (!other.type.startsWith("rep") ||
+          parseRepLabel(other.label!).status === "unknown")
+      ) {
         const redex = getRedex(nodePort.node, other, redexes);
         if (redex) {
           redex.optimal = true;
@@ -334,7 +470,7 @@ export function getRedexes(graph: Graph, systemType: SystemType, relativeLevel: 
         // nothing to do
       }
       return;
-    }
+    };
     traverse2(rootNode.ports[0]);
   }
 

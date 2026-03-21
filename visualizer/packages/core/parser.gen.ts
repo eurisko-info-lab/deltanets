@@ -34,49 +34,49 @@
 type Nullable<T> = T | null;
 type $$RuleType<T> = () => Nullable<T>;
 export interface ASTNodeIntf {
-    kind: ASTKinds;
+  kind: ASTKinds;
 }
 export enum ASTKinds {
-    SOURCE = "SOURCE",
-    STMT = "STMT",
-    STMT_$0_1 = "STMT_$0_1",
-    STMT_$0_2 = "STMT_$0_2",
-    DEF = "DEF",
-    EXPR_1 = "EXPR_1",
-    EXPR_2 = "EXPR_2",
-    TERM_1 = "TERM_1",
-    TERM_2 = "TERM_2",
-    TERM_3 = "TERM_3",
-    ABSTRACTION = "ABSTRACTION",
-    APPLICATION = "APPLICATION",
-    GROUP = "GROUP",
-    IDENT = "IDENT",
-    TYPE_ANNOTATION = "TYPE_ANNOTATION",
-    ARROW_TYPE = "ARROW_TYPE",
-    TYPE_GROUP = "TYPE_GROUP",
-    HOLE_TYPE = "HOLE_TYPE",
-    WHITESPACE_1 = "WHITESPACE_1",
-    WHITESPACE_2 = "WHITESPACE_2",
-    COMMENT = "COMMENT",
-    EOL_1 = "EOL_1",
-    EOL_2 = "EOL_2",
-    $EOF = "$EOF",
+  SOURCE = "SOURCE",
+  STMT = "STMT",
+  STMT_$0_1 = "STMT_$0_1",
+  STMT_$0_2 = "STMT_$0_2",
+  DEF = "DEF",
+  EXPR_1 = "EXPR_1",
+  EXPR_2 = "EXPR_2",
+  TERM_1 = "TERM_1",
+  TERM_2 = "TERM_2",
+  TERM_3 = "TERM_3",
+  ABSTRACTION = "ABSTRACTION",
+  APPLICATION = "APPLICATION",
+  GROUP = "GROUP",
+  IDENT = "IDENT",
+  TYPE_ANNOTATION = "TYPE_ANNOTATION",
+  ARROW_TYPE = "ARROW_TYPE",
+  TYPE_GROUP = "TYPE_GROUP",
+  HOLE_TYPE = "HOLE_TYPE",
+  WHITESPACE_1 = "WHITESPACE_1",
+  WHITESPACE_2 = "WHITESPACE_2",
+  COMMENT = "COMMENT",
+  EOL_1 = "EOL_1",
+  EOL_2 = "EOL_2",
+  $EOF = "$EOF",
 }
 export interface SOURCE {
-    kind: ASTKinds.SOURCE;
-    statements: STMT[];
+  kind: ASTKinds.SOURCE;
+  statements: STMT[];
 }
 export interface STMT {
-    kind: ASTKinds.STMT;
-    stmt: STMT_$0;
+  kind: ASTKinds.STMT;
+  stmt: STMT_$0;
 }
 export type STMT_$0 = STMT_$0_1 | STMT_$0_2;
 export type STMT_$0_1 = DEF;
 export type STMT_$0_2 = EXPR;
 export interface DEF {
-    kind: ASTKinds.DEF;
-    identifier: IDENT;
-    value: EXPR;
+  kind: ASTKinds.DEF;
+  identifier: IDENT;
+  value: EXPR;
 }
 export type EXPR = EXPR_1 | EXPR_2;
 export type EXPR_1 = APPLICATION;
@@ -86,553 +86,689 @@ export type TERM_1 = ABSTRACTION;
 export type TERM_2 = IDENT;
 export type TERM_3 = GROUP;
 export interface ABSTRACTION {
-    kind: ASTKinds.ABSTRACTION;
-    parameter: IDENT;
-    typeAnnotation: TYPE_ANNOTATION | null;
-    body: EXPR;
+  kind: ASTKinds.ABSTRACTION;
+  parameter: IDENT;
+  typeAnnotation: TYPE_ANNOTATION | null;
+  body: EXPR;
 }
 export interface APPLICATION {
-    kind: ASTKinds.APPLICATION;
-    func: EXPR;
-    arg: TERM;
+  kind: ASTKinds.APPLICATION;
+  func: EXPR;
+  arg: TERM;
 }
 export interface GROUP {
-    kind: ASTKinds.GROUP;
-    group: EXPR;
+  kind: ASTKinds.GROUP;
+  group: EXPR;
 }
 export interface IDENT {
-    kind: ASTKinds.IDENT;
-    identifier: string;
+  kind: ASTKinds.IDENT;
+  identifier: string;
 }
 export interface TYPE_ANNOTATION {
-    kind: ASTKinds.TYPE_ANNOTATION;
-    type: TYPE;
+  kind: ASTKinds.TYPE_ANNOTATION;
+  type: TYPE;
 }
 export type TYPE = ARROW_TYPE | SIMPLE_TYPE;
 export type SIMPLE_TYPE = TYPE_GROUP | HOLE_TYPE | IDENT;
 export interface ARROW_TYPE {
-    kind: ASTKinds.ARROW_TYPE;
-    from: SIMPLE_TYPE;
-    to: TYPE;
+  kind: ASTKinds.ARROW_TYPE;
+  from: SIMPLE_TYPE;
+  to: TYPE;
 }
 export interface TYPE_GROUP {
-    kind: ASTKinds.TYPE_GROUP;
-    type: TYPE;
+  kind: ASTKinds.TYPE_GROUP;
+  type: TYPE;
 }
 export interface HOLE_TYPE {
-    kind: ASTKinds.HOLE_TYPE;
+  kind: ASTKinds.HOLE_TYPE;
 }
 export type WHITESPACE = WHITESPACE_1 | WHITESPACE_2;
 export type WHITESPACE_1 = COMMENT;
 export type WHITESPACE_2 = string;
 export interface COMMENT {
-    kind: ASTKinds.COMMENT;
+  kind: ASTKinds.COMMENT;
 }
 export type EOL = EOL_1 | EOL_2;
 export type EOL_1 = string;
-export type EOL_2 = {kind: ASTKinds.$EOF};
+export type EOL_2 = { kind: ASTKinds.$EOF };
 export class Parser {
-    private readonly input: string;
-    private pos: PosInfo;
-    private negating: boolean = false;
-    private memoSafe: boolean = true;
-    constructor(input: string) {
-        this.pos = {overallPos: 0, line: 1, offset: 0};
-        this.input = input;
-    }
-    public reset(pos: PosInfo) {
-        this.pos = pos;
-    }
-    public finished(): boolean {
-        return this.pos.overallPos === this.input.length;
-    }
-    public clearMemos(): void {
-        this.$scope$EXPR$memo.clear();
-    }
-    protected $scope$EXPR$memo: Map<number, [Nullable<EXPR>, PosInfo]> = new Map();
-    public matchSOURCE($$dpth: number, $$cr?: ErrorTracker): Nullable<SOURCE> {
-        return this.run<SOURCE>($$dpth,
-            () => {
-                let $scope$statements: Nullable<STMT[]>;
-                let $$res: Nullable<SOURCE> = null;
-                if (true
-                    && this.loop<WHITESPACE>(() => this.matchWHITESPACE($$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$statements = this.loop<STMT>(() => this.matchSTMT($$dpth + 1, $$cr), 0, -1)) !== null
-                    && this.match$EOF($$cr) !== null
-                ) {
-                    $$res = {kind: ASTKinds.SOURCE, statements: $scope$statements};
-                }
-                return $$res;
-            });
-    }
-    public matchSTMT($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT> {
-        return this.run<STMT>($$dpth,
-            () => {
-                let $scope$stmt: Nullable<STMT_$0>;
-                let $$res: Nullable<STMT> = null;
-                if (true
-                    && ($scope$stmt = this.matchSTMT_$0($$dpth + 1, $$cr)) !== null
-                    && this.loop<WHITESPACE>(() => this.matchWHITESPACE($$dpth + 1, $$cr), 0, -1) !== null
-                ) {
-                    $$res = {kind: ASTKinds.STMT, stmt: $scope$stmt};
-                }
-                return $$res;
-            });
-    }
-    public matchSTMT_$0($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT_$0> {
-        return this.choice<STMT_$0>([
-            () => this.matchSTMT_$0_1($$dpth + 1, $$cr),
-            () => this.matchSTMT_$0_2($$dpth + 1, $$cr),
-        ]);
-    }
-    public matchSTMT_$0_1($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT_$0_1> {
-        return this.matchDEF($$dpth + 1, $$cr);
-    }
-    public matchSTMT_$0_2($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT_$0_2> {
-        return this.matchEXPR($$dpth + 1, $$cr);
-    }
-    public matchDEF($$dpth: number, $$cr?: ErrorTracker): Nullable<DEF> {
-        return this.run<DEF>($$dpth,
-            () => {
-                let $scope$identifier: Nullable<IDENT>;
-                let $scope$value: Nullable<EXPR>;
-                let $$res: Nullable<DEF> = null;
-                if (true
-                    && ($scope$identifier = this.matchIDENT($$dpth + 1, $$cr)) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && this.regexAccept(String.raw`(?:=)`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$value = this.matchEXPR($$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.DEF, identifier: $scope$identifier, value: $scope$value};
-                }
-                return $$res;
-            });
-    }
-    public matchEXPR($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR> {
-        const fn = () => {
-            return this.choice<EXPR>([
-                () => this.matchEXPR_1($$dpth + 1, $$cr),
-                () => this.matchEXPR_2($$dpth + 1, $$cr),
-            ]);
+  private readonly input: string;
+  private pos: PosInfo;
+  private negating: boolean = false;
+  private memoSafe: boolean = true;
+  constructor(input: string) {
+    this.pos = { overallPos: 0, line: 1, offset: 0 };
+    this.input = input;
+  }
+  public reset(pos: PosInfo) {
+    this.pos = pos;
+  }
+  public finished(): boolean {
+    return this.pos.overallPos === this.input.length;
+  }
+  public clearMemos(): void {
+    this.$scope$EXPR$memo.clear();
+  }
+  protected $scope$EXPR$memo: Map<number, [Nullable<EXPR>, PosInfo]> =
+    new Map();
+  public matchSOURCE($$dpth: number, $$cr?: ErrorTracker): Nullable<SOURCE> {
+    return this.run<SOURCE>($$dpth, () => {
+      let $scope$statements: Nullable<STMT[]>;
+      let $$res: Nullable<SOURCE> = null;
+      if (
+        true &&
+        this.loop<WHITESPACE>(
+            () => this.matchWHITESPACE($$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$statements = this.loop<STMT>(
+            () => this.matchSTMT($$dpth + 1, $$cr),
+            0,
+            -1,
+          )) !== null &&
+        this.match$EOF($$cr) !== null
+      ) {
+        $$res = { kind: ASTKinds.SOURCE, statements: $scope$statements };
+      }
+      return $$res;
+    });
+  }
+  public matchSTMT($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT> {
+    return this.run<STMT>($$dpth, () => {
+      let $scope$stmt: Nullable<STMT_$0>;
+      let $$res: Nullable<STMT> = null;
+      if (
+        true &&
+        ($scope$stmt = this.matchSTMT_$0($$dpth + 1, $$cr)) !== null &&
+        this.loop<WHITESPACE>(
+            () => this.matchWHITESPACE($$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null
+      ) {
+        $$res = { kind: ASTKinds.STMT, stmt: $scope$stmt };
+      }
+      return $$res;
+    });
+  }
+  public matchSTMT_$0($$dpth: number, $$cr?: ErrorTracker): Nullable<STMT_$0> {
+    return this.choice<STMT_$0>([
+      () => this.matchSTMT_$0_1($$dpth + 1, $$cr),
+      () => this.matchSTMT_$0_2($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchSTMT_$0_1(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<STMT_$0_1> {
+    return this.matchDEF($$dpth + 1, $$cr);
+  }
+  public matchSTMT_$0_2(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<STMT_$0_2> {
+    return this.matchEXPR($$dpth + 1, $$cr);
+  }
+  public matchDEF($$dpth: number, $$cr?: ErrorTracker): Nullable<DEF> {
+    return this.run<DEF>($$dpth, () => {
+      let $scope$identifier: Nullable<IDENT>;
+      let $scope$value: Nullable<EXPR>;
+      let $$res: Nullable<DEF> = null;
+      if (
+        true &&
+        ($scope$identifier = this.matchIDENT($$dpth + 1, $$cr)) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        this.regexAccept(String.raw`(?:=)`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$value = this.matchEXPR($$dpth + 1, $$cr)) !== null
+      ) {
+        $$res = {
+          kind: ASTKinds.DEF,
+          identifier: $scope$identifier,
+          value: $scope$value,
         };
-        const $scope$pos = this.mark();
-        const memo = this.$scope$EXPR$memo.get($scope$pos.overallPos);
-        if(memo !== undefined) {
-            this.reset(memo[1]);
-            return memo[0];
-        }
-        const $scope$oldMemoSafe = this.memoSafe;
-        this.memoSafe = false;
-        this.$scope$EXPR$memo.set($scope$pos.overallPos, [null, $scope$pos]);
-        let lastRes: Nullable<EXPR> = null;
-        let lastPos: PosInfo = $scope$pos;
-        for(;;) {
-            this.reset($scope$pos);
-            const res = fn();
-            const end = this.mark();
-            if(end.overallPos <= lastPos.overallPos)
-                break;
-            lastRes = res;
-            lastPos = end;
-            this.$scope$EXPR$memo.set($scope$pos.overallPos, [lastRes, lastPos]);
-        }
-        this.reset(lastPos);
-        this.memoSafe = $scope$oldMemoSafe;
-        return lastRes;
+      }
+      return $$res;
+    });
+  }
+  public matchEXPR($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR> {
+    const fn = () => {
+      return this.choice<EXPR>([
+        () => this.matchEXPR_1($$dpth + 1, $$cr),
+        () => this.matchEXPR_2($$dpth + 1, $$cr),
+      ]);
+    };
+    const $scope$pos = this.mark();
+    const memo = this.$scope$EXPR$memo.get($scope$pos.overallPos);
+    if (memo !== undefined) {
+      this.reset(memo[1]);
+      return memo[0];
     }
-    public matchEXPR_1($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR_1> {
-        return this.matchAPPLICATION($$dpth + 1, $$cr);
+    const $scope$oldMemoSafe = this.memoSafe;
+    this.memoSafe = false;
+    this.$scope$EXPR$memo.set($scope$pos.overallPos, [null, $scope$pos]);
+    let lastRes: Nullable<EXPR> = null;
+    let lastPos: PosInfo = $scope$pos;
+    for (;;) {
+      this.reset($scope$pos);
+      const res = fn();
+      const end = this.mark();
+      if (end.overallPos <= lastPos.overallPos) {
+        break;
+      }
+      lastRes = res;
+      lastPos = end;
+      this.$scope$EXPR$memo.set($scope$pos.overallPos, [lastRes, lastPos]);
     }
-    public matchEXPR_2($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR_2> {
-        return this.matchTERM($$dpth + 1, $$cr);
+    this.reset(lastPos);
+    this.memoSafe = $scope$oldMemoSafe;
+    return lastRes;
+  }
+  public matchEXPR_1($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR_1> {
+    return this.matchAPPLICATION($$dpth + 1, $$cr);
+  }
+  public matchEXPR_2($$dpth: number, $$cr?: ErrorTracker): Nullable<EXPR_2> {
+    return this.matchTERM($$dpth + 1, $$cr);
+  }
+  public matchTERM($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM> {
+    return this.choice<TERM>([
+      () => this.matchTERM_1($$dpth + 1, $$cr),
+      () => this.matchTERM_2($$dpth + 1, $$cr),
+      () => this.matchTERM_3($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchTERM_1($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_1> {
+    return this.matchABSTRACTION($$dpth + 1, $$cr);
+  }
+  public matchTERM_2($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_2> {
+    return this.matchIDENT($$dpth + 1, $$cr);
+  }
+  public matchTERM_3($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_3> {
+    return this.matchGROUP($$dpth + 1, $$cr);
+  }
+  public matchABSTRACTION(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<ABSTRACTION> {
+    return this.run<ABSTRACTION>($$dpth, () => {
+      let $scope$parameter: Nullable<IDENT>;
+      let $scope$typeAnnotation: Nullable<TYPE_ANNOTATION[]>;
+      let $scope$body: Nullable<EXPR>;
+      let $$res: Nullable<ABSTRACTION> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?:λ)`, "", $$dpth + 1, $$cr) !== null &&
+        ($scope$parameter = this.matchIDENT($$dpth + 1, $$cr)) !== null &&
+        ($scope$typeAnnotation = this.loop<TYPE_ANNOTATION>(
+            () => this.matchTYPE_ANNOTATION($$dpth + 1, $$cr),
+            0,
+            1,
+          )) !== null &&
+        this.regexAccept(String.raw`(?:\.)`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$body = this.matchEXPR($$dpth + 1, $$cr)) !== null
+      ) {
+        $$res = {
+          kind: ASTKinds.ABSTRACTION,
+          parameter: $scope$parameter,
+          typeAnnotation: $scope$typeAnnotation.length > 0
+            ? $scope$typeAnnotation[0]
+            : null,
+          body: $scope$body,
+        };
+      }
+      return $$res;
+    });
+  }
+  public matchAPPLICATION(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<APPLICATION> {
+    return this.run<APPLICATION>($$dpth, () => {
+      let $scope$func: Nullable<EXPR>;
+      let $scope$arg: Nullable<TERM>;
+      let $$res: Nullable<APPLICATION> = null;
+      if (
+        true &&
+        ($scope$func = this.matchEXPR($$dpth + 1, $$cr)) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$arg = this.matchTERM($$dpth + 1, $$cr)) !== null
+      ) {
+        $$res = {
+          kind: ASTKinds.APPLICATION,
+          func: $scope$func,
+          arg: $scope$arg,
+        };
+      }
+      return $$res;
+    });
+  }
+  public matchGROUP($$dpth: number, $$cr?: ErrorTracker): Nullable<GROUP> {
+    return this.run<GROUP>($$dpth, () => {
+      let $scope$group: Nullable<EXPR>;
+      let $$res: Nullable<GROUP> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?:\()`, "", $$dpth + 1, $$cr) !== null &&
+        ($scope$group = this.matchEXPR($$dpth + 1, $$cr)) !== null &&
+        this.regexAccept(String.raw`(?:\))`, "", $$dpth + 1, $$cr) !== null
+      ) {
+        $$res = { kind: ASTKinds.GROUP, group: $scope$group };
+      }
+      return $$res;
+    });
+  }
+  public matchIDENT($$dpth: number, $$cr?: ErrorTracker): Nullable<IDENT> {
+    return this.run<IDENT>($$dpth, () => {
+      let $scope$identifier: Nullable<string>;
+      let $$res: Nullable<IDENT> = null;
+      if (
+        true &&
+        ($scope$identifier = this.regexAccept(
+            String.raw`(?:[a-zA-Z0-9_]+)`,
+            "",
+            $$dpth + 1,
+            $$cr,
+          )) !== null
+      ) {
+        $$res = { kind: ASTKinds.IDENT, identifier: $scope$identifier };
+      }
+      return $$res;
+    });
+  }
+  public matchTYPE_ANNOTATION(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<TYPE_ANNOTATION> {
+    return this.run<TYPE_ANNOTATION>($$dpth, () => {
+      let $scope$type: Nullable<TYPE>;
+      let $$res: Nullable<TYPE_ANNOTATION> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?::)`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null
+      ) {
+        $$res = { kind: ASTKinds.TYPE_ANNOTATION, type: $scope$type };
+      }
+      return $$res;
+    });
+  }
+  public matchTYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE> {
+    return this.choice<TYPE>([
+      () => this.matchARROW_TYPE($$dpth + 1, $$cr),
+      () => this.matchSIMPLE_TYPE($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchARROW_TYPE(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<ARROW_TYPE> {
+    return this.run<ARROW_TYPE>($$dpth, () => {
+      let $scope$from: Nullable<SIMPLE_TYPE>;
+      let $scope$to: Nullable<TYPE>;
+      let $$res: Nullable<ARROW_TYPE> = null;
+      if (
+        true &&
+        ($scope$from = this.matchSIMPLE_TYPE($$dpth + 1, $$cr)) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        this.regexAccept(String.raw`(?:->|→)`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$to = this.matchTYPE($$dpth + 1, $$cr)) !== null
+      ) {
+        $$res = { kind: ASTKinds.ARROW_TYPE, from: $scope$from, to: $scope$to };
+      }
+      return $$res;
+    });
+  }
+  public matchSIMPLE_TYPE(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<SIMPLE_TYPE> {
+    return this.choice<SIMPLE_TYPE>([
+      () => this.matchTYPE_GROUP($$dpth + 1, $$cr),
+      () => this.matchHOLE_TYPE($$dpth + 1, $$cr),
+      () => this.matchIDENT($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchTYPE_GROUP(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<TYPE_GROUP> {
+    return this.run<TYPE_GROUP>($$dpth, () => {
+      let $scope$type: Nullable<TYPE>;
+      let $$res: Nullable<TYPE_GROUP> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?:\()`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        this.regexAccept(String.raw`(?:\))`, "", $$dpth + 1, $$cr) !== null
+      ) {
+        $$res = { kind: ASTKinds.TYPE_GROUP, type: $scope$type };
+      }
+      return $$res;
+    });
+  }
+  public matchHOLE_TYPE(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<HOLE_TYPE> {
+    return this.run<HOLE_TYPE>($$dpth, () => {
+      let $$res: Nullable<HOLE_TYPE> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?:\?)`, "", $$dpth + 1, $$cr) !== null
+      ) {
+        $$res = { kind: ASTKinds.HOLE_TYPE };
+      }
+      return $$res;
+    });
+  }
+  public matchWHITESPACE(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<WHITESPACE> {
+    return this.choice<WHITESPACE>([
+      () => this.matchWHITESPACE_1($$dpth + 1, $$cr),
+      () => this.matchWHITESPACE_2($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchWHITESPACE_1(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<WHITESPACE_1> {
+    return this.matchCOMMENT($$dpth + 1, $$cr);
+  }
+  public matchWHITESPACE_2(
+    $$dpth: number,
+    $$cr?: ErrorTracker,
+  ): Nullable<WHITESPACE_2> {
+    return this.regexAccept(String.raw`(?:\s)`, "", $$dpth + 1, $$cr);
+  }
+  public matchCOMMENT($$dpth: number, $$cr?: ErrorTracker): Nullable<COMMENT> {
+    return this.run<COMMENT>($$dpth, () => {
+      let $$res: Nullable<COMMENT> = null;
+      if (
+        true &&
+        this.regexAccept(String.raw`(?:#)`, "", $$dpth + 1, $$cr) !== null &&
+        this.loop<string>(
+            () => this.regexAccept(String.raw`(?:.)`, "", $$dpth + 1, $$cr),
+            0,
+            -1,
+          ) !== null &&
+        this.matchEOL($$dpth + 1, $$cr) !== null
+      ) {
+        $$res = { kind: ASTKinds.COMMENT };
+      }
+      return $$res;
+    });
+  }
+  public matchEOL($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL> {
+    return this.choice<EOL>([
+      () => this.matchEOL_1($$dpth + 1, $$cr),
+      () => this.matchEOL_2($$dpth + 1, $$cr),
+    ]);
+  }
+  public matchEOL_1($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL_1> {
+    return this.regexAccept(String.raw`(?:\n)`, "", $$dpth + 1, $$cr);
+  }
+  public matchEOL_2($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL_2> {
+    return this.noConsume<{ kind: ASTKinds.$EOF }>(() => this.match$EOF($$cr));
+  }
+  public test(): boolean {
+    const mrk = this.mark();
+    const res = this.matchSOURCE(0);
+    const ans = res !== null;
+    this.reset(mrk);
+    return ans;
+  }
+  public parse(): ParseResult {
+    const mrk = this.mark();
+    const res = this.matchSOURCE(0);
+    if (res) {
+      return { ast: res, errs: [] };
     }
-    public matchTERM($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM> {
-        return this.choice<TERM>([
-            () => this.matchTERM_1($$dpth + 1, $$cr),
-            () => this.matchTERM_2($$dpth + 1, $$cr),
-            () => this.matchTERM_3($$dpth + 1, $$cr),
-        ]);
+    this.reset(mrk);
+    const rec = new ErrorTracker();
+    this.clearMemos();
+    this.matchSOURCE(0, rec);
+    const err = rec.getErr();
+    return { ast: res, errs: err !== null ? [err] : [] };
+  }
+  public mark(): PosInfo {
+    return this.pos;
+  }
+  // @ts-ignore: loopPlus may not be called
+  private loopPlus<T>(func: $$RuleType<T>): Nullable<[T, ...T[]]> {
+    return this.loop(func, 1, -1) as Nullable<[T, ...T[]]>;
+  }
+  private loop<T>(func: $$RuleType<T>, lb: number, ub: number): Nullable<T[]> {
+    const mrk = this.mark();
+    const res: T[] = [];
+    while (ub === -1 || res.length < ub) {
+      const preMrk = this.mark();
+      const t = func();
+      if (t === null || this.pos.overallPos === preMrk.overallPos) {
+        break;
+      }
+      res.push(t);
     }
-    public matchTERM_1($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_1> {
-        return this.matchABSTRACTION($$dpth + 1, $$cr);
+    if (res.length >= lb) {
+      return res;
     }
-    public matchTERM_2($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_2> {
-        return this.matchIDENT($$dpth + 1, $$cr);
+    this.reset(mrk);
+    return null;
+  }
+  private run<T>($$dpth: number, fn: $$RuleType<T>): Nullable<T> {
+    const mrk = this.mark();
+    const res = fn();
+    if (res !== null) {
+      return res;
     }
-    public matchTERM_3($$dpth: number, $$cr?: ErrorTracker): Nullable<TERM_3> {
-        return this.matchGROUP($$dpth + 1, $$cr);
-    }
-    public matchABSTRACTION($$dpth: number, $$cr?: ErrorTracker): Nullable<ABSTRACTION> {
-        return this.run<ABSTRACTION>($$dpth,
-            () => {
-                let $scope$parameter: Nullable<IDENT>;
-                let $scope$typeAnnotation: Nullable<TYPE_ANNOTATION[]>;
-                let $scope$body: Nullable<EXPR>;
-                let $$res: Nullable<ABSTRACTION> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?:λ)`, "", $$dpth + 1, $$cr) !== null
-                    && ($scope$parameter = this.matchIDENT($$dpth + 1, $$cr)) !== null
-                    && ($scope$typeAnnotation = this.loop<TYPE_ANNOTATION>(() => this.matchTYPE_ANNOTATION($$dpth + 1, $$cr), 0, 1)) !== null
-                    && this.regexAccept(String.raw`(?:\.)`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$body = this.matchEXPR($$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.ABSTRACTION, parameter: $scope$parameter, typeAnnotation: $scope$typeAnnotation.length > 0 ? $scope$typeAnnotation[0] : null, body: $scope$body};
-                }
-                return $$res;
-            });
-    }
-    public matchAPPLICATION($$dpth: number, $$cr?: ErrorTracker): Nullable<APPLICATION> {
-        return this.run<APPLICATION>($$dpth,
-            () => {
-                let $scope$func: Nullable<EXPR>;
-                let $scope$arg: Nullable<TERM>;
-                let $$res: Nullable<APPLICATION> = null;
-                if (true
-                    && ($scope$func = this.matchEXPR($$dpth + 1, $$cr)) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$arg = this.matchTERM($$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.APPLICATION, func: $scope$func, arg: $scope$arg};
-                }
-                return $$res;
-            });
-    }
-    public matchGROUP($$dpth: number, $$cr?: ErrorTracker): Nullable<GROUP> {
-        return this.run<GROUP>($$dpth,
-            () => {
-                let $scope$group: Nullable<EXPR>;
-                let $$res: Nullable<GROUP> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?:\()`, "", $$dpth + 1, $$cr) !== null
-                    && ($scope$group = this.matchEXPR($$dpth + 1, $$cr)) !== null
-                    && this.regexAccept(String.raw`(?:\))`, "", $$dpth + 1, $$cr) !== null
-                ) {
-                    $$res = {kind: ASTKinds.GROUP, group: $scope$group};
-                }
-                return $$res;
-            });
-    }
-    public matchIDENT($$dpth: number, $$cr?: ErrorTracker): Nullable<IDENT> {
-        return this.run<IDENT>($$dpth,
-            () => {
-                let $scope$identifier: Nullable<string>;
-                let $$res: Nullable<IDENT> = null;
-                if (true
-                    && ($scope$identifier = this.regexAccept(String.raw`(?:[a-zA-Z0-9_]+)`, "", $$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.IDENT, identifier: $scope$identifier};
-                }
-                return $$res;
-            });
-    }
-    public matchTYPE_ANNOTATION($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE_ANNOTATION> {
-        return this.run<TYPE_ANNOTATION>($$dpth,
-            () => {
-                let $scope$type: Nullable<TYPE>;
-                let $$res: Nullable<TYPE_ANNOTATION> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?::)`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.TYPE_ANNOTATION, type: $scope$type};
-                }
-                return $$res;
-            });
-    }
-    public matchTYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE> {
-        return this.choice<TYPE>([
-            () => this.matchARROW_TYPE($$dpth + 1, $$cr),
-            () => this.matchSIMPLE_TYPE($$dpth + 1, $$cr),
-        ]);
-    }
-    public matchARROW_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<ARROW_TYPE> {
-        return this.run<ARROW_TYPE>($$dpth,
-            () => {
-                let $scope$from: Nullable<SIMPLE_TYPE>;
-                let $scope$to: Nullable<TYPE>;
-                let $$res: Nullable<ARROW_TYPE> = null;
-                if (true
-                    && ($scope$from = this.matchSIMPLE_TYPE($$dpth + 1, $$cr)) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && this.regexAccept(String.raw`(?:->|→)`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$to = this.matchTYPE($$dpth + 1, $$cr)) !== null
-                ) {
-                    $$res = {kind: ASTKinds.ARROW_TYPE, from: $scope$from, to: $scope$to};
-                }
-                return $$res;
-            });
-    }
-    public matchSIMPLE_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<SIMPLE_TYPE> {
-        return this.choice<SIMPLE_TYPE>([
-            () => this.matchTYPE_GROUP($$dpth + 1, $$cr),
-            () => this.matchHOLE_TYPE($$dpth + 1, $$cr),
-            () => this.matchIDENT($$dpth + 1, $$cr),
-        ]);
-    }
-    public matchTYPE_GROUP($$dpth: number, $$cr?: ErrorTracker): Nullable<TYPE_GROUP> {
-        return this.run<TYPE_GROUP>($$dpth,
-            () => {
-                let $scope$type: Nullable<TYPE>;
-                let $$res: Nullable<TYPE_GROUP> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?:\()`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && ($scope$type = this.matchTYPE($$dpth + 1, $$cr)) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?: )`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && this.regexAccept(String.raw`(?:\))`, "", $$dpth + 1, $$cr) !== null
-                ) {
-                    $$res = {kind: ASTKinds.TYPE_GROUP, type: $scope$type};
-                }
-                return $$res;
-            });
-    }
-    public matchHOLE_TYPE($$dpth: number, $$cr?: ErrorTracker): Nullable<HOLE_TYPE> {
-        return this.run<HOLE_TYPE>($$dpth,
-            () => {
-                let $$res: Nullable<HOLE_TYPE> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?:\?)`, "", $$dpth + 1, $$cr) !== null
-                ) {
-                    $$res = {kind: ASTKinds.HOLE_TYPE};
-                }
-                return $$res;
-            });
-    }
-    public matchWHITESPACE($$dpth: number, $$cr?: ErrorTracker): Nullable<WHITESPACE> {
-        return this.choice<WHITESPACE>([
-            () => this.matchWHITESPACE_1($$dpth + 1, $$cr),
-            () => this.matchWHITESPACE_2($$dpth + 1, $$cr),
-        ]);
-    }
-    public matchWHITESPACE_1($$dpth: number, $$cr?: ErrorTracker): Nullable<WHITESPACE_1> {
-        return this.matchCOMMENT($$dpth + 1, $$cr);
-    }
-    public matchWHITESPACE_2($$dpth: number, $$cr?: ErrorTracker): Nullable<WHITESPACE_2> {
-        return this.regexAccept(String.raw`(?:\s)`, "", $$dpth + 1, $$cr);
-    }
-    public matchCOMMENT($$dpth: number, $$cr?: ErrorTracker): Nullable<COMMENT> {
-        return this.run<COMMENT>($$dpth,
-            () => {
-                let $$res: Nullable<COMMENT> = null;
-                if (true
-                    && this.regexAccept(String.raw`(?:#)`, "", $$dpth + 1, $$cr) !== null
-                    && this.loop<string>(() => this.regexAccept(String.raw`(?:.)`, "", $$dpth + 1, $$cr), 0, -1) !== null
-                    && this.matchEOL($$dpth + 1, $$cr) !== null
-                ) {
-                    $$res = {kind: ASTKinds.COMMENT, };
-                }
-                return $$res;
-            });
-    }
-    public matchEOL($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL> {
-        return this.choice<EOL>([
-            () => this.matchEOL_1($$dpth + 1, $$cr),
-            () => this.matchEOL_2($$dpth + 1, $$cr),
-        ]);
-    }
-    public matchEOL_1($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL_1> {
-        return this.regexAccept(String.raw`(?:\n)`, "", $$dpth + 1, $$cr);
-    }
-    public matchEOL_2($$dpth: number, $$cr?: ErrorTracker): Nullable<EOL_2> {
-        return this.noConsume<{kind: ASTKinds.$EOF}>(() => this.match$EOF($$cr));
-    }
-    public test(): boolean {
-        const mrk = this.mark();
-        const res = this.matchSOURCE(0);
-        const ans = res !== null;
-        this.reset(mrk);
-        return ans;
-    }
-    public parse(): ParseResult {
-        const mrk = this.mark();
-        const res = this.matchSOURCE(0);
-        if (res)
-            return {ast: res, errs: []};
-        this.reset(mrk);
-        const rec = new ErrorTracker();
-        this.clearMemos();
-        this.matchSOURCE(0, rec);
-        const err = rec.getErr()
-        return {ast: res, errs: err !== null ? [err] : []}
-    }
-    public mark(): PosInfo {
-        return this.pos;
-    }
-    // @ts-ignore: loopPlus may not be called
-    private loopPlus<T>(func: $$RuleType<T>): Nullable<[T, ...T[]]> {
-        return this.loop(func, 1, -1) as Nullable<[T, ...T[]]>;
-    }
-    private loop<T>(func: $$RuleType<T>, lb: number, ub: number): Nullable<T[]> {
-        const mrk = this.mark();
-        const res: T[] = [];
-        while (ub === -1 || res.length < ub) {
-            const preMrk = this.mark();
-            const t = func();
-            if (t === null || this.pos.overallPos === preMrk.overallPos) {
-                break;
-            }
-            res.push(t);
-        }
-        if (res.length >= lb) {
-            return res;
-        }
-        this.reset(mrk);
-        return null;
-    }
-    private run<T>($$dpth: number, fn: $$RuleType<T>): Nullable<T> {
-        const mrk = this.mark();
-        const res = fn()
-        if (res !== null)
-            return res;
-        this.reset(mrk);
-        return null;
-    }
-    // @ts-ignore: choice may not be called
-    private choice<T>(fns: Array<$$RuleType<T>>): Nullable<T> {
-        for (const f of fns) {
-            const res = f();
-            if (res !== null) {
-                return res;
-            }
-        }
-        return null;
-    }
-    private regexAccept(match: string, mods: string, dpth: number, cr?: ErrorTracker): Nullable<string> {
-        return this.run<string>(dpth,
-            () => {
-                const reg = new RegExp(match, "y" + mods);
-                const mrk = this.mark();
-                reg.lastIndex = mrk.overallPos;
-                const res = this.tryConsume(reg);
-                if(cr) {
-                    cr.record(mrk, res, {
-                        kind: "RegexMatch",
-                        // We substring from 3 to len - 1 to strip off the
-                        // non-capture group syntax added as a WebKit workaround
-                        literal: match.substring(3, match.length - 1),
-                        negated: this.negating,
-                    });
-                }
-                return res;
-            });
-    }
-    private tryConsume(reg: RegExp): Nullable<string> {
-        const res = reg.exec(this.input);
-        if (res) {
-            let lineJmp = 0;
-            let lind = -1;
-            for (let i = 0; i < res[0].length; ++i) {
-                if (res[0][i] === "\n") {
-                    ++lineJmp;
-                    lind = i;
-                }
-            }
-            this.pos = {
-                overallPos: reg.lastIndex,
-                line: this.pos.line + lineJmp,
-                offset: lind === -1 ? this.pos.offset + res[0].length : (res[0].length - lind - 1)
-            };
-            return res[0];
-        }
-        return null;
-    }
-    // @ts-ignore: noConsume may not be called
-    private noConsume<T>(fn: $$RuleType<T>): Nullable<T> {
-        const mrk = this.mark();
-        const res = fn();
-        this.reset(mrk);
+    this.reset(mrk);
+    return null;
+  }
+  // @ts-ignore: choice may not be called
+  private choice<T>(fns: Array<$$RuleType<T>>): Nullable<T> {
+    for (const f of fns) {
+      const res = f();
+      if (res !== null) {
         return res;
+      }
     }
-    // @ts-ignore: negate may not be called
-    private negate<T>(fn: $$RuleType<T>): Nullable<boolean> {
-        const mrk = this.mark();
-        const oneg = this.negating;
-        this.negating = !oneg;
-        const res = fn();
-        this.negating = oneg;
-        this.reset(mrk);
-        return res === null ? true : null;
-    }
-    // @ts-ignore: Memoise may not be used
-    private memoise<K>(rule: $$RuleType<K>, memo: Map<number, [Nullable<K>, PosInfo]>): Nullable<K> {
-        const $scope$pos = this.mark();
-        const $scope$memoRes = memo.get($scope$pos.overallPos);
-        if(this.memoSafe && $scope$memoRes !== undefined) {
-        this.reset($scope$memoRes[1]);
-        return $scope$memoRes[0];
+    return null;
+  }
+  private regexAccept(
+    match: string,
+    mods: string,
+    dpth: number,
+    cr?: ErrorTracker,
+  ): Nullable<string> {
+    return this.run<string>(dpth, () => {
+      const reg = new RegExp(match, "y" + mods);
+      const mrk = this.mark();
+      reg.lastIndex = mrk.overallPos;
+      const res = this.tryConsume(reg);
+      if (cr) {
+        cr.record(mrk, res, {
+          kind: "RegexMatch",
+          // We substring from 3 to len - 1 to strip off the
+          // non-capture group syntax added as a WebKit workaround
+          literal: match.substring(3, match.length - 1),
+          negated: this.negating,
+        });
+      }
+      return res;
+    });
+  }
+  private tryConsume(reg: RegExp): Nullable<string> {
+    const res = reg.exec(this.input);
+    if (res) {
+      let lineJmp = 0;
+      let lind = -1;
+      for (let i = 0; i < res[0].length; ++i) {
+        if (res[0][i] === "\n") {
+          ++lineJmp;
+          lind = i;
         }
-        const $scope$result = rule();
-        if(this.memoSafe)
-        memo.set($scope$pos.overallPos, [$scope$result, this.mark()]);
-        return $scope$result;
+      }
+      this.pos = {
+        overallPos: reg.lastIndex,
+        line: this.pos.line + lineJmp,
+        offset: lind === -1
+          ? this.pos.offset + res[0].length
+          : (res[0].length - lind - 1),
+      };
+      return res[0];
     }
-    private match$EOF(et?: ErrorTracker): Nullable<{kind: ASTKinds.$EOF}> {
-        const res: {kind: ASTKinds.$EOF} | null = this.finished() ? { kind: ASTKinds.$EOF } : null;
-        if(et)
-            et.record(this.mark(), res, { kind: "EOF", negated: this.negating });
-        return res;
+    return null;
+  }
+  // @ts-ignore: noConsume may not be called
+  private noConsume<T>(fn: $$RuleType<T>): Nullable<T> {
+    const mrk = this.mark();
+    const res = fn();
+    this.reset(mrk);
+    return res;
+  }
+  // @ts-ignore: negate may not be called
+  private negate<T>(fn: $$RuleType<T>): Nullable<boolean> {
+    const mrk = this.mark();
+    const oneg = this.negating;
+    this.negating = !oneg;
+    const res = fn();
+    this.negating = oneg;
+    this.reset(mrk);
+    return res === null ? true : null;
+  }
+  // @ts-ignore: Memoise may not be used
+  private memoise<K>(
+    rule: $$RuleType<K>,
+    memo: Map<number, [Nullable<K>, PosInfo]>,
+  ): Nullable<K> {
+    const $scope$pos = this.mark();
+    const $scope$memoRes = memo.get($scope$pos.overallPos);
+    if (this.memoSafe && $scope$memoRes !== undefined) {
+      this.reset($scope$memoRes[1]);
+      return $scope$memoRes[0];
     }
+    const $scope$result = rule();
+    if (this.memoSafe) {
+      memo.set($scope$pos.overallPos, [$scope$result, this.mark()]);
+    }
+    return $scope$result;
+  }
+  private match$EOF(et?: ErrorTracker): Nullable<{ kind: ASTKinds.$EOF }> {
+    const res: { kind: ASTKinds.$EOF } | null = this.finished()
+      ? { kind: ASTKinds.$EOF }
+      : null;
+    if (et) {
+      et.record(this.mark(), res, { kind: "EOF", negated: this.negating });
+    }
+    return res;
+  }
 }
 export function parse(s: string): ParseResult {
-    const p = new Parser(s);
-    return p.parse();
+  const p = new Parser(s);
+  return p.parse();
 }
 export interface ParseResult {
-    ast: Nullable<SOURCE>;
-    errs: SyntaxErr[];
+  ast: Nullable<SOURCE>;
+  errs: SyntaxErr[];
 }
 export interface PosInfo {
-    readonly overallPos: number;
-    readonly line: number;
-    readonly offset: number;
+  readonly overallPos: number;
+  readonly line: number;
+  readonly offset: number;
 }
 export interface RegexMatch {
-    readonly kind: "RegexMatch";
-    readonly negated: boolean;
-    readonly literal: string;
+  readonly kind: "RegexMatch";
+  readonly negated: boolean;
+  readonly literal: string;
 }
 export type EOFMatch = { kind: "EOF"; negated: boolean };
 export type MatchAttempt = RegexMatch | EOFMatch;
 export class SyntaxErr {
-    public pos: PosInfo;
-    public expmatches: MatchAttempt[];
-    constructor(pos: PosInfo, expmatches: MatchAttempt[]) {
-        this.pos = pos;
-        this.expmatches = [...expmatches];
-    }
-    public toString(): string {
-        return `Syntax Error at line ${this.pos.line}:${this.pos.offset}. Expected one of ${this.expmatches.map(x => x.kind === "EOF" ? " EOF" : ` ${x.negated ? 'not ': ''}'${x.literal}'`)}`;
-    }
+  public pos: PosInfo;
+  public expmatches: MatchAttempt[];
+  constructor(pos: PosInfo, expmatches: MatchAttempt[]) {
+    this.pos = pos;
+    this.expmatches = [...expmatches];
+  }
+  public toString(): string {
+    return `Syntax Error at line ${this.pos.line}:${this.pos.offset}. Expected one of ${
+      this.expmatches.map((x) =>
+        x.kind === "EOF" ? " EOF" : ` ${x.negated ? "not " : ""}'${x.literal}'`
+      )
+    }`;
+  }
 }
 class ErrorTracker {
-    private mxpos: PosInfo = {overallPos: -1, line: -1, offset: -1};
-    private regexset: Set<string> = new Set();
-    private pmatches: MatchAttempt[] = [];
-    public record(pos: PosInfo, result: any, att: MatchAttempt) {
-        if ((result === null) === att.negated)
-            return;
-        if (pos.overallPos > this.mxpos.overallPos) {
-            this.mxpos = pos;
-            this.pmatches = [];
-            this.regexset.clear()
-        }
-        if (this.mxpos.overallPos === pos.overallPos) {
-            if(att.kind === "RegexMatch") {
-                if(!this.regexset.has(att.literal))
-                    this.pmatches.push(att);
-                this.regexset.add(att.literal);
-            } else {
-                this.pmatches.push(att);
-            }
-        }
+  private mxpos: PosInfo = { overallPos: -1, line: -1, offset: -1 };
+  private regexset: Set<string> = new Set();
+  private pmatches: MatchAttempt[] = [];
+  public record(pos: PosInfo, result: any, att: MatchAttempt) {
+    if ((result === null) === att.negated) {
+      return;
     }
-    public getErr(): SyntaxErr | null {
-        if (this.mxpos.overallPos !== -1)
-            return new SyntaxErr(this.mxpos, this.pmatches);
-        return null;
+    if (pos.overallPos > this.mxpos.overallPos) {
+      this.mxpos = pos;
+      this.pmatches = [];
+      this.regexset.clear();
     }
+    if (this.mxpos.overallPos === pos.overallPos) {
+      if (att.kind === "RegexMatch") {
+        if (!this.regexset.has(att.literal)) {
+          this.pmatches.push(att);
+        }
+        this.regexset.add(att.literal);
+      } else {
+        this.pmatches.push(att);
+      }
+    }
+  }
+  public getErr(): SyntaxErr | null {
+    if (this.mxpos.overallPos !== -1) {
+      return new SyntaxErr(this.mxpos, this.pmatches);
+    }
+    return null;
+  }
 }

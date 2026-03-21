@@ -6,7 +6,7 @@
 
 import { Ports } from "../../types.ts";
 import type { Graph, Node, NodePort } from "../../types.ts";
-import type { AstNode, Abstraction, Application, Variable } from "../../ast.ts";
+import type { Abstraction, Application, AstNode, Variable } from "../../ast.ts";
 import { fancyNameToName } from "../../util.ts";
 
 // Strip λ/Λ prefix from a node label and convert fancy unicode to plain ASCII.
@@ -49,7 +49,10 @@ export function readbackGraph(graph: Graph): AstNode | null {
 
     // Free variable
     if (node.type === "var") {
-      return { type: "var", name: fancyNameToName(node.label ?? "_") } as Variable;
+      return {
+        type: "var",
+        name: fancyNameToName(node.label ?? "_"),
+      } as Variable;
     }
 
     // --- Recursive cases (need visited check) ---
@@ -102,7 +105,11 @@ export function readbackGraph(graph: Graph): AstNode | null {
     // Lambda cube agents
     if (node.type === "tyabs" && port === Ports.tyabs.principal) {
       const body = readback(node.ports[Ports.tyabs.body]);
-      return { type: "abs", name: extractName(node.label, "Λ"), body } as Abstraction;
+      return {
+        type: "abs",
+        name: extractName(node.label, "Λ"),
+        body,
+      } as Abstraction;
     }
     if (node.type === "tyapp" && port === Ports.tyapp.result) {
       const func = readback(node.ports[Ports.tyapp.principal]);
@@ -121,10 +128,15 @@ export function readbackGraph(graph: Graph): AstNode | null {
       return { type: "var", name: extractName(bindTarget.node.label, "λ") };
     }
     if (bindTarget.node.type === "var") {
-      return { type: "var", name: fancyNameToName(bindTarget.node.label ?? "_") };
+      return {
+        type: "var",
+        name: fancyNameToName(bindTarget.node.label ?? "_"),
+      };
     }
     // Replicator chain: follow through
-    if (bindTarget.node.type === "rep-in" || bindTarget.node.type === "rep-out") {
+    if (
+      bindTarget.node.type === "rep-in" || bindTarget.node.type === "rep-out"
+    ) {
       let current = bindTarget;
       const seen = new Set<Node>();
       while (
@@ -138,7 +150,10 @@ export function readbackGraph(graph: Graph): AstNode | null {
         return { type: "var", name: extractName(current.node.label, "λ") };
       }
       if (current.node.type === "var") {
-        return { type: "var", name: fancyNameToName(current.node.label ?? "_") };
+        return {
+          type: "var",
+          name: fancyNameToName(current.node.label ?? "_"),
+        };
       }
     }
     return { type: "var", name: rep.label ?? "?" };
@@ -190,7 +205,9 @@ export function readbackGraphToString(graph: Graph): string {
     if (node.type === "app" && port === Ports.app.result) {
       const func = rb(node.ports[Ports.app.func]);
       const arg = rb(node.ports[Ports.app.arg]);
-      const fStr = func.startsWith("λ") || func.includes(" ") ? "(" + func + ")" : func;
+      const fStr = func.startsWith("λ") || func.includes(" ")
+        ? "(" + func + ")"
+        : func;
       const aStr = arg.includes(" ") ? "(" + arg + ")" : arg;
       return fStr + " " + aStr;
     }
@@ -229,7 +246,9 @@ export function readbackGraphToString(graph: Graph): string {
     if (bindTarget.node.type === "var") {
       return fancyNameToName(bindTarget.node.label ?? "_");
     }
-    if (bindTarget.node.type === "rep-in" || bindTarget.node.type === "rep-out") {
+    if (
+      bindTarget.node.type === "rep-in" || bindTarget.node.type === "rep-out"
+    ) {
       let current = bindTarget;
       const seen = new Set<Node>();
       while (

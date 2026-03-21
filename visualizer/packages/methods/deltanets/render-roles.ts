@@ -20,13 +20,13 @@ import {
 } from "@deltanets/render";
 import { MethodState } from "../index.ts";
 import {
+  deltanets,
+  type Graph,
   type Node,
   type NodePort,
   type Redex,
-  type Graph,
-  deltanets,
 } from "@deltanets/core";
-import { agentStyles, getRole, type Data } from "./config.ts";
+import { agentStyles, type Data, getRole } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
 import type { Endpoint } from "./render-wires.ts";
 import { renderNodePort } from "./render-dispatch.ts";
@@ -36,10 +36,17 @@ const { countAuxErasers, getRedex, levelColor } = deltanets;
 type State = MethodState<Graph, Data>;
 
 // Apply typecheck highlight to a node
-function applyTypeCheckHighlight(shape: { highlightColor?: string }, node: Node) {
-  if (node.typeCheckState === "checking") shape.highlightColor = TYPECHECK_ACTIVE_COLOR;
-  else if (node.typeCheckState === "checked") shape.highlightColor = TYPECHECK_DONE_COLOR;
-  else if (node.typeCheckState === "error") shape.highlightColor = TYPECHECK_ERROR_COLOR;
+function applyTypeCheckHighlight(
+  shape: { highlightColor?: string },
+  node: Node,
+) {
+  if (node.typeCheckState === "checking") {
+    shape.highlightColor = TYPECHECK_ACTIVE_COLOR;
+  } else if (node.typeCheckState === "checked") {
+    shape.highlightColor = TYPECHECK_DONE_COLOR;
+  } else if (node.typeCheckState === "error") {
+    shape.highlightColor = TYPECHECK_ERROR_COLOR;
+  }
 }
 
 // Render a leaf agent (var, era, type-base, kind-star, type-hole, or any 1-port agent)
@@ -50,11 +57,15 @@ export function renderLeafAgent(
   nodePort.node.isCreated = true;
   const style = agentStyles.peek().get(nodePort.node.type);
 
-  if (style?.shape.kind === "eraser" || (!style && nodePort.node.type === "era")) {
+  if (
+    style?.shape.kind === "eraser" || (!style && nodePort.node.type === "era")
+  ) {
     const era = new Eraser();
     node2D.add(era);
   } else {
-    const labelText = nodePort.node.type === "type-hole" ? "?" : nodePort.node.label;
+    const labelText = nodePort.node.type === "type-hole"
+      ? "?"
+      : nodePort.node.label;
     const label = new Label(labelText);
     applyTypeCheckHighlight(label, nodePort.node);
     label.pos.y = D;
@@ -81,20 +92,37 @@ export function renderBinderAgent(
 
   // Body (port 1)
   const bodyPortRef = nodePort.node.ports[1];
-  const { node2D: body, endpoints: bodyEndpoints } = renderNodePort(bodyPortRef, state, redexes, level);
+  const { node2D: body, endpoints: bodyEndpoints } = renderNodePort(
+    bodyPortRef,
+    state,
+    redexes,
+    level,
+  );
   body.pos.x = Math.max(Fan.PORT_DELTA, -body.bounds.min.x - D);
-  body.pos.y = body.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - body.bounds.min.y;
+  body.pos.y = body.isWireEndpoint
+    ? Fan.HEIGHT
+    : fan.bounds.max.y - body.bounds.min.y;
 
   const redex = getRedex(nodePort.node, bodyPortRef.node, redexes);
 
   if (!body.isWireEndpoint) {
-    const funcWire = new Wire(fan, body, D, redex?.reduce && (() => applyReduction(state, redex.reduce)), levelColor(level));
-    if (redex?.optimal === false) funcWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    const funcWire = new Wire(
+      fan,
+      body,
+      D,
+      redex?.reduce && (() => applyReduction(state, redex.reduce)),
+      levelColor(level),
+    );
+    if (redex?.optimal === false) {
+      funcWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    }
     funcWire.startOffset.x = Fan.PORT_DELTA;
     funcWire.startOffset.y = Fan.HEIGHT;
     node2D.add(funcWire);
   } else {
-    const childEndpoint = bodyEndpoints.find((ep) => ep.nodePort === bodyPortRef);
+    const childEndpoint = bodyEndpoints.find((ep) =>
+      ep.nodePort === bodyPortRef
+    );
     if (childEndpoint) childEndpoint.redex = redex;
   }
 
@@ -113,11 +141,24 @@ export function renderBinderAgent(
     wire.endOffset.y = -Eraser.RADIUS;
     node2D.add(wire);
   } else {
-    const { node2D: bindTree, endpoints: bindEndpoints } = renderNodePort(bindPortRef, state, redexes, level + 1);
+    const { node2D: bindTree, endpoints: bindEndpoints } = renderNodePort(
+      bindPortRef,
+      state,
+      redexes,
+      level + 1,
+    );
     bindTree.pos.x = -Fan.PORT_DELTA;
-    bindTree.pos.y = bindTree.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - bindTree.bounds.min.y;
+    bindTree.pos.y = bindTree.isWireEndpoint
+      ? Fan.HEIGHT
+      : fan.bounds.max.y - bindTree.bounds.min.y;
     if (!bindTree.isWireEndpoint) {
-      const bindWire = new Wire(fan, bindTree, 0, undefined, levelColor(level + 1));
+      const bindWire = new Wire(
+        fan,
+        bindTree,
+        0,
+        undefined,
+        levelColor(level + 1),
+      );
       bindWire.startOffset.x = -Fan.PORT_DELTA;
       bindWire.startOffset.y = Fan.HEIGHT;
       node2D.add(bindWire);
@@ -133,10 +174,17 @@ export function renderBinderAgent(
     if (typePortRef.node.type === "type-hole") {
       typePortRef.node.isCreated = true;
     } else {
-      const { node2D: typeTree, endpoints: tEndpoints } = renderNodePort(typePortRef, state, redexes, level);
+      const { node2D: typeTree, endpoints: tEndpoints } = renderNodePort(
+        typePortRef,
+        state,
+        redexes,
+        level,
+      );
       typeEndpoints = tEndpoints;
       typeTree.pos.x = -2 * Fan.PORT_DELTA;
-      typeTree.pos.y = typeTree.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - typeTree.bounds.min.y;
+      typeTree.pos.y = typeTree.isWireEndpoint
+        ? Fan.HEIGHT
+        : fan.bounds.max.y - typeTree.bounds.min.y;
       if (!typeTree.isWireEndpoint) {
         const typeWire = new Wire(fan, typeTree, 0);
         typeWire.startOffset.x = -Fan.PORT_DELTA;
@@ -170,28 +218,51 @@ export function renderApplicatorAgent(
 
   // Func/principal (port 0)
   const funcPortRef = nodePort.node.ports[0];
-  const { node2D: func, endpoints: funcEndpoints } = renderNodePort(funcPortRef, state, redexes, level);
+  const { node2D: func, endpoints: funcEndpoints } = renderNodePort(
+    funcPortRef,
+    state,
+    redexes,
+    level,
+  );
   func.pos.x = Fan.PORT_DELTA;
-  func.pos.y = func.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - func.bounds.min.y;
+  func.pos.y = func.isWireEndpoint
+    ? Fan.HEIGHT
+    : fan.bounds.max.y - func.bounds.min.y;
 
   const redex = getRedex(nodePort.node, funcPortRef.node, redexes);
 
   if (!func.isWireEndpoint) {
-    const funcWire = new Wire(fan, func, 0, redex?.reduce && (() => applyReduction(state, redex.reduce)), levelColor(level));
-    if (redex?.optimal === false) funcWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    const funcWire = new Wire(
+      fan,
+      func,
+      0,
+      redex?.reduce && (() => applyReduction(state, redex.reduce)),
+      levelColor(level),
+    );
+    if (redex?.optimal === false) {
+      funcWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    }
     funcWire.startOffset.y = Fan.HEIGHT;
     node2D.add(funcWire);
   } else {
-    const childEndpoint = funcEndpoints.find((ep) => ep.nodePort === funcPortRef);
+    const childEndpoint = funcEndpoints.find((ep) =>
+      ep.nodePort === funcPortRef
+    );
     if (childEndpoint) childEndpoint.redex = redex;
   }
 
   // Arg (port 2)
   const argPortRef = nodePort.node.ports[2];
-  const { node2D: arg, endpoints: argEndpoints } = renderNodePort(argPortRef, state, redexes, level + 1);
+  const { node2D: arg, endpoints: argEndpoints } = renderNodePort(
+    argPortRef,
+    state,
+    redexes,
+    level + 1,
+  );
   arg.pos.x = argPortRef.node.type === "var"
     ? fan.bounds.max.x - arg.bounds.min.x + 2 * D
-    : Fan.PORT_DELTA + Math.max(func.bounds.max.x, fan.bounds.max.x) - arg.bounds.min.x;
+    : Fan.PORT_DELTA + Math.max(func.bounds.max.x, fan.bounds.max.x) -
+      arg.bounds.min.x;
 
   const argWire = new Wire(fan, arg, -D, undefined, levelColor(level + 1));
   argWire.startOffset.x = Fan.PORT_DELTA;
@@ -222,10 +293,17 @@ export function renderTypeConstructorAgent(
   let codomEndpoints: Endpoint[] = [];
   const codomPort = nodePort.node.ports[2];
   if (codomPort) {
-    const { node2D: codom, endpoints: cEP } = renderNodePort(codomPort, state, redexes, level);
+    const { node2D: codom, endpoints: cEP } = renderNodePort(
+      codomPort,
+      state,
+      redexes,
+      level,
+    );
     codomEndpoints = cEP;
     codom.pos.x = Math.max(Fan.PORT_DELTA, -codom.bounds.min.x - D);
-    codom.pos.y = codom.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - codom.bounds.min.y;
+    codom.pos.y = codom.isWireEndpoint
+      ? Fan.HEIGHT
+      : fan.bounds.max.y - codom.bounds.min.y;
     if (!codom.isWireEndpoint) {
       const wire = new Wire(fan, codom, D);
       wire.startOffset.x = Fan.PORT_DELTA;
@@ -239,10 +317,17 @@ export function renderTypeConstructorAgent(
   let domEndpoints: Endpoint[] = [];
   const domPort = nodePort.node.ports[1];
   if (domPort) {
-    const { node2D: dom, endpoints: dEP } = renderNodePort(domPort, state, redexes, level);
+    const { node2D: dom, endpoints: dEP } = renderNodePort(
+      domPort,
+      state,
+      redexes,
+      level,
+    );
     domEndpoints = dEP;
     dom.pos.x = -Fan.PORT_DELTA;
-    dom.pos.y = dom.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - dom.bounds.min.y;
+    dom.pos.y = dom.isWireEndpoint
+      ? Fan.HEIGHT
+      : fan.bounds.max.y - dom.bounds.min.y;
     if (!dom.isWireEndpoint) {
       const wire = new Wire(fan, dom, 0);
       wire.startOffset.x = -Fan.PORT_DELTA;
@@ -271,18 +356,35 @@ export function renderDestructorAgent(
   const fan = new Fan("down", nodePort.node.label || nodePort.node.type);
 
   // Principal child (port 0)
-  const { node2D: child, endpoints: childEndpoints } = renderNodePort(nodePort.node.ports[0], state, redexes, level);
-  child.pos.y = child.isWireEndpoint ? Fan.HEIGHT : fan.bounds.max.y - child.bounds.min.y;
+  const { node2D: child, endpoints: childEndpoints } = renderNodePort(
+    nodePort.node.ports[0],
+    state,
+    redexes,
+    level,
+  );
+  child.pos.y = child.isWireEndpoint
+    ? Fan.HEIGHT
+    : fan.bounds.max.y - child.bounds.min.y;
 
   const redex = getRedex(nodePort.node, nodePort.node.ports[0].node, redexes);
 
   if (!child.isWireEndpoint) {
-    const wire = new Wire(fan, child, 0, redex?.reduce && (() => applyReduction(state, redex.reduce)), levelColor(level));
-    if (redex?.optimal === false) wire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    const wire = new Wire(
+      fan,
+      child,
+      0,
+      redex?.reduce && (() => applyReduction(state, redex.reduce)),
+      levelColor(level),
+    );
+    if (redex?.optimal === false) {
+      wire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    }
     wire.startOffset.y = Fan.HEIGHT;
     node2D.add(wire);
   } else {
-    const childEndpoint = childEndpoints.find((ep) => ep.nodePort === nodePort.node.ports[0]);
+    const childEndpoint = childEndpoints.find((ep) =>
+      ep.nodePort === nodePort.node.ports[0]
+    );
     if (childEndpoint) childEndpoint.redex = redex;
   }
 
@@ -304,7 +406,11 @@ export function renderReplicatorInAgent(
     console.error("WRONG REP TYPE - EXPECTED rep-in", nodePort.node.type);
   }
   nodePort.node.isCreated = true;
-  const rep = new Replicator("down", nodePort.node.label, nodePort.node.levelDeltas!);
+  const rep = new Replicator(
+    "down",
+    nodePort.node.label,
+    nodePort.node.levelDeltas!,
+  );
   const parentPortDelta = rep.portDelta(nodePort.port - 1);
   rep.pos.x = -parentPortDelta;
   const eraCount = countAuxErasers(nodePort.node);
@@ -322,21 +428,39 @@ export function renderReplicatorInAgent(
   node2D.add(parWire);
 
   const childLevel = level - nodePort.node.levelDeltas![nodePort.port - 1];
-  const { node2D: child, endpoints: childEndpoints } = renderNodePort(nodePort.node.ports[0], state, redexes, childLevel);
+  const { node2D: child, endpoints: childEndpoints } = renderNodePort(
+    nodePort.node.ports[0],
+    state,
+    redexes,
+    childLevel,
+  );
   child.pos.x = -parentPortDelta;
-  child.pos.y = rep.pos.y + (child.isWireEndpoint ? Replicator.HEIGHT : rep.bounds.max.y - child.bounds.min.y);
+  child.pos.y = rep.pos.y +
+    (child.isWireEndpoint
+      ? Replicator.HEIGHT
+      : rep.bounds.max.y - child.bounds.min.y);
   node2D.add(child);
   endpoints.push(...childEndpoints);
 
   const redex = getRedex(nodePort.node, nodePort.node.ports[0].node, redexes);
 
   if (!child.isWireEndpoint) {
-    const childWire = new Wire(rep, child, 0, redex?.reduce && (() => applyReduction(state, redex.reduce)), levelColor(childLevel));
-    if (redex?.optimal === false) childWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    const childWire = new Wire(
+      rep,
+      child,
+      0,
+      redex?.reduce && (() => applyReduction(state, redex.reduce)),
+      levelColor(childLevel),
+    );
+    if (redex?.optimal === false) {
+      childWire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+    }
     childWire.startOffset.y = Replicator.HEIGHT;
     rep.add(childWire);
   } else {
-    const childEndpoint = childEndpoints.find((ep) => ep.nodePort === nodePort.node.ports[0]);
+    const childEndpoint = childEndpoints.find((ep) =>
+      ep.nodePort === nodePort.node.ports[0]
+    );
     if (childEndpoint) childEndpoint.redex = redex;
   }
 
@@ -344,7 +468,7 @@ export function renderReplicatorInAgent(
   const lastX = node2D.bounds.max.x;
   let i2 = 2;
   for (let i = 1; i < nodePort.node.ports.length; i++) {
-    if (i === nodePort.port) { continue; }
+    if (i === nodePort.port) continue;
     const auxLevel = childLevel + nodePort.node.levelDeltas![i - 1];
     if (nodePort.node.ports[i].node.type === "era") {
       nodePort.node.ports[i].node.isCreated = true;
@@ -352,9 +476,21 @@ export function renderReplicatorInAgent(
       era.pos.x = rep.pos.x + rep.portDelta(i - 1);
       era.pos.y = rep.pos.y - 2 * D;
       node2D.add(era);
-      const auxRedex = getRedex(nodePort.node, nodePort.node.ports[i].node, redexes);
-      const wire = new Wire(rep, era, 0, auxRedex?.reduce && (() => applyReduction(state, auxRedex.reduce)), levelColor(auxLevel));
-      if (auxRedex?.optimal === false) wire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+      const auxRedex = getRedex(
+        nodePort.node,
+        nodePort.node.ports[i].node,
+        redexes,
+      );
+      const wire = new Wire(
+        rep,
+        era,
+        0,
+        auxRedex?.reduce && (() => applyReduction(state, auxRedex.reduce)),
+        levelColor(auxLevel),
+      );
+      if (auxRedex?.optimal === false) {
+        wire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+      }
       wire.startOffset.x = rep.portDelta(i - 1);
       rep.add(wire);
     } else {
@@ -364,9 +500,19 @@ export function renderReplicatorInAgent(
       endpoint.pos.y = rep.pos.y;
       node2D.add(endpoint);
       endpoint.isWireEndpoint = true;
-      endpoints.push({ nodePort: nodePort.node.ports[i], node2D: endpoint, level: auxLevel });
+      endpoints.push({
+        nodePort: nodePort.node.ports[i],
+        node2D: endpoint,
+        level: auxLevel,
+      });
       const auxViaY = (i2 - nodePort.node.ports.length + 0.5) * 2 * D;
-      const wire = new Wire(rep, endpoint, auxViaY, undefined, levelColor(auxLevel));
+      const wire = new Wire(
+        rep,
+        endpoint,
+        auxViaY,
+        undefined,
+        levelColor(auxLevel),
+      );
       wire.startOffset.x = rep.portDelta(i - 1);
       rep.add(wire);
     }
@@ -389,15 +535,26 @@ export function renderReplicatorOutAgent(
     console.error("WRONG REP TYPE, EXPECTED rep-out", nodePort.node.type);
   }
   nodePort.node.isCreated = true;
-  const rep = new Replicator("up", nodePort.node.label, nodePort.node.levelDeltas!);
+  const rep = new Replicator(
+    "up",
+    nodePort.node.label,
+    nodePort.node.levelDeltas!,
+  );
   node2D.add(rep);
 
   const children: Node2D[] = [];
   let allChildrenAreWireEndpoints = true;
   for (let i = nodePort.node.ports.length - 1; i > 0; i--) {
     const childLevel = level + nodePort.node.levelDeltas![i - 1];
-    const { node2D: child, endpoints: childEndpoints } = renderNodePort(nodePort.node.ports[i], state, redexes, childLevel);
-    if (allChildrenAreWireEndpoints && !child.isWireEndpoint) allChildrenAreWireEndpoints = false;
+    const { node2D: child, endpoints: childEndpoints } = renderNodePort(
+      nodePort.node.ports[i],
+      state,
+      redexes,
+      childLevel,
+    );
+    if (allChildrenAreWireEndpoints && !child.isWireEndpoint) {
+      allChildrenAreWireEndpoints = false;
+    }
     children.push(child);
     endpoints.push(...childEndpoints);
   }
@@ -416,10 +573,20 @@ export function renderReplicatorOutAgent(
       lastX += child.bounds.max.x;
       child.pos.y = Replicator.HEIGHT +
         Math.max(children.length - 1, 1) * 2 * D +
-        (nodePort.node.ports[nodePort.node.ports.length - 1 - i].node.type === "app" ? 2 * D : 0);
+        (nodePort.node.ports[nodePort.node.ports.length - 1 - i].node.type ===
+            "app"
+          ? 2 * D
+          : 0);
       node2D.add(child);
-      const childLevel = level + nodePort.node.levelDeltas![children.length - i - 1];
-      const childWire = new Wire(rep, child, (children.length - i - 0.5) * 2 * D, undefined, levelColor(childLevel));
+      const childLevel = level +
+        nodePort.node.levelDeltas![children.length - i - 1];
+      const childWire = new Wire(
+        rep,
+        child,
+        (children.length - i - 0.5) * 2 * D,
+        undefined,
+        levelColor(childLevel),
+      );
       childWire.startOffset.x = rep.portDelta(i);
       childWire.startOffset.y = Replicator.HEIGHT;
       node2D.add(childWire);

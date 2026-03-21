@@ -27,7 +27,13 @@ export type ShapeDef =
   | { kind: "rect" }
   | { kind: "custom"; name: string };
 
-export type AgentRole = "binder" | "applicator" | "type-constructor" | "destructor" | "leaf" | "replicator";
+export type AgentRole =
+  | "binder"
+  | "applicator"
+  | "type-constructor"
+  | "destructor"
+  | "leaf"
+  | "replicator";
 export type AgentLevel = "expr" | "type";
 
 export type AgentStyleDef = {
@@ -38,9 +44,9 @@ export type AgentStyleDef = {
   width?: number;
   height?: number;
   radius?: number;
-  fill: string;             // color or special keyword like "level-color"
+  fill: string; // color or special keyword like "level-color"
   stroke?: string;
-  label?: string;           // "center", "above", "below"
+  label?: string; // "center", "above", "below"
   zIndex: number;
   showDeltas?: boolean;
   extra: Record<string, string | number>;
@@ -49,7 +55,7 @@ export type AgentStyleDef = {
 export type WireStyleDef = {
   name: string;
   width: number;
-  curve: string;            // "bezier", "straight", "step"
+  curve: string; // "bezier", "straight", "step"
   dash?: number[];
   extra: Record<string, string | number>;
 };
@@ -91,7 +97,12 @@ export function evaluate(program: AST.Program): ViewResult {
   const styles = new Map<string, AgentStyleDef>();
   const wireStyles = new Map<string, WireStyleDef>();
   let palette: PaletteDef = { colors: new Map() };
-  let layout: LayoutDef = { spacing: 25, depth: 40, direction: "top-down", extra: {} };
+  let layout: LayoutDef = {
+    spacing: 25,
+    depth: 40,
+    direction: "top-down",
+    extra: {},
+  };
   const errors: string[] = [];
 
   for (const stmt of program) {
@@ -135,7 +146,13 @@ function evalTheme(decl: AST.ThemeDecl): ThemeDef {
     wire: getString(props, "wire", "#aaaaaa"),
     optimal: getString(props, "optimal", "#4caf50"),
     suboptimal: getString(props, "suboptimal", "#ff9800"),
-    extra: getExtraStrings(props, ["background", "text", "wire", "optimal", "suboptimal"]),
+    extra: getExtraStrings(props, [
+      "background",
+      "text",
+      "wire",
+      "optimal",
+      "suboptimal",
+    ]),
   };
 }
 
@@ -159,8 +176,18 @@ function evalRender(decl: AST.RenderDecl): AgentStyleDef {
     zIndex: getNumber(props, "z") ?? getNumber(props, "z-index") ?? 0,
     showDeltas: getOptString(props, "show-deltas") === "true",
     extra: getExtraStrings(props, [
-      "shape", "width", "height", "radius", "fill", "stroke",
-      "label", "z", "z-index", "show-deltas", "role", "level",
+      "shape",
+      "width",
+      "height",
+      "radius",
+      "fill",
+      "stroke",
+      "label",
+      "z",
+      "z-index",
+      "show-deltas",
+      "role",
+      "level",
     ]),
   };
 }
@@ -172,17 +199,21 @@ function parseShape(value: AST.Value | undefined): ShapeDef {
     const name = value.value;
     if (name === "eraser") return { kind: "eraser" };
     if (name === "circle") return { kind: "circle" };
-    if (name === "rect")   return { kind: "rect" };
+    if (name === "rect") return { kind: "rect" };
     return { kind: "custom", name };
   }
 
   if (value.kind === "call") {
     if (value.name === "fan") {
-      const dir = value.args[0]?.kind === "ident" ? value.args[0].value : "down";
+      const dir = value.args[0]?.kind === "ident"
+        ? value.args[0].value
+        : "down";
       return { kind: "fan", direction: dir as "up" | "down" };
     }
     if (value.name === "replicator") {
-      const dir = value.args[0]?.kind === "ident" ? value.args[0].value : "down";
+      const dir = value.args[0]?.kind === "ident"
+        ? value.args[0].value
+        : "down";
       return { kind: "replicator", direction: dir as "up" | "down" };
     }
     return { kind: "custom", name: value.name };
@@ -199,8 +230,8 @@ function evalWireStyle(decl: AST.WireStyleDecl): WireStyleDef {
   let dash: number[] | undefined;
   if (dashVal?.kind === "array") {
     dash = dashVal.items
-      .filter(v => v.kind === "number")
-      .map(v => (v as AST.NumberValue).value);
+      .filter((v) => v.kind === "number")
+      .map((v) => (v as AST.NumberValue).value);
   }
   return {
     name: decl.name,
@@ -241,21 +272,35 @@ function propsToRecord(entries: AST.PropEntry[]): Record<string, AST.Value> {
   return rec;
 }
 
-function getString(props: Record<string, AST.Value>, key: string, fallback: string): string {
+function getString(
+  props: Record<string, AST.Value>,
+  key: string,
+  fallback: string,
+): string {
   const v = props[key];
   if (!v) return fallback;
-  if (v.kind === "string" || v.kind === "ident" || v.kind === "color") return v.value;
+  if (v.kind === "string" || v.kind === "ident" || v.kind === "color") {
+    return v.value;
+  }
   return fallback;
 }
 
-function getOptString(props: Record<string, AST.Value>, key: string): string | undefined {
+function getOptString(
+  props: Record<string, AST.Value>,
+  key: string,
+): string | undefined {
   const v = props[key];
   if (!v) return undefined;
-  if (v.kind === "string" || v.kind === "ident" || v.kind === "color") return v.value;
+  if (v.kind === "string" || v.kind === "ident" || v.kind === "color") {
+    return v.value;
+  }
   return undefined;
 }
 
-function getNumber(props: Record<string, AST.Value>, key: string): number | undefined {
+function getNumber(
+  props: Record<string, AST.Value>,
+  key: string,
+): number | undefined {
   const v = props[key];
   if (!v) return undefined;
   if (v.kind === "number") return v.value;

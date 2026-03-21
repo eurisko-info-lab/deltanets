@@ -1,4 +1,10 @@
 // @deltanets/methods — Reduction strategies and graph rendering.
 
-export { METHODS, type Method, type MethodState } from "./index.ts";
-export { agentStyles, isExprAgentFromStyles, getRole, typeReductionMode, applyReduction } from "./deltanets/index.ts";
+export { type Method, METHODS, type MethodState } from "./index.ts";
+export {
+  agentStyles,
+  applyReduction,
+  getRole,
+  isExprAgentFromStyles,
+  typeReductionMode,
+} from "./deltanets/index.ts";

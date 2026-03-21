@@ -7,7 +7,12 @@
 import type * as AST from "./types.ts";
 import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
-import { evalSystem, evalExtend, evalCompose, evalAgent } from "./eval-system.ts";
+import {
+  evalAgent,
+  evalCompose,
+  evalExtend,
+  evalSystem,
+} from "./eval-system.ts";
 import { evalGraph } from "./eval-graph.ts";
 
 // ─── Output types ──────────────────────────────────────────────────
@@ -15,7 +20,7 @@ import { evalGraph } from "./eval-graph.ts";
 export type AgentDef = {
   name: string;
   ports: { name: string; variadic: boolean }[];
-  portIndex: Map<string, number>;   // port name → index
+  portIndex: Map<string, number>; // port name → index
 };
 
 export type RuleDef = {

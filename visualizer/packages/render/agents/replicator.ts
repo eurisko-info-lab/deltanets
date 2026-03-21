@@ -1,7 +1,5 @@
-import {
-  Node2D, D, SHAPE_LINE_WIDTH,
-} from "../core.ts";
-import { Text, Path } from "../primitives.ts";
+import { D, Node2D, SHAPE_LINE_WIDTH } from "../core.ts";
+import { Path, Text } from "../primitives.ts";
 import { Fan } from "./simple.ts";
 
 // A replicator is a triangle-shaped interaction net agent with one principal port and any number of auxiliary ports.

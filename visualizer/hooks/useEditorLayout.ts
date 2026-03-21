@@ -1,10 +1,14 @@
 import { useEffect } from "preact/hooks";
 import { useSignalEffect } from "@preact/signals";
 import {
-  MIN_PANE_SIZE,
-  theme, editorWidth, scene, center,
-  isDraggingSplitter, codeEditorRef,
+  center,
   centerGraph,
+  codeEditorRef,
+  editorWidth,
+  isDraggingSplitter,
+  MIN_PANE_SIZE,
+  scene,
+  theme,
 } from "../lib/appState.ts";
 import { STORAGE_KEYS } from "../lib/config.ts";
 
@@ -19,7 +23,10 @@ export function useEditorLayout() {
           (window.innerWidth - MIN_PANE_SIZE) - 3 * 8 - 4,
         );
         editorWidth.value = newEditorWidth;
-        window.localStorage.setItem(STORAGE_KEYS.editorWidth, newEditorWidth.toString());
+        window.localStorage.setItem(
+          STORAGE_KEYS.editorWidth,
+          newEditorWidth.toString(),
+        );
         codeEditorRef.current.layout({
           height: window.innerHeight - 44 - 3 * 8 - 2,
           width: newEditorWidth,
@@ -35,7 +42,10 @@ export function useEditorLayout() {
         (window.innerWidth - MIN_PANE_SIZE) - 3 * 8 - 4,
       );
       editorWidth.value = newEditorWidth;
-      window.localStorage.setItem(STORAGE_KEYS.editorWidth, newEditorWidth.toString());
+      window.localStorage.setItem(
+        STORAGE_KEYS.editorWidth,
+        newEditorWidth.toString(),
+      );
       codeEditorRef.current.layout({
         height: window.innerHeight - 44 - 3 * 8 - 2,
         width: newEditorWidth,

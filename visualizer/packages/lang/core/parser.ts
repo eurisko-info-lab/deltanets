@@ -51,16 +51,23 @@ class Parser {
   pos = 0;
   constructor(private tokens: Token[]) {}
 
-  peek(): Token { return this.tokens[this.pos]; }
-  advance(): Token { return this.tokens[this.pos++]; }
-  check(type: TokenKind): boolean { return this.peek().type === type; }
+  peek(): Token {
+    return this.tokens[this.pos];
+  }
+  advance(): Token {
+    return this.tokens[this.pos++];
+  }
+  check(type: TokenKind): boolean {
+    return this.peek().type === type;
+  }
 
   eat(type: TokenKind): Token {
     const tok = this.peek();
     if (tok.type !== type) {
       throw new ParseError(
         `Expected ${type} but got '${tok.value || tok.type}'`,
-        tok.line, tok.col,
+        tok.line,
+        tok.col,
       );
     }
     return this.advance();
@@ -73,10 +80,16 @@ class Parser {
   // Accept IDENT, or LEFT/RIGHT as identifier (used in port refs)
   eatName(): string {
     const tok = this.peek();
-    if (tok.type === TT.IDENT || tok.type === TT.LEFT || tok.type === TT.RIGHT) {
+    if (
+      tok.type === TT.IDENT || tok.type === TT.LEFT || tok.type === TT.RIGHT
+    ) {
       return this.advance().value;
     }
-    throw new ParseError(`Expected name, got '${tok.value}'`, tok.line, tok.col);
+    throw new ParseError(
+      `Expected name, got '${tok.value}'`,
+      tok.line,
+      tok.col,
+    );
   }
 
   // ─── Program ─────────────────────────────────────────────────────
@@ -92,20 +105,33 @@ class Parser {
   parseStatement(): AST.Statement {
     const tok = this.peek();
     switch (tok.type) {
-      case TT.SYSTEM: return this.parseSystemOrExtendOrCompose();
-      case TT.AGENT:  return this.parseAgentDecl();
-      case TT.RULE:   return this.parseRuleDecl();
-      case TT.MODE:   return this.parseModeDecl();
-      case TT.GRAPH:  return this.parseGraphDecl();
-      case TT.DEF:    return this.parseDefDecl();
+      case TT.SYSTEM:
+        return this.parseSystemOrExtendOrCompose();
+      case TT.AGENT:
+        return this.parseAgentDecl();
+      case TT.RULE:
+        return this.parseRuleDecl();
+      case TT.MODE:
+        return this.parseModeDecl();
+      case TT.GRAPH:
+        return this.parseGraphDecl();
+      case TT.DEF:
+        return this.parseDefDecl();
       default:
-        throw new ParseError(`Unexpected '${tok.value || tok.type}'`, tok.line, tok.col);
+        throw new ParseError(
+          `Unexpected '${tok.value || tok.type}'`,
+          tok.line,
+          tok.col,
+        );
     }
   }
 
   // ─── System / Extend / Compose ───────────────────────────────────
 
-  parseSystemOrExtendOrCompose(): AST.SystemDecl | AST.ExtendDecl | AST.ComposeDecl {
+  parseSystemOrExtendOrCompose():
+    | AST.SystemDecl
+    | AST.ExtendDecl
+    | AST.ComposeDecl {
     this.eat(TT.SYSTEM);
     const name = this.eat(TT.STRING).value;
 
@@ -143,7 +169,11 @@ class Parser {
       if (tok.type === TT.AGENT) body.push(this.parseAgentDecl());
       else if (tok.type === TT.RULE) body.push(this.parseRuleDecl());
       else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
-      else throw new ParseError(`Expected agent/rule/mode, got '${tok.value}'`, tok.line, tok.col);
+      else {throw new ParseError(
+          `Expected agent/rule/mode, got '${tok.value}'`,
+          tok.line,
+          tok.col,
+        );}
     }
     this.eat(TT.RBRACE);
     return body;
@@ -189,14 +219,29 @@ class Parser {
 
   parseRuleAction(): AST.RuleAction {
     const tok = this.peek();
-    if (tok.type === TT.ANNIHILATE) { this.advance(); return { kind: "builtin", name: "annihilate" }; }
-    if (tok.type === TT.ERASE)     { this.advance(); return { kind: "builtin", name: "erase" }; }
-    if (tok.type === TT.COMMUTE)   { this.advance(); return { kind: "builtin", name: "commute" }; }
-    if (tok.type === TT.AUX_FAN)   { this.advance(); return { kind: "builtin", name: "aux-fan" }; }
-    if (tok.type === TT.LBRACE)    { return { kind: "custom", body: this.parseCustomRuleBody() }; }
+    if (tok.type === TT.ANNIHILATE) {
+      this.advance();
+      return { kind: "builtin", name: "annihilate" };
+    }
+    if (tok.type === TT.ERASE) {
+      this.advance();
+      return { kind: "builtin", name: "erase" };
+    }
+    if (tok.type === TT.COMMUTE) {
+      this.advance();
+      return { kind: "builtin", name: "commute" };
+    }
+    if (tok.type === TT.AUX_FAN) {
+      this.advance();
+      return { kind: "builtin", name: "aux-fan" };
+    }
+    if (tok.type === TT.LBRACE) {
+      return { kind: "custom", body: this.parseCustomRuleBody() };
+    }
     throw new ParseError(
       `Expected rule action (annihilate/erase/commute/aux-fan/{...}), got '${tok.value}'`,
-      tok.line, tok.col,
+      tok.line,
+      tok.col,
     );
   }
 
@@ -212,11 +257,15 @@ class Parser {
 
   parseRuleStmt(): AST.RuleStmt {
     const tok = this.peek();
-    if (tok.type === TT.LET)    return this.parseLetStmt();
-    if (tok.type === TT.WIRE)   return this.parseWireStmt();
+    if (tok.type === TT.LET) return this.parseLetStmt();
+    if (tok.type === TT.WIRE) return this.parseWireStmt();
     if (tok.type === TT.RELINK) return this.parseRelinkStmt();
-    if (tok.type === TT.ERASE)  return this.parseEraseStmt();
-    throw new ParseError(`Expected let/wire/relink/erase, got '${tok.value}'`, tok.line, tok.col);
+    if (tok.type === TT.ERASE) return this.parseEraseStmt();
+    throw new ParseError(
+      `Expected let/wire/relink/erase, got '${tok.value}'`,
+      tok.line,
+      tok.col,
+    );
   }
 
   // ─── Graph body statements ───────────────────────────────────────
@@ -299,7 +348,11 @@ class Parser {
         const tok = this.peek();
         if (tok.type === TT.LET) body.push(this.parseLetStmt());
         else if (tok.type === TT.WIRE) body.push(this.parseWireStmt());
-        else throw new ParseError(`Expected let/wire, got '${tok.value}'`, tok.line, tok.col);
+        else {throw new ParseError(
+            `Expected let/wire, got '${tok.value}'`,
+            tok.line,
+            tok.col,
+          );}
       }
       this.eat(TT.RBRACE);
       return { kind: "graph-explicit", name, body };

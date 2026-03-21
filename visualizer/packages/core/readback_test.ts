@@ -1,7 +1,7 @@
 // Tests for readback: compile lambda terms to delta-net graphs, then read them back.
 
 import { assertEquals } from "$std/assert/mod.ts";
-import { parseSource, astToString, getExpressionType } from "./ast.ts";
+import { astToString, getExpressionType, parseSource } from "./ast.ts";
 import { deltanets } from "./systems/deltanets/index.ts";
 import { readbackGraphToString } from "./systems/deltanets/readback.ts";
 

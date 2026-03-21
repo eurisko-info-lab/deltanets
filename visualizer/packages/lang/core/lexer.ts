@@ -24,11 +24,11 @@ export const TT = {
   EXTEND: "EXTEND",
   COMPOSE: "COMPOSE",
   // Operators
-  INTERACT: "INTERACT",   // <>
-  ARROW: "ARROW",         // ->
-  WIRE_OP: "WIRE_OP",     // --
-  EQ: "EQ",               // =
-  PLUS: "PLUS",           // +
+  INTERACT: "INTERACT", // <>
+  ARROW: "ARROW", // ->
+  WIRE_OP: "WIRE_OP", // --
+  EQ: "EQ", // =
+  PLUS: "PLUS", // +
   LPAREN: "LPAREN",
   RPAREN: "RPAREN",
   LBRACE: "LBRACE",
@@ -37,9 +37,9 @@ export const TT = {
   DOT: "DOT",
   BACKSLASH: "BACKSLASH",
   COLON: "COLON",
-  QUESTION: "QUESTION",   // ?
+  QUESTION: "QUESTION", // ?
   MINUS: "MINUS",
-  DOTDOT: "DOTDOT",       // ..
+  DOTDOT: "DOTDOT", // ..
   // Literals
   IDENT: "IDENT",
   STRING: "STRING",
@@ -123,19 +123,27 @@ export function tokenize(source: string): Token[] {
       const two = source[i] + source[i + 1];
       if (two === "<>") {
         tokens.push({ type: TT.INTERACT, value: "<>", line, col: startCol });
-        i += 2; col += 2; continue;
+        i += 2;
+        col += 2;
+        continue;
       }
       if (two === "->") {
         tokens.push({ type: TT.ARROW, value: "->", line, col: startCol });
-        i += 2; col += 2; continue;
+        i += 2;
+        col += 2;
+        continue;
       }
       if (two === "--") {
         tokens.push({ type: TT.WIRE_OP, value: "--", line, col: startCol });
-        i += 2; col += 2; continue;
+        i += 2;
+        col += 2;
+        continue;
       }
       if (two === "..") {
         tokens.push({ type: TT.DOTDOT, value: "..", line, col: startCol });
-        i += 2; col += 2; continue;
+        i += 2;
+        col += 2;
+        continue;
       }
     }
 
@@ -155,17 +163,26 @@ export function tokenize(source: string): Token[] {
       "-": TT.MINUS,
     };
     if (singles[source[i]]) {
-      tokens.push({ type: singles[source[i]], value: source[i], line, col: startCol });
-      i++; col++; continue;
+      tokens.push({
+        type: singles[source[i]],
+        value: source[i],
+        line,
+        col: startCol,
+      });
+      i++;
+      col++;
+      continue;
     }
 
     // String literal
     if (source[i] === '"') {
       let val = "";
-      i++; col++;
+      i++;
+      col++;
       while (i < source.length && source[i] !== '"') {
         if (source[i] === "\\") {
-          i++; col++;
+          i++;
+          col++;
           const c = source[i] ?? "";
           if (c === "n") val += "\n";
           else if (c === "t") val += "\t";
@@ -173,13 +190,20 @@ export function tokenize(source: string): Token[] {
           else if (c === '"') val += '"';
           else val += c;
         } else {
-          if (source[i] === "\n") { line++; col = 0; }
+          if (source[i] === "\n") {
+            line++;
+            col = 0;
+          }
           val += source[i];
         }
-        i++; col++;
+        i++;
+        col++;
       }
-      if (i >= source.length) throw new LexError("Unterminated string", line, startCol);
-      i++; col++; // closing quote
+      if (i >= source.length) {
+        throw new LexError("Unterminated string", line, startCol);
+      }
+      i++;
+      col++; // closing quote
       tokens.push({ type: TT.STRING, value: val, line, col: startCol });
       continue;
     }
@@ -188,7 +212,9 @@ export function tokenize(source: string): Token[] {
     if (/[0-9]/.test(source[i])) {
       let num = "";
       while (i < source.length && /[0-9]/.test(source[i])) {
-        num += source[i]; i++; col++;
+        num += source[i];
+        i++;
+        col++;
       }
       tokens.push({ type: TT.NUMBER, value: num, line, col: startCol });
       continue;
@@ -198,11 +224,17 @@ export function tokenize(source: string): Token[] {
     if (/[a-zA-Z_]/.test(source[i])) {
       let ident = "";
       while (i < source.length && /[a-zA-Z0-9_]/.test(source[i])) {
-        ident += source[i]; i++; col++;
+        ident += source[i];
+        i++;
+        col++;
         // Allow hyphen only if followed by a letter (not -- or ->)
-        if (i < source.length && source[i] === "-" &&
-            i + 1 < source.length && /[a-zA-Z]/.test(source[i + 1])) {
-          ident += source[i]; i++; col++;
+        if (
+          i < source.length && source[i] === "-" &&
+          i + 1 < source.length && /[a-zA-Z]/.test(source[i + 1])
+        ) {
+          ident += source[i];
+          i++;
+          col++;
         }
       }
       const kw = KEYWORDS[ident];

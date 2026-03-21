@@ -4,10 +4,20 @@ import { Node2D, render } from "@deltanets/render";
 import { METHODS } from "@deltanets/methods";
 import type { MethodState } from "@deltanets/methods";
 import {
-  method, ast, scene, center, debug, theme,
-  typeCheckMode, typeCheckSteps, typeCheckStepIdx,
-  isFirstLoad, selectedSystemType, relativeLevel,
-  initializeStates, centerGraph,
+  ast,
+  center,
+  centerGraph,
+  debug,
+  initializeStates,
+  isFirstLoad,
+  method,
+  relativeLevel,
+  scene,
+  selectedSystemType,
+  theme,
+  typeCheckMode,
+  typeCheckStepIdx,
+  typeCheckSteps,
 } from "../lib/appState.ts";
 
 /** All reactive scene effects: init states, update scene, center, and SVG rendering. */
@@ -28,62 +38,66 @@ export function useSceneEffects() {
       return;
     }
 
-    // Apply type check highlights to graph/AST nodes before rendering
-    const item = currentState.value.stack[currentState.value.idx];
-    if (method.value === "deltanets") {
-      for (const node of item) {
-        if (tcMode && node.astRef?.extra?.typeCheckIdx !== undefined) {
-          const nIdx = node.astRef.extra.typeCheckIdx;
-          const step = typeCheckSteps.peek()[nIdx];
-          if (nIdx < tcIdx) {
-            node.typeCheckState = step?.result.ok ? "checked" : "error";
-          } else if (nIdx === tcIdx) {
-            node.typeCheckState = step?.result.ok ? "checking" : "error";
+    try {
+      // Apply type check highlights to graph/AST nodes before rendering
+      const item = currentState.value.stack[currentState.value.idx];
+      if (method.value === "deltanets") {
+        for (const node of item) {
+          if (tcMode && node.astRef?.extra?.typeCheckIdx !== undefined) {
+            const nIdx = node.astRef.extra.typeCheckIdx;
+            const step = typeCheckSteps.peek()[nIdx];
+            if (nIdx < tcIdx) {
+              node.typeCheckState = step?.result.ok ? "checked" : "error";
+            } else if (nIdx === tcIdx) {
+              node.typeCheckState = step?.result.ok ? "checking" : "error";
+            } else {
+              node.typeCheckState = undefined;
+            }
           } else {
             node.typeCheckState = undefined;
           }
-        } else {
-          node.typeCheckState = undefined;
         }
-      }
-    } else {
-      const walkAst = (aNode: AstNode) => {
-        if (aNode.extra?.typeCheckIdx !== undefined) {
-          const nIdx = aNode.extra.typeCheckIdx;
-          if (tcMode) {
-            const step = typeCheckSteps.peek()[nIdx];
-            if (nIdx < tcIdx) {
-              aNode.extra.typeCheckState = step?.result.ok ? "checked" : "error";
-            } else if (nIdx === tcIdx) {
-              aNode.extra.typeCheckState = step?.result.ok ? "checking" : "error";
+      } else {
+        const walkAst = (aNode: AstNode) => {
+          if (aNode.extra?.typeCheckIdx !== undefined) {
+            const nIdx = aNode.extra.typeCheckIdx;
+            if (tcMode) {
+              const step = typeCheckSteps.peek()[nIdx];
+              if (nIdx < tcIdx) {
+                aNode.extra.typeCheckState = step?.result.ok
+                  ? "checked"
+                  : "error";
+              } else if (nIdx === tcIdx) {
+                aNode.extra.typeCheckState = step?.result.ok
+                  ? "checking"
+                  : "error";
+              } else {
+                aNode.extra.typeCheckState = undefined;
+              }
             } else {
               aNode.extra.typeCheckState = undefined;
             }
-          } else {
-            aNode.extra.typeCheckState = undefined;
           }
-        }
-        if (aNode.type === "abs") walkAst(aNode.body);
-        if (aNode.type === "app") { walkAst(aNode.func); walkAst(aNode.arg); }
-      };
-      walkAst(item);
+          if (aNode.type === "abs") walkAst(aNode.body);
+          if (aNode.type === "app") {
+            walkAst(aNode.func);
+            walkAst(aNode.arg);
+          }
+        };
+        walkAst(item);
+      }
+
+      // Render graph and update scene
+      const node2D = currentMethod.render(
+        currentState as Signal<MethodState<any, any>>,
+        selectedSystemType.value,
+        relativeLevel.value,
+      );
+      scene.value = node2D;
+    } catch (err) {
+      console.error("Scene update failed:", err);
+      scene.value = null;
     }
-
-    // Log current state
-    const stateStack = currentState.value.stack;
-    console.log(
-      `${currentMethod.name} (${currentState.value.idx}/${stateStack.length - 1
-      }):`,
-      stateStack[currentState.value.idx],
-    );
-
-    // Render graph and update scene
-    const node2D = currentMethod.render(
-      currentState as Signal<MethodState<any, any>>,
-      selectedSystemType.value,
-      relativeLevel.value,
-    );
-    scene.value = node2D;
   });
 
   // Center graph when scene changes if auto-centering is enabled or if on first load

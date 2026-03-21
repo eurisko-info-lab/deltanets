@@ -3,7 +3,7 @@
 // unannotated terms are left untyped.
 
 import type { AstNode, Type } from "./ast.ts";
-import { typeToString, typesEqual } from "./ast.ts";
+import { typesEqual, typeToString } from "./ast.ts";
 import { nameToFancyName } from "./util.ts";
 
 export type TypeEnv = Map<string, Type>;
@@ -81,7 +81,10 @@ export function generateTypeCheckSteps(ast: AstNode): TypeCheckStep[] {
         });
         return bodyResult;
       }
-      const result: TypeResult = { ok: true, type: { kind: "arrow", from: paramType, to: bodyResult.type } };
+      const result: TypeResult = {
+        ok: true,
+        type: { kind: "arrow", from: paramType, to: bodyResult.type },
+      };
       const envStr = envToString(env);
       steps.push({
         idx: idx++,
@@ -89,7 +92,9 @@ export function generateTypeCheckSteps(ast: AstNode): TypeCheckStep[] {
         rule: "abs",
         env: new Map(env),
         result,
-        judgment: `${envStr} ⊢ λ${nameToFancyName(node.name)} : ${typeToString(result.type)}`,
+        judgment: `${envStr} ⊢ λ${nameToFancyName(node.name)} : ${
+          typeToString(result.type)
+        }`,
       });
       return result;
     }
@@ -122,9 +127,17 @@ export function generateTypeCheckSteps(ast: AstNode): TypeCheckStep[] {
       if (funcResult.type.kind === "hole") {
         result = { ok: true, type: { kind: "hole" } };
       } else if (funcResult.type.kind !== "arrow") {
-        result = { ok: false, error: `Expected function type, got ${typeToString(funcResult.type)}` };
+        result = {
+          ok: false,
+          error: `Expected function type, got ${typeToString(funcResult.type)}`,
+        };
       } else if (!typesEqual(funcResult.type.from, argResult.type)) {
-        result = { ok: false, error: `Type mismatch: expected ${typeToString(funcResult.type.from)}, got ${typeToString(argResult.type)}` };
+        result = {
+          ok: false,
+          error: `Type mismatch: expected ${
+            typeToString(funcResult.type.from)
+          }, got ${typeToString(argResult.type)}`,
+        };
       } else {
         result = { ok: true, type: funcResult.type.to };
       }
@@ -165,7 +178,10 @@ export function typeCheck(ast: AstNode, env: TypeEnv = new Map()): TypeResult {
     newEnv.set(ast.name, paramType);
     const bodyResult = typeCheck(ast.body, newEnv);
     if (!bodyResult.ok) return bodyResult;
-    return { ok: true, type: { kind: "arrow", from: paramType, to: bodyResult.type } };
+    return {
+      ok: true,
+      type: { kind: "arrow", from: paramType, to: bodyResult.type },
+    };
   }
   if (ast.type === "app") {
     const funcResult = typeCheck(ast.func, env);
@@ -177,10 +193,18 @@ export function typeCheck(ast: AstNode, env: TypeEnv = new Map()): TypeResult {
       return { ok: true, type: { kind: "hole" } };
     }
     if (funcResult.type.kind !== "arrow") {
-      return { ok: false, error: `Expected function type, got ${typeToString(funcResult.type)}` };
+      return {
+        ok: false,
+        error: `Expected function type, got ${typeToString(funcResult.type)}`,
+      };
     }
     if (!typesEqual(funcResult.type.from, argResult.type)) {
-      return { ok: false, error: `Type mismatch: expected ${typeToString(funcResult.type.from)}, got ${typeToString(argResult.type)}` };
+      return {
+        ok: false,
+        error: `Type mismatch: expected ${
+          typeToString(funcResult.type.from)
+        }, got ${typeToString(argResult.type)}`,
+      };
     }
     return { ok: true, type: funcResult.type.to };
   }

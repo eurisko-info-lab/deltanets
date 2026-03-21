@@ -1,0 +1,278 @@
+// Module dependency graph
+//
+// This DOT graph shows inter-module import dependencies.
+// Nodes are grouped into subgraph clusters by package/directory.
+// Edges represent "A imports B".
+//
+// Render with: dot -Tsvg DEPENDENCIES.dot -o DEPENDENCIES.svg
+//              dot -Tpng DEPENDENCIES.dot -o DEPENDENCIES.png
+
+digraph dependencies {
+  rankdir=LR;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10];
+  edge [color="#666666", arrowsize=0.7];
+
+  // ═══════════════════════════════════════════════════════════════
+  // Package: @deltanets/core
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_core {
+    label="@deltanets/core";
+    style="dashed";
+    color="#4285f4";
+    fontcolor="#4285f4";
+    fillcolor="#e8f0fe";
+
+    "core/util.ts"         [fillcolor="#e8f0fe"];
+    "core/parser.gen.ts"   [fillcolor="#e8f0fe"];
+    "core/ast.ts"          [fillcolor="#e8f0fe"];
+    "core/types.ts"        [fillcolor="#e8f0fe"];
+    "core/graph.ts"        [fillcolor="#e8f0fe"];
+    "core/reductions.ts"   [fillcolor="#e8f0fe"];
+    "core/typechecker.ts"  [fillcolor="#e8f0fe"];
+
+    subgraph cluster_lambdacalc {
+      label="systems/lambdacalc";
+      style="dotted";
+      "core/lambdacalc.ts" [fillcolor="#e8f0fe"];
+    }
+
+    subgraph cluster_deltanets {
+      label="systems/deltanets";
+      style="dotted";
+      "core/dn/index.ts"   [label="deltanets/index.ts", fillcolor="#e8f0fe"];
+      "core/dn/build.ts"   [label="deltanets/build.ts", fillcolor="#e8f0fe"];
+      "core/dn/readback.ts"[label="deltanets/readback.ts", fillcolor="#e8f0fe"];
+      "core/dn/redexes.ts" [label="deltanets/redexes.ts", fillcolor="#e8f0fe"];
+      "core/dn/helpers.ts" [label="deltanets/helpers.ts", fillcolor="#e8f0fe"];
+    }
+  }
+
+  // Core internal edges
+  "core/ast.ts"          -> "core/parser.gen.ts";
+  "core/ast.ts"          -> "core/util.ts";
+  "core/graph.ts"        -> "core/types.ts";
+  "core/types.ts"        -> "core/ast.ts";
+  "core/types.ts"        -> "core/typechecker.ts";
+  "core/reductions.ts"   -> { "core/util.ts" "core/types.ts" "core/graph.ts" };
+  "core/typechecker.ts"  -> { "core/ast.ts" "core/util.ts" };
+
+  "core/lambdacalc.ts"   -> { "core/ast.ts" "core/util.ts" "core/types.ts" "core/typechecker.ts" };
+
+  "core/dn/index.ts"     -> { "core/util.ts" "core/types.ts" "core/graph.ts" "core/typechecker.ts" };
+  "core/dn/index.ts"     -> { "core/dn/build.ts" "core/dn/redexes.ts" "core/dn/readback.ts" };
+  "core/dn/build.ts"     -> { "core/util.ts" "core/ast.ts" "core/types.ts" "core/graph.ts" };
+  "core/dn/readback.ts"  -> { "core/types.ts" "core/ast.ts" "core/util.ts" };
+  "core/dn/redexes.ts"   -> { "core/util.ts" "core/ast.ts" "core/types.ts" "core/graph.ts" "core/reductions.ts" "core/dn/helpers.ts" };
+  "core/dn/helpers.ts"   -> { "core/util.ts" "core/types.ts" "core/graph.ts" "core/reductions.ts" };
+
+  // ═══════════════════════════════════════════════════════════════
+  // Package: @deltanets/lang
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_lang {
+    label="@deltanets/lang";
+    style="dashed";
+    color="#34a853";
+    fontcolor="#34a853";
+    fillcolor="#e6f4ea";
+
+    "lang/index.ts"       [fillcolor="#e6f4ea"];
+    "lang/bridge.ts"      [fillcolor="#e6f4ea"];
+    "lang/defaults.ts"    [fillcolor="#e6f4ea"];
+
+    subgraph cluster_lang_core {
+      label="core/";
+      style="dotted";
+      "lang/core/lexer.ts"      [label="core/lexer.ts", fillcolor="#e6f4ea"];
+      "lang/core/parser.ts"     [label="core/parser.ts", fillcolor="#e6f4ea"];
+      "lang/core/types.ts"      [label="core/types.ts", fillcolor="#e6f4ea"];
+      "lang/core/evaluator.ts"  [label="core/evaluator.ts", fillcolor="#e6f4ea"];
+      "lang/core/eval-system.ts"[label="core/eval-system.ts", fillcolor="#e6f4ea"];
+      "lang/core/eval-graph.ts" [label="core/eval-graph.ts", fillcolor="#e6f4ea"];
+    }
+
+    subgraph cluster_lang_view {
+      label="view/";
+      style="dotted";
+      "lang/view/lexer.ts"     [label="view/lexer.ts", fillcolor="#e6f4ea"];
+      "lang/view/parser.ts"    [label="view/parser.ts", fillcolor="#e6f4ea"];
+      "lang/view/types.ts"     [label="view/types.ts", fillcolor="#e6f4ea"];
+      "lang/view/evaluator.ts" [label="view/evaluator.ts", fillcolor="#e6f4ea"];
+    }
+  }
+
+  // Lang internal edges
+  "lang/index.ts"         -> { "lang/core/evaluator.ts" "lang/view/evaluator.ts" };
+  "lang/bridge.ts"        -> { "lang/core/evaluator.ts" "lang/view/evaluator.ts" "lang/defaults.ts" };
+  "lang/core/parser.ts"   -> { "lang/core/lexer.ts" "lang/core/types.ts" };
+  "lang/core/evaluator.ts"-> { "lang/core/types.ts" "lang/core/eval-system.ts" "lang/core/eval-graph.ts" };
+  "lang/core/eval-system.ts" -> { "lang/core/types.ts" "lang/core/evaluator.ts" };
+  "lang/core/eval-graph.ts"  -> { "lang/core/types.ts" "lang/core/evaluator.ts" };
+  "lang/view/parser.ts"   -> { "lang/view/lexer.ts" "lang/view/types.ts" };
+  "lang/view/evaluator.ts"-> "lang/view/types.ts";
+
+  // Lang cross-package edges
+  "lang/bridge.ts"         -> "core/ast.ts" [color="#4285f4", style=dashed, label="@deltanets/core"];
+  "lang/core/evaluator.ts" -> "core/ast.ts" [color="#4285f4", style=dashed];
+  "lang/core/eval-graph.ts"-> "core/ast.ts" [color="#4285f4", style=dashed];
+
+  // ═══════════════════════════════════════════════════════════════
+  // Package: @deltanets/render
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_render {
+    label="@deltanets/render";
+    style="dashed";
+    color="#fbbc04";
+    fontcolor="#fbbc04";
+    fillcolor="#fef7e0";
+
+    "render/core.ts"       [fillcolor="#fef7e0"];
+    "render/primitives.ts" [fillcolor="#fef7e0"];
+
+    subgraph cluster_render_agents {
+      label="agents/";
+      style="dotted";
+      "render/agents/simple.ts"     [label="simple.ts", fillcolor="#fef7e0"];
+      "render/agents/wire.ts"       [label="wire.ts", fillcolor="#fef7e0"];
+      "render/agents/enclosure.ts"  [label="enclosure.ts", fillcolor="#fef7e0"];
+      "render/agents/replicator.ts" [label="replicator.ts", fillcolor="#fef7e0"];
+      "render/agents/twine.ts"      [label="twine.ts", fillcolor="#fef7e0"];
+    }
+  }
+
+  // Render internal edges
+  "render/core.ts"              -> "core/util.ts" [color="#4285f4", style=dashed, label="@deltanets/core"];
+  "render/agents/simple.ts"     -> "render/primitives.ts";
+  "render/agents/wire.ts"       -> "render/primitives.ts";
+  "render/agents/enclosure.ts"  -> { "render/primitives.ts" "render/agents/wire.ts" };
+  "render/agents/replicator.ts" -> { "render/primitives.ts" "render/agents/simple.ts" };
+  "render/agents/twine.ts"      -> "render/primitives.ts";
+
+  // ═══════════════════════════════════════════════════════════════
+  // Package: @deltanets/methods
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_methods {
+    label="@deltanets/methods";
+    style="dashed";
+    color="#ea4335";
+    fontcolor="#ea4335";
+    fillcolor="#fce8e6";
+
+    "methods/index.ts"     [fillcolor="#fce8e6"];
+    "methods/lambdacalc.ts"[fillcolor="#fce8e6"];
+
+    subgraph cluster_methods_dn {
+      label="deltanets/";
+      style="dotted";
+      "methods/dn/index.ts"   [label="dn/index.ts", fillcolor="#fce8e6"];
+      "methods/dn/config.ts"  [label="dn/config.ts", fillcolor="#fce8e6"];
+      "methods/dn/reduction.ts"[label="dn/reduction.ts", fillcolor="#fce8e6"];
+      "methods/dn/render.ts"  [label="dn/render.ts", fillcolor="#fce8e6"];
+      "methods/dn/render-dispatch.ts"[label="dn/render-dispatch.ts", fillcolor="#fce8e6"];
+      "methods/dn/render-roles.ts"   [label="dn/render-roles.ts", fillcolor="#fce8e6"];
+      "methods/dn/render-wires.ts"   [label="dn/render-wires.ts", fillcolor="#fce8e6"];
+    }
+  }
+
+  // Methods internal edges
+  "methods/index.ts"      -> { "methods/lambdacalc.ts" "methods/dn/index.ts" };
+  "methods/dn/index.ts"   -> { "methods/index.ts" "methods/dn/config.ts" "methods/dn/render.ts" "methods/dn/reduction.ts" };
+  "methods/lambdacalc.ts" -> "methods/index.ts";
+  "methods/dn/reduction.ts" -> { "methods/index.ts" "methods/dn/config.ts" };
+  "methods/dn/render.ts"  -> { "methods/index.ts" "methods/dn/config.ts" "methods/dn/reduction.ts" "methods/dn/render-dispatch.ts" "methods/dn/render-wires.ts" };
+  "methods/dn/render-dispatch.ts" -> { "methods/index.ts" "methods/dn/config.ts" "methods/dn/render-wires.ts" "methods/dn/render-roles.ts" };
+  "methods/dn/render-roles.ts"    -> { "methods/index.ts" "methods/dn/config.ts" "methods/dn/reduction.ts" "methods/dn/render-wires.ts" "methods/dn/render-dispatch.ts" };
+  "methods/dn/render-wires.ts"    -> { "methods/index.ts" "methods/dn/config.ts" "methods/dn/reduction.ts" };
+
+  // Methods cross-package edges (to core)
+  "methods/index.ts"      -> "core/ast.ts"        [color="#4285f4", style=dashed];
+  "methods/lambdacalc.ts" -> "core/ast.ts"        [color="#4285f4", style=dashed];
+  "methods/dn/index.ts"   -> "core/dn/index.ts"   [color="#4285f4", style=dashed];
+  "methods/dn/reduction.ts"-> "core/dn/index.ts"  [color="#4285f4", style=dashed];
+  "methods/dn/render.ts"  -> "core/dn/index.ts"   [color="#4285f4", style=dashed];
+  "methods/dn/render-dispatch.ts" -> "core/dn/index.ts" [color="#4285f4", style=dashed];
+  "methods/dn/render-roles.ts"    -> "core/dn/index.ts" [color="#4285f4", style=dashed];
+  "methods/dn/render-wires.ts"    -> "core/dn/index.ts" [color="#4285f4", style=dashed];
+
+  // Methods cross-package edges (to render)
+  "methods/index.ts"      -> "render/core.ts"       [color="#fbbc04", style=dashed];
+  "methods/lambdacalc.ts" -> "render/core.ts"       [color="#fbbc04", style=dashed];
+  "methods/dn/render.ts"  -> "render/core.ts"       [color="#fbbc04", style=dashed];
+  "methods/dn/render-dispatch.ts" -> "render/core.ts" [color="#fbbc04", style=dashed];
+  "methods/dn/render-roles.ts"    -> "render/core.ts" [color="#fbbc04", style=dashed];
+  "methods/dn/render-wires.ts"    -> "render/core.ts" [color="#fbbc04", style=dashed];
+
+  // Methods cross-package edges (to lang)
+  "methods/dn/config.ts" -> "lang/index.ts" [color="#34a853", style=dashed, label="@deltanets/lang"];
+
+  // ═══════════════════════════════════════════════════════════════
+  // App layer (Fresh islands, hooks, components, lib)
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_app {
+    label="App layer (Fresh)";
+    style="dashed";
+    color="#9334e6";
+    fontcolor="#9334e6";
+    fillcolor="#f3e8fd";
+
+    "lib/appState.ts"  [fillcolor="#f3e8fd"];
+    "lib/config.ts"    [fillcolor="#f3e8fd"];
+    "lib/examples.ts"  [fillcolor="#f3e8fd"];
+
+    "hooks/useCodeEditor.ts"  [fillcolor="#f3e8fd"];
+    "hooks/useSceneEffects.ts"[fillcolor="#f3e8fd"];
+    "hooks/useEditorLayout.ts"[fillcolor="#f3e8fd"];
+
+    "islands/App.tsx"    [fillcolor="#f3e8fd"];
+    "islands/Graph.tsx"  [fillcolor="#f3e8fd"];
+
+    "components/Toolbar.tsx" [fillcolor="#f3e8fd"];
+    "components/Icons.tsx"   [fillcolor="#f3e8fd"];
+
+    "routes/index.tsx"  [fillcolor="#f3e8fd"];
+  }
+
+  // App internal edges
+  "islands/App.tsx"    -> { "islands/Graph.tsx" "components/Toolbar.tsx" "hooks/useCodeEditor.ts" "hooks/useSceneEffects.ts" "hooks/useEditorLayout.ts" "lib/appState.ts" "routes/index.tsx" };
+  "hooks/useCodeEditor.ts"   -> { "lib/appState.ts" "lib/config.ts" "routes/index.tsx" };
+  "hooks/useSceneEffects.ts" -> "lib/appState.ts";
+  "hooks/useEditorLayout.ts" -> { "lib/appState.ts" "lib/config.ts" };
+  "components/Toolbar.tsx"   -> { "lib/appState.ts" "lib/config.ts" "components/Icons.tsx" "routes/index.tsx" };
+  "routes/index.tsx"         -> { "lib/examples.ts" "islands/App.tsx" };
+  "islands/Graph.tsx"        -> "lib/config.ts";
+
+  // App → package edges
+  "lib/appState.ts"         -> "core/ast.ts"       [color="#4285f4", style=dashed];
+  "lib/appState.ts"         -> "render/core.ts"     [color="#fbbc04", style=dashed];
+  "lib/appState.ts"         -> "methods/index.ts"   [color="#ea4335", style=dashed];
+  "lib/appState.ts"         -> "lang/index.ts"      [color="#34a853", style=dashed];
+  "hooks/useSceneEffects.ts"-> "core/ast.ts"        [color="#4285f4", style=dashed];
+  "hooks/useSceneEffects.ts"-> "render/core.ts"     [color="#fbbc04", style=dashed];
+  "hooks/useSceneEffects.ts"-> "methods/index.ts"   [color="#ea4335", style=dashed];
+  "hooks/useCodeEditor.ts"  -> "methods/index.ts"   [color="#ea4335", style=dashed];
+  "components/Toolbar.tsx"  -> "core/ast.ts"        [color="#4285f4", style=dashed];
+  "components/Toolbar.tsx"  -> "render/core.ts"     [color="#fbbc04", style=dashed];
+  "components/Toolbar.tsx"  -> "methods/index.ts"   [color="#ea4335", style=dashed];
+  "islands/Graph.tsx"       -> "render/core.ts"     [color="#fbbc04", style=dashed];
+
+  // ═══════════════════════════════════════════════════════════════
+  // Legend
+  // ═══════════════════════════════════════════════════════════════
+  subgraph cluster_legend {
+    label="Legend";
+    style="rounded";
+    color="#cccccc";
+    fontsize=9;
+    node [fontsize=8, width=0.1, height=0.1];
+    edge [fontsize=8];
+
+    legend_internal [label="Internal import", shape=plaintext];
+    legend_cross    [label="Cross-package import", shape=plaintext];
+    legend_a [label="", style=invis, width=0];
+    legend_b [label="", style=invis, width=0];
+    legend_c [label="", style=invis, width=0];
+    legend_d [label="", style=invis, width=0];
+    legend_a -> legend_b [label="internal"];
+    legend_c -> legend_d [style=dashed, label="cross-pkg"];
+  }
+}

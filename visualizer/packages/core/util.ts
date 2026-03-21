@@ -1,37 +1,3 @@
-export const prettifyExpr = (expr: string) => {
-  // Replase slashes with lambda
-  let newString = expr.replaceAll("\\", "λ");
-
-  // Convert letters to math style using letterToMathItalicSmall
-  // newString = expr;
-
-  return newString;
-};
-
-export const cleanExpr = (expr: string) => {
-  // Convert letters back to regular style using mathItalicSmallToLetter
-  // let newString = [...expr]
-  //   .map(
-  //     (char) =>
-  //       mathItalicSmallToLetter[char as keyof typeof mathItalicSmallToLetter] ??
-  //       char
-  //   )
-  //   .join("");
-
-  // Adjust spacings
-  return expr
-    .replace(/\(\s+/g, "(") // remove spaces to the right of "("
-    .replace(/\s+\)/g, ")") // remove spaces to the left of ")"
-    .replace(/(?<!(\())\(/g, " (") // add spaces to the left of a sequence of "("
-    .replace(/\)(?!(\)))/g, ") ") // add spaces to the right of a sequence of ")"
-    .replace(/\.\s+/g, ".") // remove spaces to the right of "."
-    .replace(/\s+\./g, ".") // remove spaces to the left of "."
-    .replace(/\s\s+/g, " ") // combine adjacent spaces
-    .trim();
-
-  // return newString;
-};
-
 // Invert map of string => string
 const invertMap = (map: {
   [key: string]: string;
@@ -119,8 +85,10 @@ export function nameToFancyName(str: string) {
     .map((char) => {
       return (
         numberToSubscript[char as keyof typeof numberToSubscript] ??
-        letterToMathItalicSmall[char as keyof typeof letterToMathItalicSmall] ??
-        char
+          letterToMathItalicSmall[
+            char as keyof typeof letterToMathItalicSmall
+          ] ??
+          char
       );
     })
     .join("");
@@ -131,8 +99,10 @@ export function fancyNameToName(str: string) {
     .map((char) => {
       return (
         subscriptToNumber[char as keyof typeof subscriptToNumber] ??
-        mathItalicSmallToLetter[char as keyof typeof mathItalicSmallToLetter] ??
-        char
+          mathItalicSmallToLetter[
+            char as keyof typeof mathItalicSmallToLetter
+          ] ??
+          char
       );
     })
     .join("");
@@ -146,7 +116,7 @@ export function minMax(a: number, b: number) {
 // Helper to remove an element from an array
 export function removeFromArrayIf<E>(
   array: E[],
-  callback: (e: E, i: number) => boolean
+  callback: (e: E, i: number) => boolean,
 ) {
   let i = array.length;
   while (i--) {

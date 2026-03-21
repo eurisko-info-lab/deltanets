@@ -1,7 +1,13 @@
 // Universal types and interfaces for interaction net systems and tree-based calculi.
 
-import type { AstNode, Abstraction, Variable, SystemType, Type } from "./ast.ts";
-import type { TypeResult, TypeEnv } from "./typechecker.ts";
+import type {
+  Abstraction,
+  AstNode,
+  SystemType,
+  Type,
+  Variable,
+} from "./ast.ts";
+import type { TypeEnv, TypeResult } from "./typechecker.ts";
 
 // A port of a particular node.
 export type NodePort = { node: Node; port: number; erase?: boolean };
@@ -31,27 +37,27 @@ export type Graph = Node[];
 // Named port indices for each node type.
 // Port 0 is always the principal port for all interaction net agents.
 export const Ports = {
-  abs:       { principal: 0, body: 1, bind: 2, type: 3 },
-  app:       { func: 0, result: 1, arg: 2 },
-  repIn:     { principal: 0 },
-  repOut:    { principal: 0 },
-  era:       { principal: 0 },
-  var:       { principal: 0 },
-  root:      { principal: 0 },
-  typeBase:  { principal: 0 },
+  abs: { principal: 0, body: 1, bind: 2, type: 3 },
+  app: { func: 0, result: 1, arg: 2 },
+  repIn: { principal: 0 },
+  repOut: { principal: 0 },
+  era: { principal: 0 },
+  var: { principal: 0 },
+  root: { principal: 0 },
+  typeBase: { principal: 0 },
   typeArrow: { principal: 0, domain: 1, codomain: 2 },
-  typeHole:  { principal: 0 },
+  typeHole: { principal: 0 },
   // Lambda cube agents
-  tyabs:     { principal: 0, body: 1, bind: 2 },
-  tyapp:     { principal: 0, result: 1, arg: 2 },
-  pi:        { principal: 0, domain: 1, codomain: 2 },
-  sigma:     { principal: 0, fstType: 1, sndType: 2 },
-  pair:      { principal: 0, fst: 1, snd: 2 },
-  fst:       { principal: 0, result: 1 },
-  snd:       { principal: 0, result: 1 },
-  typeAbs:   { principal: 0, body: 1, bind: 2 },
-  typeApp:   { principal: 0, result: 1, arg: 2 },
-  kindStar:  { principal: 0 },
+  tyabs: { principal: 0, body: 1, bind: 2 },
+  tyapp: { principal: 0, result: 1, arg: 2 },
+  pi: { principal: 0, domain: 1, codomain: 2 },
+  sigma: { principal: 0, fstType: 1, sndType: 2 },
+  pair: { principal: 0, fst: 1, snd: 2 },
+  fst: { principal: 0, result: 1 },
+  snd: { principal: 0, result: 1 },
+  typeAbs: { principal: 0, body: 1, bind: 2 },
+  typeApp: { principal: 0, result: 1, arg: 2 },
+  kindStar: { principal: 0 },
   kindArrow: { principal: 0, domain: 1, codomain: 2 },
 } as const;
 
@@ -62,8 +68,16 @@ export type Redex = { a: Node; b: Node; optimal: boolean; reduce: () => void };
 // This enables swapping between different graph implementations (e.g., Δ-Nets, HVM).
 export interface InteractionSystem {
   name: string;
-  buildGraph(ast: AstNode, systemType: SystemType, relativeLevel: boolean): Graph;
-  getRedexes(graph: Graph, systemType: SystemType, relativeLevel: boolean): Redex[];
+  buildGraph(
+    ast: AstNode,
+    systemType: SystemType,
+    relativeLevel: boolean,
+  ): Graph;
+  getRedexes(
+    graph: Graph,
+    systemType: SystemType,
+    relativeLevel: boolean,
+  ): Redex[];
   getRedex(a: Node, b: Node, redexes: Redex[]): Redex | undefined;
   findReachableNodes(graph: Graph): Set<Node>;
   cleanupGraph(graph: Graph): void;
@@ -80,7 +94,12 @@ export interface InteractionSystem {
 export interface TreeSystem {
   name: string;
   clone(ast: AstNode, parent?: AstNode): AstNode;
-  substitute(tree: AstNode, varName: string, replacement: AstNode, freeVarsInArg: string[]): AstNode;
+  substitute(
+    tree: AstNode,
+    varName: string,
+    replacement: AstNode,
+    freeVarsInArg: string[],
+  ): AstNode;
   replace(astNode: AstNode, newNode: AstNode): boolean;
   freeVars(node: AstNode): string[];
   boundVars(node: AstNode, name: string): Variable[];

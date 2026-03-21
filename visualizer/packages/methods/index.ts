@@ -15,7 +15,11 @@ export const METHODS: Record<string, Method<any, any>> = {
 // Method type
 export type Method<Elem, Data> = {
   name: string;
-  init: (ast: AstNode, systemType: SystemType, relativeLevel: boolean) => MethodState<Elem, Data>;
+  init: (
+    ast: AstNode,
+    systemType: SystemType,
+    relativeLevel: boolean,
+  ) => MethodState<Elem, Data>;
   initFromGraph?: (graph: Graph) => MethodState<Elem, Data>;
   render: (
     state: Signal<MethodState<Elem, Data>>,

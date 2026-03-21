@@ -1,7 +1,8 @@
 import * as d3 from "d3";
 import { removeFromArrayIf } from "@deltanets/core";
 
-// The type of an SVG node.
+// The type of an SVG node (d3 Selection — intentionally untyped due to complex generics).
+// deno-lint-ignore no-explicit-any
 export type SVG = any;
 
 // The type of an SVG node with z-index information.

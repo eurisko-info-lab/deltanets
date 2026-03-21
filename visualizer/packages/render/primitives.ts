@@ -1,8 +1,14 @@
 import * as d3 from "d3";
 import {
-  Node2D, D, DEFAULT_LINE_WIDTH, OPTIMAL_HIGHLIGHT_COLOR,
-  applyEntries, defaultStroke, defaultFill,
-  type Pos, type SVG,
+  applyEntries,
+  D,
+  DEFAULT_LINE_WIDTH,
+  defaultFill,
+  defaultStroke,
+  Node2D,
+  OPTIMAL_HIGHLIGHT_COLOR,
+  type Pos,
+  type SVG,
 } from "./core.ts";
 
 // Some text.
@@ -360,18 +366,23 @@ export class Edge extends Node2D {
       this.highlightPath.eventHandlers = {
         click: this.onClick,
         touchend: this.onClick,
+        // d3 event handlers receive the DOM element as `this`
         mousedown: function () {
+          // deno-lint-ignore no-explicit-any
           d3.select(this as any).attr("stroke-width", "36px");
         },
         mouseup: function () {
+          // deno-lint-ignore no-explicit-any
           d3.select(this as any).attr("stroke-width", "40px");
         },
         mouseover: function () {
+          // deno-lint-ignore no-explicit-any
           d3.select(this as any)
             .attr("stroke-width", "40px")
             .attr("cursor", "pointer");
         },
         mouseout: function () {
+          // deno-lint-ignore no-explicit-any
           d3.select(this as any).attr("stroke-width", "36px");
         },
         ...this.highlightPath.eventHandlers,

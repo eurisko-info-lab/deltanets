@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import type { AgentStyleDef, AgentRole } from "@deltanets/lang";
+import type { AgentRole, AgentStyleDef } from "@deltanets/lang";
 
 // Agent visual styles from .iview files
 export const agentStyles = signal<Map<string, AgentStyleDef>>(new Map());
@@ -14,10 +14,21 @@ export function isExprAgentFromStyles(type: string): boolean {
 
 // Infer agent role from type name (fallback when no style is loaded)
 function inferRole(type: string): AgentRole | undefined {
-  if (type === "var" || type === "era" || type === "type-base" || type === "kind-star" || type === "type-hole") return "leaf";
-  if (type === "abs" || type === "tyabs" || type === "type-abs" || type === "forall") return "binder";
-  if (type === "app" || type === "tyapp" || type === "type-app") return "applicator";
-  if (type === "type-arrow" || type === "pi" || type === "sigma" || type === "kind-arrow" || type === "pair") return "type-constructor";
+  if (
+    type === "var" || type === "era" || type === "type-base" ||
+    type === "kind-star" || type === "type-hole"
+  ) return "leaf";
+  if (
+    type === "abs" || type === "tyabs" || type === "type-abs" ||
+    type === "forall"
+  ) return "binder";
+  if (type === "app" || type === "tyapp" || type === "type-app") {
+    return "applicator";
+  }
+  if (
+    type === "type-arrow" || type === "pi" || type === "sigma" ||
+    type === "kind-arrow" || type === "pair"
+  ) return "type-constructor";
   if (type === "fst" || type === "snd") return "destructor";
   if (type.startsWith("rep")) return "replicator";
   return undefined;
@@ -33,4 +44,4 @@ export function getRole(type: string): AgentRole | undefined {
 export const typeReductionMode = signal(false);
 
 // Method-specific data
-export type Data = { appliedFinalStep: boolean, isFinalStep: boolean };
+export type Data = { appliedFinalStep: boolean; isFinalStep: boolean };

@@ -9,16 +9,25 @@ import {
   Wire,
 } from "@deltanets/render";
 import { MethodState } from "../index.ts";
+import { deltanets, type Graph } from "@deltanets/core";
 import {
-  type Graph,
-  deltanets,
-} from "@deltanets/core";
-import { isExprAgentFromStyles, typeReductionMode, type Data } from "./config.ts";
+  type Data,
+  isExprAgentFromStyles,
+  typeReductionMode,
+} from "./config.ts";
 import { applyReduction } from "./reduction.ts";
 import { renderNodePort } from "./render-dispatch.ts";
 import { renderWires } from "./render-wires.ts";
 
-const { cleanupGraph, findReachableNodes, getRedex, getRedexes, isConnectedToAllErasers, isParentPort, levelColor } = deltanets;
+const {
+  cleanupGraph,
+  findReachableNodes,
+  getRedex,
+  getRedexes,
+  isConnectedToAllErasers,
+  isParentPort,
+  levelColor,
+} = deltanets;
 
 type State = MethodState<Graph, Data>;
 
@@ -40,12 +49,19 @@ export function render(
   // Get redexes, filtered by reduction mode
   const allRedexes = getRedexes(graph, systemType, relativeLevel);
   const redexes = typeReductionMode.value
-    ? allRedexes.filter((r) => !isExprAgentFromStyles(r.a.type) || !isExprAgentFromStyles(r.b.type))
-    : allRedexes.filter((r) => isExprAgentFromStyles(r.a.type) && isExprAgentFromStyles(r.b.type));
+    ? allRedexes.filter((r) =>
+      !isExprAgentFromStyles(r.a.type) || !isExprAgentFromStyles(r.b.type)
+    )
+    : allRedexes.filter((r) =>
+      isExprAgentFromStyles(r.a.type) && isExprAgentFromStyles(r.b.type)
+    );
 
   // In type reduction mode, the optimal traversal doesn't cover lambda cube agents,
   // so mark the first available redex as optimal if none are
-  if (typeReductionMode.value && redexes.length > 0 && !redexes.some((r) => r.optimal)) {
+  if (
+    typeReductionMode.value && redexes.length > 0 &&
+    !redexes.some((r) => r.optimal)
+  ) {
     redexes[0].optimal = true;
   }
 
@@ -188,7 +204,7 @@ export function render(
           currState.data.appliedFinalStep = true;
           cleanupGraph(currState.stack[currState.idx]);
         });
-      }
+      };
       currState.forward = finalStep;
       currState.forwardParallel = finalStep;
     } else {

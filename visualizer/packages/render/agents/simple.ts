@@ -1,11 +1,13 @@
 // Simple fixed-shape interaction net agents: Fan, Fin, Eraser, Root, Fae.
 
 import {
-  Node2D, D, SHAPE_LINE_WIDTH,
+  D,
   defaultStroke,
+  Node2D,
   type Pos,
+  SHAPE_LINE_WIDTH,
 } from "../core.ts";
-import { Text, Circle, Path } from "../primitives.ts";
+import { Circle, Path, Text } from "../primitives.ts";
 
 // A fan is a triangle-shaped interaction net agent with one principal port and two auxiliary ports.
 export class Fan extends Node2D {
