@@ -80,6 +80,53 @@ system "Induction" extend "NatEq" {
     relink right.pred psr.principal
     relink left.m psr.m
   }
+
+  agent dup_nat(principal, copy1, copy2)
+
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let d  = dup_nat
+    let s1 = Succ
+    let s2 = Succ
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    relink right.pred d.principal
+    wire d.copy1 -- s1.pred
+    wire d.copy2 -- s2.pred
+  }
+
+  agent plus_comm(principal, result, m)
+
+  rule plus_comm <> Zero -> {
+    let pzr = plus_zero_right
+    relink left.result pzr.result
+    relink left.m pzr.principal
+  }
+  rule plus_comm <> Succ -> {
+    let dm  = dup_nat
+    let dk  = dup_nat
+    let t   = trans
+    let cs  = cong_succ
+    let pc  = plus_comm
+    let sy  = sym
+    let psr = plus_succ_right
+    relink left.m dm.principal
+    relink right.pred dk.principal
+    relink left.result t.result
+    wire t.principal -- cs.result
+    wire cs.principal -- pc.result
+    wire dk.copy1 -- pc.principal
+    wire dm.copy1 -- pc.m
+    wire t.second -- sy.result
+    wire sy.principal -- psr.result
+    wire dm.copy2 -- psr.principal
+    wire dk.copy2 -- psr.m
+  }
 }
 `;
 
@@ -144,10 +191,12 @@ Deno.test("induction: system compiles with all agents and rules", () => {
   const result = compileCore(INDUCTION_SOURCE);
   assertEquals(result.errors.length, 0);
   const ind = result.systems.get("Induction")!;
-  // Induction inherits: 2 Nat + 4 Eq + 1 NatEq + 2 pzr + 2 psr = 11 rules
-  assertEquals(ind.rules.length, 11);
+  // Induction: 2 Nat + 4 Eq + 1 NatEq + 2 pzr + 2 psr + 2 dup + 2 pc = 15 rules
+  assertEquals(ind.rules.length, 15);
   assertEquals(ind.agents.has("plus_zero_right"), true);
   assertEquals(ind.agents.has("plus_succ_right"), true);
+  assertEquals(ind.agents.has("dup_nat"), true);
+  assertEquals(ind.agents.has("plus_comm"), true);
   assertEquals(ind.agents.has("cong_succ"), true);
   assertEquals(ind.agents.has("refl"), true);
   assertEquals(ind.agents.has("add"), true);
@@ -498,4 +547,250 @@ Deno.test("induction: verify add(2, S(1)) → 4 via subst", () => {
   // add(2, 2) = 4 = Succ(Succ(Succ(Succ(Zero))))
   assertEquals(readRootType(g.graph), "Succ");
   assertEquals(countNodes(g.graph), 5); // 4 Succs + 1 Zero
+});
+
+// ─── dup_nat tests ─────────────────────────────────────────────────
+
+Deno.test("induction: dup_nat(0) produces two Zeros", () => {
+  // Connect copy1 to root via add(copy1, copy2) = add(0,0) = 0
+  const core = compileInduction(`
+    graph test {
+      let r = root
+      let d = dup_nat
+      let a = add
+      let z = Zero
+      wire r.principal -- a.result
+      wire a.principal -- d.copy1
+      wire a.accum     -- d.copy2
+      wire d.principal -- z.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "Zero");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: dup_nat(2) + add gives 4", () => {
+  // dup_nat(2) → (2, 2); add(2, 2) = 4
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let d  = dup_nat
+      let a  = add
+      let s1 = Succ
+      let s2 = Succ
+      let z  = Zero
+      wire r.principal -- a.result
+      wire a.principal -- d.copy1
+      wire a.accum     -- d.copy2
+      wire d.principal -- s1.principal
+      wire s1.pred     -- s2.principal
+      wire s2.pred     -- z.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "Succ");
+  assertEquals(countNodes(g.graph), 5); // 4 Succs + 1 Zero = Succ^4(Zero)
+});
+
+// ─── plus_comm tests ───────────────────────────────────────────────
+
+Deno.test("induction: plus_comm(0, 0) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let z1 = Zero
+      let z2 = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- z1.principal
+      wire pc.m         -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: plus_comm(0, 1) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let z  = Zero
+      let s  = Succ
+      let zm = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- z.principal
+      wire pc.m         -- s.principal
+      wire s.pred       -- zm.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: plus_comm(1, 0) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let s  = Succ
+      let z1 = Zero
+      let z2 = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- s.principal
+      wire s.pred       -- z1.principal
+      wire pc.m         -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: plus_comm(1, 1) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let sn = Succ
+      let zn = Zero
+      let sm = Succ
+      let zm = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- sn.principal
+      wire sn.pred      -- zn.principal
+      wire pc.m         -- sm.principal
+      wire sm.pred      -- zm.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: plus_comm(2, 1) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let s1 = Succ
+      let s2 = Succ
+      let zn = Zero
+      let sm = Succ
+      let zm = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- s1.principal
+      wire s1.pred      -- s2.principal
+      wire s2.pred      -- zn.principal
+      wire pc.m         -- sm.principal
+      wire sm.pred      -- zm.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: plus_comm(2, 3) → refl", () => {
+  const core = compileInduction(`
+    graph test {
+      let r  = root
+      let pc = plus_comm
+      let s1 = Succ
+      let s2 = Succ
+      let zn = Zero
+      let m1 = Succ
+      let m2 = Succ
+      let m3 = Succ
+      let zm = Zero
+      wire r.principal  -- pc.result
+      wire pc.principal -- s1.principal
+      wire s1.pred      -- s2.principal
+      wire s2.pred      -- zn.principal
+      wire pc.m         -- m1.principal
+      wire m1.pred      -- m2.principal
+      wire m2.pred      -- m3.principal
+      wire m3.pred      -- zm.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports);
+  assertEquals(readRootType(g.graph), "refl");
+  assertEquals(countNodes(g.graph), 1);
+});
+
+Deno.test("induction: verify plus_comm(2,1) via subst+add → 3", () => {
+  const core = compileInduction(`
+    graph test {
+      let r   = root
+      let sub = subst
+      let pc  = plus_comm
+      let a   = add
+      let s1  = Succ
+      let s2  = Succ
+      let z1  = Zero
+      let sm  = Succ
+      let z2  = Zero
+      let a1  = Succ
+      let a2  = Succ
+      let z3  = Zero
+      let a3  = Succ
+      let z4  = Zero
+      wire r.principal   -- sub.result
+      wire sub.principal -- pc.result
+      wire sub.value     -- a.result
+      wire pc.principal  -- s1.principal
+      wire s1.pred       -- s2.principal
+      wire s2.pred       -- z1.principal
+      wire pc.m          -- sm.principal
+      wire sm.pred       -- z2.principal
+      wire a.principal   -- a1.principal
+      wire a1.pred       -- a2.principal
+      wire a2.pred       -- z3.principal
+      wire a.accum       -- a3.principal
+      wire a3.pred       -- z4.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const rules = collectRules(core);
+  const ports = collectAgentPorts(core);
+  reduceAll(g.graph, rules, ports, 500);
+  // add(2, 1) = 3 = Succ(Succ(Succ(Zero)))
+  assertEquals(readRootType(g.graph), "Succ");
+  assertEquals(countNodes(g.graph), 4); // 3 Succs + 1 Zero
 });

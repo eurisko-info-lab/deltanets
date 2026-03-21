@@ -1,10 +1,14 @@
 # Inductive Proofs — Proof Construction by Recursion
 #
-# Two inductive proof agents that construct equality proofs
+# Inductive proof agents that construct equality proofs
 # by structural recursion on natural numbers:
 #
-#   plus_zero_right(n):  n + 0 = n           (steps = 2n + 1)
-#   plus_succ_right(n, m): n + S(m) = S(n + m)  (steps = 2n + m + 2)
+#   plus_zero_right(n):     n + 0 = n
+#   plus_succ_right(n, m):  n + S(m) = S(n + m)
+#   plus_comm(n, m):        n + m = m + n      ← the goal!
+#
+# Also introduces dup_nat for duplicating Nats, needed when
+# one value is consumed by two sub-proofs (linearity!).
 #
 # Key insight: induction is just interaction.  Each agent walks
 # down the number, emitting one cong_succ per Succ, until it
@@ -133,6 +137,84 @@ system "Induction" extend "NatEq" {
     wire cs.principal -- psr.result
     relink right.pred psr.principal
     relink left.m psr.m
+  }
+
+  # ─── dup_nat: duplicate a natural number ───────────────────────
+  #
+  #   Consumes a Nat on its principal port and produces two
+  #   identical copies on copy1 and copy2.  Needed because
+  #   interaction nets are linear: each wire can only be
+  #   consumed once.  The step case of plus_comm needs both
+  #   m and k twice (for the recursive call and for the lemma).
+  agent dup_nat(principal, copy1, copy2)
+
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+
+  rule dup_nat <> Succ -> {
+    let d  = dup_nat
+    let s1 = Succ
+    let s2 = Succ
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    relink right.pred d.principal
+    wire d.copy1 -- s1.pred
+    wire d.copy2 -- s2.pred
+  }
+
+  # ─── plus_comm: ∀ n m. n + m = m + n ──────────────────────────
+  #
+  #   THE MAIN THEOREM.  Proves commutativity of addition by
+  #   induction on n, using plus_zero_right and plus_succ_right
+  #   as lemmas.
+  #
+  #   Base case  (n = Zero):
+  #     0 + m = m definitionally (add <> Zero fires).
+  #     plus_zero_right(m) proves m + 0 = m.
+  #     So the proof is just plus_zero_right(m).
+  #
+  #   Step case  (n = Succ(k)):
+  #     By IH: plus_comm(k, m) proves k + m = m + k.
+  #     cong_succ(IH) gives S(k + m) = S(m + k).
+  #     sym(plus_succ_right(m, k)) gives S(m + k) = m + S(k).
+  #     trans chains them: S(k + m) = m + S(k).
+  #     Since S(k) + m = S(k + m) by definition, QED.
+  #
+  #     Both m and k are used twice (IH + lemma), so we
+  #     duplicate them with dup_nat.
+  agent plus_comm(principal, result, m)
+
+  rule plus_comm <> Zero -> {
+    let pzr = plus_zero_right
+    relink left.result pzr.result
+    relink left.m pzr.principal
+  }
+
+  rule plus_comm <> Succ -> {
+    let dm  = dup_nat
+    let dk  = dup_nat
+    let t   = trans
+    let cs  = cong_succ
+    let pc  = plus_comm
+    let sy  = sym
+    let psr = plus_succ_right
+    # Duplicate m and k for the two sub-proofs
+    relink left.m dm.principal
+    relink right.pred dk.principal
+    # Result ← trans(cong_succ(IH), sym(psr))
+    relink left.result t.result
+    wire t.principal -- cs.result
+    wire cs.principal -- pc.result
+    wire dk.copy1 -- pc.principal
+    wire dm.copy1 -- pc.m
+    wire t.second -- sy.result
+    wire sy.principal -- psr.result
+    wire dm.copy2 -- psr.principal
+    wire dk.copy2 -- psr.m
   }
 }
 
@@ -347,4 +429,139 @@ graph verify-two-succ-one {
   wire a.accum       -- sm.principal
   wire sm.pred       -- s3.principal
   wire s3.pred       -- z2.principal
+}
+
+# ═════════════════════════════════════════════════════════════════
+# plus_comm examples — THE MAIN THEOREM: n + m = m + n
+# ═════════════════════════════════════════════════════════════════
+
+# ─── (0, 0): simplest case ───────────────────────────────────────
+# plus_comm(Zero, Zero) → plus_zero_right(Zero) → refl
+graph pc-zero-zero {
+  let r  = root
+  let pc = plus_comm
+  let z1 = Zero
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- z1.principal
+  wire pc.m         -- z2.principal
+}
+
+# ─── (0, 1): base case with m > 0 ────────────────────────────────
+# plus_comm(Zero, Succ(Zero)) → plus_zero_right(Succ(Zero)) → refl
+graph pc-zero-one {
+  let r  = root
+  let pc = plus_comm
+  let z  = Zero
+  let s  = Succ
+  let zm = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- z.principal
+  wire pc.m         -- s.principal
+  wire s.pred       -- zm.principal
+}
+
+# ─── (1, 0): first step-case use ─────────────────────────────────
+# Exercises dup_nat and the full trans/sym/cong_succ machinery.
+graph pc-one-zero {
+  let r  = root
+  let pc = plus_comm
+  let s  = Succ
+  let z1 = Zero
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s.principal
+  wire s.pred       -- z1.principal
+  wire pc.m         -- z2.principal
+}
+
+# ─── (1, 1): both sides non-trivial ──────────────────────────────
+graph pc-one-one {
+  let r  = root
+  let pc = plus_comm
+  let sn = Succ
+  let zn = Zero
+  let sm = Succ
+  let zm = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- sn.principal
+  wire sn.pred      -- zn.principal
+  wire pc.m         -- sm.principal
+  wire sm.pred      -- zm.principal
+}
+
+# ─── (2, 1): longer example ──────────────────────────────────────
+graph pc-two-one {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let s2 = Succ
+  let zn = Zero
+  let sm = Succ
+  let zm = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- zn.principal
+  wire pc.m         -- sm.principal
+  wire sm.pred      -- zm.principal
+}
+
+# ─── (2, 3): asymmetric, larger inputs ───────────────────────────
+graph pc-two-three {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let s2 = Succ
+  let zn = Zero
+  let m1 = Succ
+  let m2 = Succ
+  let m3 = Succ
+  let zm = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- zn.principal
+  wire pc.m         -- m1.principal
+  wire m1.pred      -- m2.principal
+  wire m2.pred      -- m3.principal
+  wire m3.pred      -- zm.principal
+}
+
+# ─── Verification: 2 + 1 = 1 + 2 = 3 ────────────────────────────
+# Feed subst(plus_comm(2, 1), add(2, 1)).
+# plus_comm(2,1) eventually produces refl, subst passes through,
+# and add(2,1) computes to 3.  Shows the proof and computation agree.
+graph verify-comm-two-one {
+  let r   = root
+  let sub = subst
+  let pc  = plus_comm
+  let a   = add
+  # n = 2 for plus_comm
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  # m = 1 for plus_comm
+  let sm  = Succ
+  let z2  = Zero
+  # First operand of add = 2
+  let a1  = Succ
+  let a2  = Succ
+  let z3  = Zero
+  # Second operand of add = 1
+  let a3  = Succ
+  let z4  = Zero
+  wire r.principal   -- sub.result
+  wire sub.principal -- pc.result
+  wire sub.value     -- a.result
+  wire pc.principal  -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z1.principal
+  wire pc.m          -- sm.principal
+  wire sm.pred       -- z2.principal
+  wire a.principal   -- a1.principal
+  wire a1.pred       -- a2.principal
+  wire a2.pred       -- z3.principal
+  wire a.accum       -- a3.principal
+  wire a3.pred       -- z4.principal
 }
