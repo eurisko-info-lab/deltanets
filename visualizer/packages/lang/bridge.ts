@@ -7,11 +7,7 @@
 
 import { compile as compileCore } from "./core/index.ts";
 import { compile as compileView } from "./view/index.ts";
-import type {
-  CoreResult,
-  IncludeResolver,
-  LaneViewDef,
-} from "./core/index.ts";
+import type { CoreResult, IncludeResolver, LaneViewDef } from "./core/index.ts";
 import type { ViewResult } from "./view/index.ts";
 import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";

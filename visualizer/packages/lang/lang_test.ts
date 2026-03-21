@@ -364,3 +364,84 @@ Deno.test("lanes: multiple lane views", () => {
   assert(result.laneViews.has("View A"));
   assert(result.laneViews.has("View B"));
 });
+
+// ─── Music Lanes ───────────────────────────────────────────────────
+
+const musicSource = `
+lanes "Melody" {
+  lane "Treble" { clef: "treble", lines: 5 }
+
+  at 0 "Treble" place "E4" duration 1
+  at 1 "Treble" place "F4" duration 1
+  at 2 "Treble" place "G4" duration 2
+
+  bar 0
+  bar 4
+}
+`;
+
+Deno.test("music lanes: compiles without errors", () => {
+  const result = compileCore(musicSource);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("music lanes: has clef property", () => {
+  const result = compileCore(musicSource);
+  const view = result.laneViews.get("Melody")!;
+  assertEquals(view.lanes[0].props.clef, "treble");
+  assertEquals(view.lanes[0].props.lines, 5);
+});
+
+Deno.test("music lanes: pitch labels preserved", () => {
+  const result = compileCore(musicSource);
+  const view = result.laneViews.get("Melody")!;
+  assertEquals(view.items[0].label, "E4");
+  assertEquals(view.items[1].label, "F4");
+  assertEquals(view.items[2].label, "G4");
+});
+
+Deno.test("music lanes: durations preserved", () => {
+  const result = compileCore(musicSource);
+  const view = result.laneViews.get("Melody")!;
+  assertEquals(view.items[0].duration, 1);
+  assertEquals(view.items[2].duration, 2);
+});
+
+Deno.test("music lanes: piano with two staves", () => {
+  const source = `
+lanes "Piano" {
+  lane "Right" { clef: "treble", lines: 5 }
+  lane "Left"  { clef: "bass",   lines: 5 }
+
+  at 0 "Right" place "C5" duration 2
+  at 0 "Left"  place "C3" duration 4
+
+  bar 0
+  bar 4
+}
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const view = result.laneViews.get("Piano")!;
+  assertEquals(view.lanes.length, 2);
+  assertEquals(view.lanes[0].props.clef, "treble");
+  assertEquals(view.lanes[1].props.clef, "bass");
+  assertEquals(view.items.length, 2);
+});
+
+Deno.test("music lanes: accidentals in labels", () => {
+  const source = `
+lanes "Chromatic" {
+  lane "Staff" { clef: "treble", lines: 5 }
+  at 0 "Staff" place "C#4" duration 1
+  at 1 "Staff" place "Eb4" duration 1
+  at 2 "Staff" place "Bb4" duration 1
+}
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const view = result.laneViews.get("Chromatic")!;
+  assertEquals(view.items[0].label, "C#4");
+  assertEquals(view.items[1].label, "Eb4");
+  assertEquals(view.items[2].label, "Bb4");
+});

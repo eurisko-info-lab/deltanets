@@ -14,6 +14,19 @@ import {
   SHAPE_LINE_WIDTH,
   type SVG,
 } from "./core.ts";
+import {
+  ClefSymbol,
+  isMusicLane,
+  MUSIC_LANE_HEIGHT,
+  MusicNoteNode,
+  MusicStaffLines,
+  NoteNameLabel,
+  parsePitch,
+  pitchToStaffPosition,
+  STAFF_HEIGHT,
+  staffPositionToY,
+  TieNode,
+} from "./music.ts";
 
 // ─── Layout constants ──────────────────────────────────────────────
 
@@ -48,6 +61,20 @@ export type LaneViewInput = {
 export function renderLaneView(input: LaneViewInput): Node2D {
   const root = new Node2D();
 
+  // Detect music mode per-lane and compute variable heights
+  const musicLanes = new Set<string>();
+  const laneHeights: number[] = [];
+  const laneYOffsets: number[] = [];
+  let yOffset = 0;
+  for (const lane of input.lanes) {
+    if (isMusicLane(lane.props)) musicLanes.add(lane.name);
+    const h = musicLanes.has(lane.name) ? MUSIC_LANE_HEIGHT : LANE_HEIGHT;
+    laneHeights.push(h);
+    laneYOffsets.push(yOffset);
+    yOffset += h + LANE_GAP;
+  }
+  const hasMusic = musicLanes.size > 0;
+
   // Map lane names to vertical indices
   const laneIndex = new Map<string, number>();
   input.lanes.forEach((l, i) => laneIndex.set(l.name, i));
@@ -79,36 +106,57 @@ export function renderLaneView(input: LaneViewInput): Node2D {
 
   const totalWidth = LANE_LABEL_WIDTH + PADDING +
     positions.length * (ITEM_WIDTH + ITEM_GAP) + PADDING;
-  const totalHeight = input.lanes.length * (LANE_HEIGHT + LANE_GAP) - LANE_GAP;
+  const totalHeight = yOffset - LANE_GAP;
 
   // ─── Lane backgrounds + labels ─────────────────────────────────
 
   for (let i = 0; i < input.lanes.length; i++) {
     const lane = input.lanes[i];
-    const y = i * (LANE_HEIGHT + LANE_GAP);
+    const y = laneYOffsets[i];
+    const h = laneHeights[i];
+    const isMusic = musicLanes.has(lane.name);
 
     // Lane background
-    const bg = new LaneBackground(totalWidth, LANE_HEIGHT);
+    const bg = new LaneBackground(totalWidth, h);
     bg.pos = { x: 0, y };
     root.add(bg);
 
     // Lane label
     const label = new LaneLabel(lane.name);
-    label.pos = { x: LANE_LABEL_WIDTH / 2, y: y + LANE_HEIGHT / 2 };
+    label.pos = { x: LANE_LABEL_WIDTH / 2, y: y + h / 2 };
     root.add(label);
 
-    // Guide lines (e.g. staff lines for music — "lines" property)
-    const lineCount = typeof lane.props.lines === "number"
-      ? lane.props.lines
-      : 0;
-    if (lineCount > 0) {
-      const guideLines = new GuideLines(
+    if (isMusic) {
+      // Music staff lines — 5 properly spaced lines
+      const staffTop = (h - STAFF_HEIGHT) / 2;
+      const staffLines = new MusicStaffLines(
         totalWidth - LANE_LABEL_WIDTH - PADDING,
-        LANE_HEIGHT,
-        lineCount,
+        staffTop,
       );
-      guideLines.pos = { x: LANE_LABEL_WIDTH + PADDING, y };
-      root.add(guideLines);
+      staffLines.pos = { x: LANE_LABEL_WIDTH + PADDING, y };
+      root.add(staffLines);
+
+      // Clef symbol
+      const clef = new ClefSymbol(
+        String(lane.props.clef),
+        staffTop,
+      );
+      clef.pos = { x: LANE_LABEL_WIDTH + PADDING, y };
+      root.add(clef);
+    } else {
+      // Generic guide lines
+      const lineCount = typeof lane.props.lines === "number"
+        ? lane.props.lines
+        : 0;
+      if (lineCount > 0) {
+        const guideLines = new GuideLines(
+          totalWidth - LANE_LABEL_WIDTH - PADDING,
+          h,
+          lineCount,
+        );
+        guideLines.pos = { x: LANE_LABEL_WIDTH + PADDING, y };
+        root.add(guideLines);
+      }
     }
   }
 
@@ -123,24 +171,66 @@ export function renderLaneView(input: LaneViewInput): Node2D {
     const x = posToX.get(item.position);
     if (x === undefined) continue;
 
-    const y = li * (LANE_HEIGHT + LANE_GAP);
-    const w = item.duration > 0
-      ? Math.max(ITEM_WIDTH, item.duration * (ITEM_WIDTH + ITEM_GAP) - ITEM_GAP)
-      : ITEM_WIDTH;
+    const y = laneYOffsets[li];
+    const h = laneHeights[li];
+    const isMusic = musicLanes.has(item.lane);
 
-    const itemNode = new LaneItemNode(w, ITEM_HEIGHT, item.label);
-    itemNode.pos = {
-      x: x - w / 2,
-      y: y + (LANE_HEIGHT - ITEM_HEIGHT) / 2,
-    };
-    itemNode.zIndex = 1;
-    root.add(itemNode);
+    if (isMusic) {
+      // Music note rendering
+      const lane = input.lanes[li];
+      const clef = String(lane.props.clef);
+      const staffTop = (h - STAFF_HEIGHT) / 2;
+      const pitch = parsePitch(item.label);
 
-    // Center of item for link endpoints
-    itemCenters.set(item.label, {
-      x: x,
-      y: y + LANE_HEIGHT / 2,
-    });
+      if (pitch) {
+        const staffPos = pitchToStaffPosition(pitch, clef);
+        const noteNode = new MusicNoteNode(
+          pitch,
+          item.duration,
+          staffPos,
+          staffTop,
+          clef,
+        );
+        noteNode.pos = { x, y };
+        noteNode.zIndex = 1;
+        root.add(noteNode);
+
+        // Small pitch label below the staff for readability
+        const nameLabel = new NoteNameLabel(item.label);
+        nameLabel.pos = { x, y: y + staffTop + STAFF_HEIGHT + 14 };
+        root.add(nameLabel);
+
+        // Track note center for links (ties)
+        const noteY = y + staffTop + staffPositionToY(staffPos);
+        itemCenters.set(item.label, { x, y: noteY });
+      } else {
+        // Non-pitch label on a music lane — fall back to generic item
+        const w = ITEM_WIDTH;
+        const itemNode = new LaneItemNode(w, ITEM_HEIGHT, item.label);
+        itemNode.pos = { x: x - w / 2, y: y + (h - ITEM_HEIGHT) / 2 };
+        itemNode.zIndex = 1;
+        root.add(itemNode);
+        itemCenters.set(item.label, { x, y: y + h / 2 });
+      }
+    } else {
+      // Generic item rendering
+      const w = item.duration > 0
+        ? Math.max(
+          ITEM_WIDTH,
+          item.duration * (ITEM_WIDTH + ITEM_GAP) - ITEM_GAP,
+        )
+        : ITEM_WIDTH;
+
+      const itemNode = new LaneItemNode(w, ITEM_HEIGHT, item.label);
+      itemNode.pos = {
+        x: x - w / 2,
+        y: y + (h - ITEM_HEIGHT) / 2,
+      };
+      itemNode.zIndex = 1;
+      root.add(itemNode);
+
+      itemCenters.set(item.label, { x, y: y + h / 2 });
+    }
   }
 
   // ─── Markers (vertical bar lines) ─────────────────────────────
@@ -152,21 +242,30 @@ export function renderLaneView(input: LaneViewInput): Node2D {
     const markerNode = new LaneMarkerNode(
       totalHeight + 2 * MARKER_OVERSHOOT,
       marker.label,
+      hasMusic,
     );
     markerNode.pos = { x: x, y: -MARKER_OVERSHOOT };
     root.add(markerNode);
   }
 
-  // ─── Links (cross-lane arrows) ────────────────────────────────
+  // ─── Links (cross-lane arrows / ties) ─────────────────────────
 
   for (const link of input.links) {
     const from = itemCenters.get(link.from);
     const to = itemCenters.get(link.to);
     if (!from || !to) continue;
 
-    const linkNode = new LaneLinkNode(from, to, link.label);
-    linkNode.zIndex = 2;
-    root.add(linkNode);
+    if (hasMusic) {
+      // Render as a tie (curved arc) in music mode
+      const above = from.y <= to.y;
+      const tieNode = new TieNode(from, to, above);
+      tieNode.zIndex = 2;
+      root.add(tieNode);
+    } else {
+      const linkNode = new LaneLinkNode(from, to, link.label);
+      linkNode.zIndex = 2;
+      root.add(linkNode);
+    }
   }
 
   // Set root bounds
@@ -311,6 +410,7 @@ class LaneMarkerNode extends Node2D {
   constructor(
     private h: number,
     private label?: string,
+    private solid?: boolean,
   ) {
     super();
     this.bounds = { min: { x: -1, y: 0 }, max: { x: 1, y: h } };
@@ -322,14 +422,17 @@ class LaneMarkerNode extends Node2D {
   ): SVG | null {
     const g = d3.create("svg:g");
 
-    g.append("line")
+    const line = g.append("line")
       .attr("x1", pos.x)
       .attr("y1", pos.y)
       .attr("x2", pos.x)
       .attr("y2", pos.y + this.h)
       .attr("stroke", theme === "light" ? "#999" : "#777")
-      .attr("stroke-width", DEFAULT_LINE_WIDTH)
-      .attr("stroke-dasharray", "4,3");
+      .attr("stroke-width", this.solid ? 1.2 : DEFAULT_LINE_WIDTH);
+
+    if (!this.solid) {
+      line.attr("stroke-dasharray", "4,3");
+    }
 
     if (this.label) {
       g.append("text")

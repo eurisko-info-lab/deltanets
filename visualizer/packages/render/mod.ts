@@ -4,3 +4,4 @@ export * from "./core.ts";
 export * from "./primitives.ts";
 export * from "./agents/index.ts";
 export * from "./lanes.ts";
+export * from "./music.ts";
