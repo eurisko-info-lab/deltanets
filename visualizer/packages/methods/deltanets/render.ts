@@ -12,7 +12,6 @@ import { MethodState } from "../index.ts";
 import {
   type Graph,
   deltanets,
-  readbackGraphToString,
 } from "@deltanets/core";
 import { isExprAgentFromStyles, typeReductionMode, type Data } from "./config.ts";
 import { applyReduction } from "./reduction.ts";
@@ -26,7 +25,6 @@ type State = MethodState<Graph, Data>;
 // Renders the current state of the reduction process
 export function render(
   state: Signal<State>,
-  expression: Signal<string>,
   systemType: SystemType,
   relativeLevel: boolean,
 ): Node2D {
@@ -197,9 +195,6 @@ export function render(
       currState.data.appliedFinalStep = true;
     }
   }
-
-  // Update expression display with readback
-  expression.value = readbackGraphToString(graph);
 
   return node2D;
 }

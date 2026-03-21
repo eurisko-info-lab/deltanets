@@ -1,6 +1,7 @@
 import { batch, Signal, useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { defaultStroke, Pos } from "@deltanets/render";
+import { MIN_SCALE, MAX_SCALE } from "../lib/config.ts";
 
 export function Graph(
   { theme, translate, scale, center }: {
@@ -13,8 +14,7 @@ export function Graph(
   const state = useSignal<"none" | "pan">("none");
   const lastPos = useSignal<Pos>({ x: 0, y: 0 });
 
-  const MIN_SCALE = 0.1;
-  const MAX_SCALE = 10;
+
 
   // Set up event listeners
   useEffect(() => {

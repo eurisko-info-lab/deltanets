@@ -6,6 +6,7 @@ import {
   typeCheckMode, typeCheckSteps, typeCheckStepIdx,
   codeEditorRef, updateAst,
 } from "../lib/appState.ts";
+import { STORAGE_KEYS } from "../lib/config.ts";
 import type { Example } from "../routes/index.tsx";
 
 /** Monaco editor initialization, content-change listener, backslash→λ key, and keyboard navigation. */
@@ -13,7 +14,7 @@ export function useCodeEditor(examples: Example[]) {
   useEffect(() => {
     (loader as any).init().then((monaco: Monaco) => {
       const starter = examples.find((e) => e.name === "Starter") ?? examples[0];
-      const source = window.localStorage.getItem("source") ?? starter.code;
+      const source = window.localStorage.getItem(STORAGE_KEYS.source) ?? starter.code;
 
       const editorEl = document.getElementById("editor");
       if (!editorEl) return;

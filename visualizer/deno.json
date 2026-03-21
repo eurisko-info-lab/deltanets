@@ -1,8 +1,14 @@
 {
-  "lock": false,
   "workspace": ["./packages/core", "./packages/lang", "./packages/render", "./packages/methods"],
   "tasks": {
     "check": "deno fmt --check && deno lint && deno check **/*.ts && deno check **/*.tsx",
+    "check:core": "deno check packages/core/**/*.ts",
+    "check:lang": "deno check packages/lang/**/*.ts",
+    "check:render": "deno check packages/render/**/*.ts",
+    "check:methods": "deno check packages/methods/**/*.ts",
+    "test": "deno test --allow-read",
+    "test:core": "deno test packages/core/",
+    "test:lang": "deno test --allow-read packages/lang/",
     "cli": "echo \"import '\\$fresh/src/dev/cli.ts'\" | deno run --unstable -A -",
     "manifest": "deno task cli manifest $(pwd)",
     "start": "deno run -A --watch=static/,routes/ dev.ts",

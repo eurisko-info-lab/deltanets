@@ -6,6 +6,7 @@ import {
   isDraggingSplitter, codeEditorRef,
   centerGraph,
 } from "../lib/appState.ts";
+import { STORAGE_KEYS } from "../lib/config.ts";
 
 /** Window resize handling, splitter drag tracking, and Monaco theme sync. */
 export function useEditorLayout() {
@@ -18,7 +19,7 @@ export function useEditorLayout() {
           (window.innerWidth - MIN_PANE_SIZE) - 3 * 8 - 4,
         );
         editorWidth.value = newEditorWidth;
-        window.localStorage.setItem("editorWidth", newEditorWidth.toString());
+        window.localStorage.setItem(STORAGE_KEYS.editorWidth, newEditorWidth.toString());
         codeEditorRef.current.layout({
           height: window.innerHeight - 44 - 3 * 8 - 2,
           width: newEditorWidth,
@@ -34,7 +35,7 @@ export function useEditorLayout() {
         (window.innerWidth - MIN_PANE_SIZE) - 3 * 8 - 4,
       );
       editorWidth.value = newEditorWidth;
-      window.localStorage.setItem("editorWidth", newEditorWidth.toString());
+      window.localStorage.setItem(STORAGE_KEYS.editorWidth, newEditorWidth.toString());
       codeEditorRef.current.layout({
         height: window.innerHeight - 44 - 3 * 8 - 2,
         width: newEditorWidth,

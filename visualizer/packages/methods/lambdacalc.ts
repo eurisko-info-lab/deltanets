@@ -6,7 +6,6 @@ import {
 import * as d3 from "d3";
 import { Edge, Enclosure, Label, Node2D, OPTIMAL_HIGHLIGHT_COLOR, Pos, SUBOPTIMAL_HIGHLIGHT_COLOR, TYPECHECK_ACTIVE_COLOR, TYPECHECK_DONE_COLOR, TYPECHECK_ERROR_COLOR } from "@deltanets/render";
 import { Method, MethodState } from "./index.ts";
-import { prettifyExpr } from "@deltanets/core";
 import { lambdacalc } from "@deltanets/core";
 
 const { clone, substitute, replace, freeVars, boundVars, astToString } = lambdacalc;
@@ -37,12 +36,11 @@ function init(ast: AstNode, systemType: SystemType, relativeLevel: boolean): Sta
 // Reduction callbacks update the internal AST.
 function render(
   state: Signal<State>,
-  expression: Signal<string>,
   systemType: SystemType,
   relativeLevel: boolean,
 ): Node2D {
   const currState = state.peek()!;
-  const tree = renderAstNode(state, expression, currState.stack[currState.idx], { x: 0, y: 0 }, { rc: 0 }, systemType);
+  const tree = renderAstNode(state, currState.stack[currState.idx], { x: 0, y: 0 }, { rc: 0 }, systemType);
 
   // If forward is undefined, set it to reduce the next redex in normal-order
   if (currState.forward === undefined && tree.redexes.length > 0) {
@@ -57,7 +55,6 @@ const DY = 40;
 
 function renderAstNode(
   state: Signal<State>,
-  expression: Signal<string>,
   astNode: AstNode,
   pos: Pos = { x: 0, y: 0 },
   // RedexCount is used internally to assign a unique class to each redex so we can highlight them.
@@ -94,7 +91,6 @@ function renderAstNode(
     // Render the body of the abstraction
     const body = renderAstNode(
       state,
-      expression,
       astNode.body,
       { x: 0, y: DY },
       redexCount,
@@ -162,7 +158,6 @@ function renderAstNode(
     // Render the function and the argument of the application
     const func = renderAstNode(
       state,
-      expression,
       astNode.func,
       { x: 0, y: DY },
       redexCount,
@@ -170,7 +165,6 @@ function renderAstNode(
     );
     const arg = renderAstNode(
       state,
-      expression,
       astNode.arg,
       { x: 0, y: DY },
       redexCount,
@@ -227,9 +221,6 @@ function renderAstNode(
           // Trigger state update
           batch(() => {
             state.value = { ...currState };
-            expression.value = prettifyExpr(
-              astToString(currState.stack[currState.idx]),
-            );
           });
         };
 
@@ -248,9 +239,6 @@ function renderAstNode(
           // Trigger state update
           batch(() => {
             state.value = { ...currState };
-            expression.value = prettifyExpr(
-              astToString(currState.stack[currState.idx]),
-            );
           });
         };
 
@@ -267,9 +255,6 @@ function renderAstNode(
           // Trigger state update
           batch(() => {
             state.value = { ...currState };
-            expression.value = prettifyExpr(
-              astToString(currState.stack[currState.idx]),
-            );
           });
         };
 
@@ -287,9 +272,6 @@ function renderAstNode(
           // Trigger state update
           batch(() => {
             state.value = { ...currState };
-            expression.value = prettifyExpr(
-              astToString(currState.stack[currState.idx]),
-            );
           });
         };
 
@@ -313,9 +295,6 @@ function renderAstNode(
         // Trigger state and expression update
         batch(() => {
           state.value = { ...currState };
-          expression.value = prettifyExpr(
-            astToString(currState.stack[currState.idx]),
-          );
         });
       }
       : undefined;

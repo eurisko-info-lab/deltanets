@@ -6,6 +6,7 @@ import {
   codeEditorRef, updateAst, selectINetGraph, enterTypeCheckMode, exitTypeCheckMode,
   parseErrors,
 } from "../lib/appState.ts";
+import { STORAGE_KEYS } from "../lib/config.ts";
 import { OPTIMAL_HIGHLIGHT_COLOR } from "@deltanets/render";
 import { typeToString, type SystemType } from "@deltanets/core";
 import { hasTypeAnnotations } from "@deltanets/core";
@@ -117,7 +118,7 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         aria-label="Reduction method"
         onChange={(e) => {
           const newMethod = (e?.target as HTMLSelectElement).value;
-          window.localStorage.setItem("method", newMethod);
+          window.localStorage.setItem(STORAGE_KEYS.method, newMethod);
           batch(() => {
             method.value = newMethod;
             selectedSystemType.value = systemType.value;
@@ -328,7 +329,7 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         }}
         onClick={() => {
           const newCenter = !center.peek();
-          window.localStorage.setItem("center", newCenter ? "true" : "false");
+          window.localStorage.setItem(STORAGE_KEYS.center, newCenter ? "true" : "false");
           center.value = newCenter;
         }}
       >
@@ -389,7 +390,7 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         }}
         onClick={() => {
           const newDebug = !debug.peek();
-          window.localStorage.setItem("debug", newDebug ? "true" : "false");
+          window.localStorage.setItem(STORAGE_KEYS.debug, newDebug ? "true" : "false");
           debug.value = newDebug;
         }}
       >
@@ -415,10 +416,10 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
         onClick={() => {
           if (theme.value === "light") {
             theme.value = "dark";
-            window.localStorage.setItem("theme", "dark");
+            window.localStorage.setItem(STORAGE_KEYS.theme, "dark");
           } else {
             theme.value = "light";
-            window.localStorage.setItem("theme", "light");
+            window.localStorage.setItem(STORAGE_KEYS.theme, "light");
           }
         }}
       >

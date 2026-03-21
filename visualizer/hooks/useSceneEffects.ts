@@ -6,7 +6,7 @@ import type { MethodState } from "@deltanets/methods";
 import {
   method, ast, scene, center, debug, theme,
   typeCheckMode, typeCheckSteps, typeCheckStepIdx,
-  isFirstLoad, lastExpression, selectedSystemType, relativeLevel,
+  isFirstLoad, selectedSystemType, relativeLevel,
   initializeStates, centerGraph,
 } from "../lib/appState.ts";
 
@@ -80,7 +80,6 @@ export function useSceneEffects() {
     // Render graph and update scene
     const node2D = currentMethod.render(
       currentState as Signal<MethodState<any, any>>,
-      lastExpression,
       selectedSystemType.value,
       relativeLevel.value,
     );

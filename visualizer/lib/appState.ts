@@ -8,16 +8,14 @@ import { METHODS } from "@deltanets/methods";
 import { typeReductionMode, agentStyles } from "@deltanets/methods";
 import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "@deltanets/lang";
 import type { CoreResult } from "@deltanets/lang";
+import { MAX_AUTO_SCALE, MIN_PANE_SIZE, STORAGE_KEYS } from "./config.ts";
 
-// Constants
+// Re-export for consumers that imported from here.
+export { MAX_AUTO_SCALE, MIN_PANE_SIZE } from "./config.ts";
+
 export const TITLE = "Interactive λ-Reduction";
-export const MAX_AUTO_SCALE = 1.5;
-export const MIN_PANE_SIZE = 200;
 
 // --- Signals ---
-
-// DEPRECATED - remove when possible
-export const lastExpression = signal<string>("");
 
 // Expression has error
 export const exprError = signal<boolean>(false);
@@ -26,19 +24,19 @@ export const exprError = signal<boolean>(false);
 export const parseErrors = signal<string[]>([]);
 
 // Reduction method
-const storedMethod = IS_BROWSER && window.localStorage.getItem("method");
+const storedMethod = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.method);
 export const method = signal<string>(storedMethod || Object.keys(METHODS)[0]);
 export const systemType = signal<SystemType>("full");
 export const selectedSystemType = signal<SystemType>("full");
 export const relativeLevel = signal<boolean>(false);
 
 // Theme
-const storedTheme = IS_BROWSER && window.localStorage.getItem("theme");
+const storedTheme = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.theme);
 export const theme = signal<"light" | "dark">(
   (storedTheme as "light" | "dark") || "dark",
 );
 
-const storedEditorWidth = IS_BROWSER && window.localStorage.getItem("editorWidth");
+const storedEditorWidth = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.editorWidth);
 export const editorWidth = signal<number>(parseFloat(storedEditorWidth || "500"));
 
 // AST
@@ -51,11 +49,11 @@ export const typeResult = signal<TypeResult | null>(null);
 export const scene = signal<Node2D | null>(null);
 
 // Whether to automatically center the graph
-const storedCenter = IS_BROWSER && window.localStorage.getItem("center");
+const storedCenter = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.center);
 export const center = signal<boolean>(storedCenter !== null ? storedCenter === "true" : true);
 
 // Whether to render debugging helpers
-const storedDebug = IS_BROWSER && window.localStorage.getItem("debug");
+const storedDebug = IS_BROWSER && window.localStorage.getItem(STORAGE_KEYS.debug);
 export const debug = signal<boolean>(storedDebug !== null ? storedDebug === "true" : false);
 
 // Type check stepping mode
@@ -122,7 +120,7 @@ const formatErrors = (errs: unknown[]): string[] =>
 // --- Functions ---
 
 export const updateAst = (source: string) => {
-  window.localStorage.setItem("source", source);
+  window.localStorage.setItem(STORAGE_KEYS.source, source);
 
   if (source.length === 0) {
     scene.value = null;

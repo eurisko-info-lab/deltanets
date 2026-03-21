@@ -19,7 +19,6 @@ export type Method<Elem, Data> = {
   initFromGraph?: (graph: Graph) => MethodState<Elem, Data>;
   render: (
     state: Signal<MethodState<Elem, Data>>,
-    expression: Signal<string>,
     systemType: SystemType,
     relativeLevel: boolean,
   ) => Node2D;
