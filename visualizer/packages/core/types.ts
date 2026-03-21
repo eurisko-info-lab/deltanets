@@ -64,6 +64,17 @@ export const Ports = {
 // A reducible pair of interacting nodes.
 export type Redex = { a: Node; b: Node; optimal: boolean; reduce: () => void };
 
+// A declared interaction rule between two agent types.
+// This is a core-level mirror of the lang-level RuleDef, kept minimal to avoid
+// a circular dependency between @deltanets/core and @deltanets/lang.
+export type InteractionRule = {
+  agentA: string;
+  agentB: string;
+  action:
+    | { kind: "builtin"; name: "annihilate" | "erase" | "commute" | "aux-fan" }
+    | { kind: "custom"; body: unknown[] };
+};
+
 // The interface that any interaction net system must implement.
 // This enables swapping between different graph implementations (e.g., Δ-Nets, HVM).
 export interface InteractionSystem {
@@ -77,6 +88,7 @@ export interface InteractionSystem {
     graph: Graph,
     systemType: SystemType,
     relativeLevel: boolean,
+    rules?: InteractionRule[],
   ): Redex[];
   getRedex(a: Node, b: Node, redexes: Redex[]): Redex | undefined;
   findReachableNodes(graph: Graph): Set<Node>;

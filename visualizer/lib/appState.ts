@@ -3,6 +3,7 @@ import { IS_BROWSER } from "$fresh/runtime.ts";
 import {
   AstNode,
   getExpressionType,
+  type InteractionRule,
   parseSource,
   SystemType,
 } from "@deltanets/core";
@@ -139,6 +140,7 @@ const applyAst = (astNode: AstNode | null) => {
 /** Set state for a graph extracted from .inet (no AST, deltanets method). Call inside batch. */
 const applyINetGraph = (
   graph: Parameters<NonNullable<typeof METHODS.deltanets.initFromGraph>>[0],
+  rules?: InteractionRule[],
 ) => {
   const initFromGraph = METHODS.deltanets.initFromGraph;
   if (!initFromGraph) return false;
@@ -150,7 +152,7 @@ const applyINetGraph = (
   typeCheckMode.value = false;
   typeCheckStepIdx.value = -1;
   method.value = "deltanets";
-  METHODS.deltanets.state.value = initFromGraph(graph);
+  METHODS.deltanets.state.value = initFromGraph(graph, rules);
   return true;
 };
 
@@ -171,6 +173,17 @@ const formatErrors = (errs: unknown[]): string[] =>
   errs.map((e) =>
     typeof e === "string" ? e : (e as { message?: string }).message ?? String(e)
   );
+
+/** Collect all interaction rules from all systems in a CoreResult. */
+const collectRules = (core: CoreResult): InteractionRule[] => {
+  const rules: InteractionRule[] = [];
+  for (const sys of core.systems.values()) {
+    for (const r of sys.rules) {
+      rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+    }
+  }
+  return rules;
+};
 
 // --- Functions ---
 
@@ -207,6 +220,7 @@ export const updateAst = (source: string) => {
         return;
       }
       if (extracted && extracted.kind === "graph") {
+        const rules = collectRules(result.core);
         batch(() => {
           inetMode.value = true;
           inetCore.value = result.core;
@@ -214,7 +228,7 @@ export const updateAst = (source: string) => {
           inetSelectedGraph.value = graphName;
           exprError.value = false;
           parseErrors.value = [];
-          applyINetGraph(extracted.graph);
+          applyINetGraph(extracted.graph, rules);
         });
         return;
       }
@@ -284,10 +298,11 @@ export const selectINetGraph = (graphName: string) => {
       })
     );
   } else if (extracted && extracted.kind === "graph") {
+    const rules = collectRules(core);
     withCenterReset(() =>
       batch(() => {
         inetSelectedGraph.value = graphName;
-        applyINetGraph(extracted.graph);
+        applyINetGraph(extracted.graph, rules);
         typeReductionMode.value = false;
         isFirstLoad.value = true;
       })
@@ -308,12 +323,15 @@ export const initializeStates = (astValue: AstNode | null) => {
   if (astValue === null) {
     return;
   }
+  const core = inetCore.peek();
+  const rules = core ? collectRules(core) : undefined;
   batch(() =>
     Object.keys(METHODS).forEach((m) => {
       METHODS[m].state.value = METHODS[m].init(
         astValue,
         selectedSystemType.value,
         relativeLevel.value,
+        rules,
       );
     })
   );

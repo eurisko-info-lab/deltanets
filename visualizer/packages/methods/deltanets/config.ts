@@ -1,4 +1,5 @@
 import { signal } from "@preact/signals";
+import type { InteractionRule } from "@deltanets/core";
 import type { AgentRole, AgentStyleDef } from "@deltanets/lang";
 
 // Agent visual styles from .iview files
@@ -44,4 +45,8 @@ export function getRole(type: string): AgentRole | undefined {
 export const typeReductionMode = signal(false);
 
 // Method-specific data
-export type Data = { appliedFinalStep: boolean; isFinalStep: boolean };
+export type Data = {
+  appliedFinalStep: boolean;
+  isFinalStep: boolean;
+  rules?: InteractionRule[];
+};

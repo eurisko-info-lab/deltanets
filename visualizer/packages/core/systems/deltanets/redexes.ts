@@ -27,6 +27,7 @@ import {
   reduceAuxFan,
   reduceEraseRule,
 } from "./helpers.ts";
+import type { InteractionRule } from "../../types.ts";
 
 export function getRedex(
   a: Node,
@@ -41,10 +42,24 @@ export function getRedex(
   return undefined;
 }
 
+/** Look up a rule by the two interacting agent types. */
+function findRule(
+  typeA: string,
+  typeB: string,
+  rules: InteractionRule[],
+): InteractionRule | undefined {
+  return rules.find(
+    (r) =>
+      (r.agentA === typeA && r.agentB === typeB) ||
+      (r.agentA === typeB && r.agentB === typeA),
+  );
+}
+
 export function getRedexes(
   graph: Graph,
   systemType: SystemType,
   relativeLevel: boolean,
+  rules?: InteractionRule[],
 ): Redex[] {
   const redexes: Redex[] = [];
 
@@ -193,6 +208,34 @@ export function getRedexes(
             false,
             () => reduceEraseRule(node, node.ports[0].node, graph),
           );
+        } else if (
+          rules !== undefined &&
+          findRule(node.type, node.ports[0].node.type, rules) !== undefined
+        ) {
+          // Dynamic rule lookup from .inet system definitions
+          const rule = findRule(node.type, node.ports[0].node.type, rules)!;
+          if (rule.action.kind === "builtin") {
+            if (rule.action.name === "annihilate") {
+              createRedex(
+                node,
+                node.ports[0].node,
+                false,
+                () => reduceAnnihilate(node, graph),
+              );
+            } else if (rule.action.name === "erase") {
+              createRedex(
+                node,
+                node.ports[0].node,
+                false,
+                () => reduceEraseRule(node, node.ports[0].node, graph),
+              );
+            } else if (rule.action.name === "commute") {
+              createRedex(node, node.ports[0].node, false, () => {
+                reduceCommute(node, graph);
+              });
+            }
+            // custom rules will be handled in a future phase
+          }
         } else if (
           node.type.startsWith("rep") &&
           !node.ports[0].node.type.startsWith("rep") &&

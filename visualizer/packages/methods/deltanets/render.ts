@@ -47,7 +47,12 @@ export function render(
   });
 
   // Get redexes, filtered by reduction mode
-  const allRedexes = getRedexes(graph, systemType, relativeLevel);
+  const allRedexes = getRedexes(
+    graph,
+    systemType,
+    relativeLevel,
+    currState.data.rules,
+  );
   const redexes = typeReductionMode.value
     ? allRedexes.filter((r) =>
       !isExprAgentFromStyles(r.a.type) || !isExprAgentFromStyles(r.b.type)
