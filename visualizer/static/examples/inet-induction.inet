@@ -1,0 +1,196 @@
+# Inductive Proofs — Proof Construction by Recursion
+#
+# Introduces the first inductive proof agent: plus_zero_right.
+# Given a natural number n, it *constructs* a proof that n + 0 = n
+# by structural recursion on n.
+#
+# Key insight: induction is just interaction.  The agent walks down
+# the number, emitting one cong_succ per Succ, until it hits Zero
+# and emits refl.  Then the chain of cong_succ's collapses to refl.
+#
+# Watch the reduction: you can literally see the induction unfold.
+
+include "prelude"
+
+# ─── Nat system (Peano arithmetic) ────────────────────────────────
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> {
+    relink left.result left.accum
+  }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+# ─── Eq system (propositional equality) ───────────────────────────
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent cong(principal, result, func)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> {
+    relink left.result left.value
+  }
+  rule sym <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+  rule cong <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.func
+  }
+  rule trans <> refl -> {
+    relink left.result left.second
+  }
+}
+
+# ─── NatEq: congruence for Succ ──────────────────────────────────
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ─── Induction: proof-producing agents ───────────────────────────
+
+system "Induction" extend "NatEq" {
+
+  # plus_zero_right: ∀ n. n + 0 = n
+  #
+  #   Eats a Nat on its principal port and emits an Eq proof
+  #   on its result port.
+  #
+  #   Base case  (n = Zero):
+  #     0 + 0 = 0 is trivially refl.
+  #
+  #   Step case  (n = Succ(m)):
+  #     By recursion we get a proof p : m + 0 = m.
+  #     Apply cong_succ to obtain Succ(m + 0) = Succ(m).
+  #     Since add(Succ(m), Zero) computes to Succ(add(m, Zero)),
+  #     this is exactly a proof that Succ(m) + 0 = Succ(m).
+  agent plus_zero_right(principal, result)
+
+  rule plus_zero_right <> Zero -> {
+    let r = refl
+    relink left.result r.principal
+  }
+
+  rule plus_zero_right <> Succ -> {
+    let pzr = plus_zero_right
+    let cs  = cong_succ
+    relink left.result cs.result
+    wire cs.principal -- pzr.result
+    relink right.pred pzr.principal
+  }
+}
+
+# ─── Example Graphs ───────────────────────────────────────────────
+#
+# Each graph feeds a concrete number to plus_zero_right and
+# watches the proof unfold.  The result is always refl.
+#
+# Steps = 2n + 1:  n unwinds of Succ, 1 base case, n collapses
+# of cong_succ.
+
+# ─── n = 0: one step ─────────────────────────────────────────────
+# plus_zero_right(Zero) → refl               (1 step)
+graph pzr-zero {
+  let r   = root
+  let pzr = plus_zero_right
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- z.principal
+}
+
+# ─── n = 1: three steps ──────────────────────────────────────────
+# plus_zero_right(Succ(Zero))
+#   → cong_succ(plus_zero_right(Zero))
+#   → cong_succ(refl)
+#   → refl                                   (3 steps)
+graph pzr-one {
+  let r   = root
+  let pzr = plus_zero_right
+  let s   = Succ
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- s.principal
+  wire s.pred        -- z.principal
+}
+
+# ─── n = 2: five steps ───────────────────────────────────────────
+# plus_zero_right(Succ(Succ(Zero)))
+#   → cong_succ(plus_zero_right(Succ(Zero)))
+#   → cong_succ(cong_succ(plus_zero_right(Zero)))
+#   → cong_succ(cong_succ(refl))
+#   → cong_succ(refl)
+#   → refl                                   (5 steps)
+graph pzr-two {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z.principal
+}
+
+# ─── n = 3: seven steps ──────────────────────────────────────────
+# plus_zero_right(Succ(Succ(Succ(Zero))))     (7 steps)
+graph pzr-three {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let s3  = Succ
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- s3.principal
+  wire s3.pred       -- z.principal
+}
+
+# ─── Verification: proof agrees with computation ─────────────────
+# Build the *actual* computation add(Succ(Succ(Zero)), Zero)
+# via subst, alongside refl, and watch everything collapse.
+# This checks that the equational proof and the computational
+# reduction agree: 2 + 0 = 2 both by addition and by proof.
+graph verify-two-plus-zero {
+  let r   = root
+  let sub = subst
+  let rf  = refl
+  let a   = add
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- sub.result
+  wire sub.principal -- rf.principal
+  wire sub.value     -- a.result
+  wire a.principal   -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z1.principal
+  wire a.accum       -- z2.principal
+}
