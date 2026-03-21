@@ -45,13 +45,20 @@ export type ComposeDecl = {
 // Items allowed inside a system body
 export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl;
 
-// prove name(param, ...) { | Constructor -> expr ... }
+// prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }
 // Desugars into an AgentDecl + RuleDecl[] during evaluation.
+// Optional type annotations enable dependent type checking.
 export type ProveDecl = {
   kind: "prove";
   name: string;
-  params: string[]; // first = principal (induction var), rest = aux ports
+  params: ProveParam[]; // first = principal (induction var), rest = aux ports
+  returnType?: ProveExpr; // optional: the proposition being proved
   cases: ProveCase[];
+};
+
+export type ProveParam = {
+  name: string;
+  type?: ProveExpr; // optional type annotation (e.g., Nat)
 };
 
 export type ProveCase = {

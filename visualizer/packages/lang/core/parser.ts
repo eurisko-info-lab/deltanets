@@ -455,12 +455,18 @@ class Parser {
     this.eat(TT.PROVE);
     const name = this.eatIdent();
     this.eat(TT.LPAREN);
-    const params: string[] = [this.eatIdent()];
+    const params: AST.ProveParam[] = [this.parseProveParam()];
     while (this.check(TT.COMMA)) {
       this.advance();
-      params.push(this.eatIdent());
+      params.push(this.parseProveParam());
     }
     this.eat(TT.RPAREN);
+    // Optional return type: -> TypeExpr
+    let returnType: AST.ProveExpr | undefined;
+    if (this.check(TT.ARROW)) {
+      this.advance();
+      returnType = this.parseProveExpr();
+    }
     this.eat(TT.LBRACE);
     const cases: AST.ProveCase[] = [];
     while (this.check(TT.PIPE)) {
@@ -483,7 +489,17 @@ class Parser {
       cases.push({ pattern, bindings, body });
     }
     this.eat(TT.RBRACE);
-    return { kind: "prove", name, params, cases };
+    return { kind: "prove", name, params, returnType, cases };
+  }
+
+  parseProveParam(): AST.ProveParam {
+    const name = this.eatIdent();
+    if (this.check(TT.COLON)) {
+      this.advance();
+      const type = this.parseProveExpr();
+      return { name, type };
+    }
+    return { name };
   }
 
   parseProveExpr(): AST.ProveExpr {

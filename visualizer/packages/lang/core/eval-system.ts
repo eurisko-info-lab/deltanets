@@ -6,6 +6,7 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
+import { typecheckProve } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl): SystemDef {
   const agents = new Map<string, AgentDef>();
@@ -53,6 +54,11 @@ export function evalBodyInto(
         agents.set(agent.name, agent);
         for (const r of ruleDecls) {
           rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+        }
+        // Type check if return type is annotated
+        const typeErrors = typecheckProve(item);
+        if (typeErrors.length > 0) {
+          throw new EvalError(typeErrors.join("\n"));
         }
         break;
       }
@@ -140,11 +146,11 @@ function desugarProve(
   agents: Map<string, AgentDef>,
 ): { agentDecl: AST.AgentDecl; ruleDecls: AST.RuleDecl[] } {
   // Build agent: (principal, result, ...auxParams)
-  const auxParams = prove.params.slice(1);
+  const auxParamNames = prove.params.slice(1).map((p) => p.name);
   const ports: AST.PortDef[] = [
     { name: "principal", variadic: false },
     { name: "result", variadic: false },
-    ...auxParams.map((p) => ({ name: p, variadic: false })),
+    ...auxParamNames.map((p) => ({ name: p, variadic: false })),
   ];
   const agentDecl: AST.AgentDecl = { kind: "agent", name: prove.name, ports };
 
@@ -180,7 +186,7 @@ function desugarProve(
         port: consAuxPorts[i].name,
       });
     }
-    for (const p of auxParams) {
+    for (const p of auxParamNames) {
       varMap.set(p, { node: "left", port: p });
     }
 
@@ -250,7 +256,7 @@ function desugarProve(
     }
 
     // Erase unused auxiliary parameters
-    for (const p of auxParams) {
+    for (const p of auxParamNames) {
       if (!usedVars.has(p)) {
         stmts.push({ kind: "erase-stmt", port: { node: "left", port: p } });
       }

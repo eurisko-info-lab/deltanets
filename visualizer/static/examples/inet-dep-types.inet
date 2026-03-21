@@ -1,0 +1,235 @@
+# Dependent Types — Type-Checked Proofs
+#
+# The `prove` keyword now supports type annotations:
+#
+#   prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+#     | Zero -> refl
+#     | Succ(k) -> cong_succ(plus_zero_right(k))
+#   }
+#
+# Types that depend on VALUES — the return type `Eq(add(n, Zero), n)`
+# mentions the parameter `n`.  At compile time, each case arm is
+# type-checked against the proposition:
+#
+#   Zero case:  Eq(add(Zero, Zero), Zero) normalizes to Eq(Zero, Zero)
+#               → refl checks out (both sides equal) ✓
+#
+#   Succ case:  Eq(add(Succ(k), Zero), Succ(k))
+#               normalizes to Eq(Succ(add(k, Zero)), Succ(k))
+#               → cong_succ(IH) where IH : Eq(add(k, Zero), k) ✓
+#
+# This is the Curry-Howard correspondence: propositions are types,
+# proofs are programs, and type checking verifies correctness.
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent cong(principal, result, func)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> { relink left.result left.value }
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule cong <> refl -> { let r = refl  relink left.result r.principal  erase left.func }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Typed proofs — compile-time verified propositions
+# ═══════════════════════════════════════════════════════════════════
+
+system "DepTypedProofs" extend "NatEq" {
+  # ∀n. add(n, 0) = n
+  prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+
+  # ∀n,m. add(n, S(m)) = S(add(n, m))
+  prove plus_succ_right(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_succ_right(k, m))
+  }
+
+  # ∀n,m. add(n, m) = add(m, n)  — commutativity of addition
+  # Uses trans to chain two sub-lemmas together.
+  # Note: not all proof combinators are automatically typecheck-able yet
+  # (plus_comm requires ad-hoc type rules for the second recursion)
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Example Graphs
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── plus_zero_right ────────────────────────────────────────────────
+
+# pzr(0) → refl  [1 step]
+graph pzr-zero {
+  let r   = root
+  let pzr = plus_zero_right
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- z.principal
+}
+
+# pzr(1) → refl  [3 steps]
+graph pzr-one {
+  let r   = root
+  let pzr = plus_zero_right
+  let s   = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s.principal
+  wire s.pred       -- z.principal
+}
+
+# pzr(2) → refl  [5 steps]
+graph pzr-two {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z.principal
+}
+
+# pzr(3) → refl  [7 steps]
+graph pzr-three {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let s3  = Succ
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- s3.principal
+  wire s3.pred       -- z.principal
+}
+
+# ─── plus_succ_right ───────────────────────────────────────────────
+
+# psr(0, 0) → refl  [2 steps]
+graph psr-zero-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# psr(1, 0) → refl  [4 steps]
+graph psr-one-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let s   = Succ
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s.principal
+  wire s.pred        -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# psr(2, 1) → refl  [7 steps]
+graph psr-two-one {
+  let r   = root
+  let psr = plus_succ_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  let sm  = Succ
+  let zm  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z.principal
+  wire psr.m         -- sm.principal
+  wire sm.pred       -- zm.principal
+}
+
+# ─── verification via subst ────────────────────────────────────────
+
+# subst(pzr(2), add(2, 0)) → S(S(Zero))
+graph verify-pzr-typed {
+  let r   = root
+  let sub = subst
+  let pzr = plus_zero_right
+  let add1 = add
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let s3  = Succ
+  let s4  = Succ
+  let z2  = Zero
+  let z3  = Zero
+  wire r.principal    -- sub.result
+  wire sub.principal  -- pzr.result
+  wire sub.value      -- add1.result
+  wire pzr.principal  -- s1.principal
+  wire s1.pred        -- s2.principal
+  wire s2.pred        -- z1.principal
+  wire add1.principal -- s3.principal
+  wire s3.pred        -- s4.principal
+  wire s4.pred        -- z2.principal
+  wire add1.accum     -- z3.principal
+}
+
+# subst(psr(1, 1), add(1, S(1))) → S(S(S(Zero)))
+graph verify-psr-typed {
+  let r   = root
+  let sub = subst
+  let psr = plus_succ_right
+  let add1 = add
+  let s1  = Succ
+  let z1  = Zero
+  let sm  = Succ
+  let zm  = Zero
+  let s2  = Succ
+  let s3  = Succ
+  let z2  = Zero
+  let z3  = Zero
+  wire r.principal    -- sub.result
+  wire sub.principal  -- psr.result
+  wire sub.value      -- add1.result
+  wire psr.principal  -- s1.principal
+  wire s1.pred        -- z1.principal
+  wire psr.m          -- sm.principal
+  wire sm.pred        -- zm.principal
+  wire add1.principal -- s2.principal
+  wire s2.pred        -- z2.principal
+  wire add1.accum     -- s3.principal
+  wire s3.pred        -- z3.principal
+}
