@@ -27,7 +27,8 @@ import {
   reduceAuxFan,
   reduceEraseRule,
 } from "./helpers.ts";
-import type { InteractionRule } from "../../types.ts";
+import type { AgentPortDefs, InteractionRule } from "../../types.ts";
+import { reduceCustomRule } from "./custom-rules.ts";
 
 export function getRedex(
   a: Node,
@@ -60,6 +61,7 @@ export function getRedexes(
   systemType: SystemType,
   relativeLevel: boolean,
   rules?: InteractionRule[],
+  agentPorts?: AgentPortDefs,
 ): Redex[] {
   const redexes: Redex[] = [];
 
@@ -234,7 +236,12 @@ export function getRedexes(
                 reduceCommute(node, graph);
               });
             }
-            // custom rules will be handled in a future phase
+          } else if (rule.action.kind === "custom" && agentPorts) {
+            const left = node.type === rule.agentA ? node : node.ports[0].node;
+            const right = left === node ? node.ports[0].node : node;
+            createRedex(node, node.ports[0].node, false, () => {
+              reduceCustomRule(left, right, graph, rule, agentPorts);
+            });
           }
         } else if (
           node.type.startsWith("rep") &&

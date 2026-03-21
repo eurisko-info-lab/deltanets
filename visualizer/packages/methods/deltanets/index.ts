@@ -1,5 +1,10 @@
 import { signal } from "@preact/signals";
-import { AstNode, type InteractionRule, SystemType } from "@deltanets/core";
+import {
+  AstNode,
+  type AgentPortDefs,
+  type InteractionRule,
+  SystemType,
+} from "@deltanets/core";
 import { deltanets, type Graph } from "@deltanets/core";
 import { type Method, type MethodState } from "../index.ts";
 import { type Data } from "./config.ts";
@@ -20,6 +25,7 @@ function init(
   systemType: SystemType,
   relativeLevel: boolean,
   rules?: InteractionRule[],
+  agentPorts?: AgentPortDefs,
 ): State {
   const graph = deltanets.buildGraph(ast, systemType, relativeLevel);
   return {
@@ -27,17 +33,21 @@ function init(
     forward: undefined,
     idx: 0,
     stack: [graph],
-    data: { appliedFinalStep: false, isFinalStep: false, rules },
+    data: { appliedFinalStep: false, isFinalStep: false, rules, agentPorts },
   };
 }
 
-function initFromGraph(graph: Graph, rules?: InteractionRule[]): State {
+function initFromGraph(
+  graph: Graph,
+  rules?: InteractionRule[],
+  agentPorts?: AgentPortDefs,
+): State {
   return {
     back: undefined,
     forward: undefined,
     idx: 0,
     stack: [graph],
-    data: { appliedFinalStep: false, isFinalStep: false, rules },
+    data: { appliedFinalStep: false, isFinalStep: false, rules, agentPorts },
   };
 }
 

@@ -2,6 +2,7 @@ import { batch, signal } from "@preact/signals";
 import { IS_BROWSER } from "$fresh/runtime.ts";
 import {
   AstNode,
+  type AgentPortDefs,
   getExpressionType,
   type InteractionRule,
   parseSource,
@@ -141,6 +142,7 @@ const applyAst = (astNode: AstNode | null) => {
 const applyINetGraph = (
   graph: Parameters<NonNullable<typeof METHODS.deltanets.initFromGraph>>[0],
   rules?: InteractionRule[],
+  agentPorts?: AgentPortDefs,
 ) => {
   const initFromGraph = METHODS.deltanets.initFromGraph;
   if (!initFromGraph) return false;
@@ -152,7 +154,7 @@ const applyINetGraph = (
   typeCheckMode.value = false;
   typeCheckStepIdx.value = -1;
   method.value = "deltanets";
-  METHODS.deltanets.state.value = initFromGraph(graph, rules);
+  METHODS.deltanets.state.value = initFromGraph(graph, rules, agentPorts);
   return true;
 };
 
@@ -183,6 +185,19 @@ const collectRules = (core: CoreResult): InteractionRule[] => {
     }
   }
   return rules;
+};
+
+/** Collect port-name → index maps for all agents across all systems. */
+const collectAgentPorts = (core: CoreResult): AgentPortDefs => {
+  const defs: AgentPortDefs = new Map();
+  for (const sys of core.systems.values()) {
+    for (const [name, agent] of sys.agents) {
+      if (!defs.has(name)) {
+        defs.set(name, agent.portIndex);
+      }
+    }
+  }
+  return defs;
 };
 
 // --- Functions ---
@@ -221,6 +236,7 @@ export const updateAst = (source: string) => {
       }
       if (extracted && extracted.kind === "graph") {
         const rules = collectRules(result.core);
+        const ports = collectAgentPorts(result.core);
         batch(() => {
           inetMode.value = true;
           inetCore.value = result.core;
@@ -228,7 +244,7 @@ export const updateAst = (source: string) => {
           inetSelectedGraph.value = graphName;
           exprError.value = false;
           parseErrors.value = [];
-          applyINetGraph(extracted.graph, rules);
+          applyINetGraph(extracted.graph, rules, ports);
         });
         return;
       }
@@ -299,10 +315,11 @@ export const selectINetGraph = (graphName: string) => {
     );
   } else if (extracted && extracted.kind === "graph") {
     const rules = collectRules(core);
+    const ports = collectAgentPorts(core);
     withCenterReset(() =>
       batch(() => {
         inetSelectedGraph.value = graphName;
-        applyINetGraph(extracted.graph, rules);
+        applyINetGraph(extracted.graph, rules, ports);
         typeReductionMode.value = false;
         isFirstLoad.value = true;
       })
@@ -325,6 +342,7 @@ export const initializeStates = (astValue: AstNode | null) => {
   }
   const core = inetCore.peek();
   const rules = core ? collectRules(core) : undefined;
+  const ports = core ? collectAgentPorts(core) : undefined;
   batch(() =>
     Object.keys(METHODS).forEach((m) => {
       METHODS[m].state.value = METHODS[m].init(
@@ -332,6 +350,7 @@ export const initializeStates = (astValue: AstNode | null) => {
         selectedSystemType.value,
         relativeLevel.value,
         rules,
+        ports,
       );
     })
   );

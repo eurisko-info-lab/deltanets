@@ -64,16 +64,38 @@ export const Ports = {
 // A reducible pair of interacting nodes.
 export type Redex = { a: Node; b: Node; optimal: boolean; reduce: () => void };
 
-// A declared interaction rule between two agent types.
-// This is a core-level mirror of the lang-level RuleDef, kept minimal to avoid
-// a circular dependency between @deltanets/core and @deltanets/lang.
+// ─── Data-driven interaction rules ─────────────────────────────────
+// These are core-level mirrors of the lang-level RuleDef/RuleStmt types,
+// kept minimal to avoid a circular dependency between @deltanets/core and
+// @deltanets/lang.
+
+/** Port reference inside a custom rule body. */
+export type RulePortRef = {
+  node: string; // "left" | "right" | variable name introduced by let
+  port: string; // named port or numeric index (as string)
+};
+
+/** Statements that form the body of a custom interaction rule. */
+export type RuleStmt =
+  | { kind: "let"; varName: string; agentType: string; label?: string }
+  | { kind: "wire"; portA: RulePortRef; portB: RulePortRef }
+  | { kind: "relink"; portA: RulePortRef; portB: RulePortRef }
+  | { kind: "erase-stmt"; port: RulePortRef };
+
+/** A declared interaction rule between two agent types. */
 export type InteractionRule = {
   agentA: string;
   agentB: string;
   action:
     | { kind: "builtin"; name: "annihilate" | "erase" | "commute" | "aux-fan" }
-    | { kind: "custom"; body: unknown[] };
+    | { kind: "custom"; body: RuleStmt[] };
 };
+
+/**
+ * Port-name → index maps for all agents in a system.
+ * Passed alongside InteractionRule[] to resolve named ports in custom rules.
+ */
+export type AgentPortDefs = Map<string, Map<string, number>>;
 
 // The interface that any interaction net system must implement.
 // This enables swapping between different graph implementations (e.g., Δ-Nets, HVM).
@@ -89,6 +111,7 @@ export interface InteractionSystem {
     systemType: SystemType,
     relativeLevel: boolean,
     rules?: InteractionRule[],
+    agentPorts?: AgentPortDefs,
   ): Redex[];
   getRedex(a: Node, b: Node, redexes: Redex[]): Redex | undefined;
   findReachableNodes(graph: Graph): Set<Node>;

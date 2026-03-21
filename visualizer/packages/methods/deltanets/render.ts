@@ -52,6 +52,7 @@ export function render(
     systemType,
     relativeLevel,
     currState.data.rules,
+    currState.data.agentPorts,
   );
   const redexes = typeReductionMode.value
     ? allRedexes.filter((r) =>

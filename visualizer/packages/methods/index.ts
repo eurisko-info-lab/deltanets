@@ -1,4 +1,9 @@
-import { AstNode, type InteractionRule, SystemType } from "@deltanets/core";
+import {
+  AstNode,
+  type AgentPortDefs,
+  type InteractionRule,
+  SystemType,
+} from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
 import { Node2D } from "@deltanets/render";
 import { Signal } from "@preact/signals";
@@ -20,8 +25,13 @@ export type Method<Elem, Data> = {
     systemType: SystemType,
     relativeLevel: boolean,
     rules?: InteractionRule[],
+    agentPorts?: AgentPortDefs,
   ) => MethodState<Elem, Data>;
-  initFromGraph?: (graph: Graph, rules?: InteractionRule[]) => MethodState<Elem, Data>;
+  initFromGraph?: (
+    graph: Graph,
+    rules?: InteractionRule[],
+    agentPorts?: AgentPortDefs,
+  ) => MethodState<Elem, Data>;
   render: (
     state: Signal<MethodState<Elem, Data>>,
     systemType: SystemType,

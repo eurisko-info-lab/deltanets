@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import type { InteractionRule } from "@deltanets/core";
+import type { AgentPortDefs, InteractionRule } from "@deltanets/core";
 import type { AgentRole, AgentStyleDef } from "@deltanets/lang";
 
 // Agent visual styles from .iview files
@@ -49,4 +49,5 @@ export type Data = {
   appliedFinalStep: boolean;
   isFinalStep: boolean;
   rules?: InteractionRule[];
+  agentPorts?: AgentPortDefs;
 };
