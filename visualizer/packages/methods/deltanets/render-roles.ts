@@ -595,3 +595,73 @@ export function renderReplicatorOutAgent(
 
   return { node2D, endpoints };
 }
+
+// Render a generic agent — fallback for custom/unknown agent types.
+// Draws a label and renders all non-entry ports as child subtrees.
+export function renderGenericAgent(
+  nodePort: NodePort,
+  state: Signal<State>,
+  redexes: Redex[],
+  level: number,
+): { node2D: Node2D; endpoints: Endpoint[] } {
+  const node2D = new Node2D();
+  let endpoints: Endpoint[] = [];
+  nodePort.node.isCreated = true;
+
+  const label = new Label(nodePort.node.label || nodePort.node.type);
+  applyTypeCheckHighlight(label, nodePort.node);
+
+  const entryPort = nodePort.port;
+  const auxPorts = nodePort.node.ports
+    .map((p, i) => ({ ref: p, idx: i }))
+    .filter((p) => p.idx !== entryPort);
+
+  // Layout children spread horizontally below the label
+  const spacing = Fan.PORT_DELTA;
+  const totalWidth = Math.max(0, (auxPorts.length - 1) * spacing);
+  const startX = -totalWidth / 2;
+
+  auxPorts.forEach((aux, i) => {
+    const childPortRef = aux.ref;
+    const { node2D: child, endpoints: childEPs } = renderNodePort(
+      childPortRef,
+      state,
+      redexes,
+      level,
+    );
+    const xPos = startX + i * spacing;
+    child.pos.x = xPos;
+    child.pos.y = child.isWireEndpoint
+      ? Label.SIZE * 2
+      : label.bounds.max.y - child.bounds.min.y;
+
+    const redex = getRedex(nodePort.node, childPortRef.node, redexes);
+
+    if (!child.isWireEndpoint) {
+      const wire = new Wire(
+        label,
+        child,
+        0,
+        redex?.reduce && (() => applyReduction(state, redex.reduce)),
+        levelColor(level),
+      );
+      if (redex?.optimal === false) {
+        wire.highlightColor = SUBOPTIMAL_HIGHLIGHT_COLOR;
+      }
+      wire.startOffset.x = xPos;
+      wire.startOffset.y = Label.SIZE;
+      node2D.add(wire);
+    } else {
+      const childEndpoint = childEPs.find((ep) =>
+        ep.nodePort === childPortRef
+      );
+      if (childEndpoint) childEndpoint.redex = redex;
+    }
+
+    node2D.add(child);
+    endpoints.push(...childEPs);
+  });
+
+  node2D.add(label);
+  return { node2D, endpoints };
+}

@@ -14,6 +14,7 @@ import {
   renderApplicatorAgent,
   renderBinderAgent,
   renderDestructorAgent,
+  renderGenericAgent,
   renderLeafAgent,
   renderReplicatorInAgent,
   renderReplicatorOutAgent,
@@ -86,6 +87,11 @@ export const renderNodePort = (
       break;
   }
 
-  // Unknown agent or wrong entry port — wire endpoint (will be connected later)
+  // Unknown role — render as generic agent if not yet created
+  if (!nodePort.node.isCreated) {
+    return renderGenericAgent(nodePort, state, redexes, level);
+  }
+
+  // Already-created or wrong entry port — wire endpoint
   return makeWireEndpoint(nodePort, level);
 };

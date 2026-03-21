@@ -100,11 +100,13 @@ export function reduceCustomRule(
         break;
       }
       case "relink": {
-        // Reconnect: portA's current neighbor gets connected to portB
+        // Reconnect: the neighbor of portA gets connected to the neighbor of portB.
+        // For new self-looped nodes, neighbor == self, so this also handles new↔old.
         const a = resolvePort(stmt.portA, env, agentPorts);
-        const neighbor = a.node.ports[a.port];
+        const neighborA = a.node.ports[a.port];
         const b = resolvePort(stmt.portB, env, agentPorts);
-        link(neighbor, b);
+        const neighborB = b.node.ports[b.port];
+        link(neighborA, neighborB);
         break;
       }
       case "erase-stmt": {
