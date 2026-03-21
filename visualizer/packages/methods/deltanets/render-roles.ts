@@ -616,12 +616,8 @@ export function renderGenericAgent(
     .map((p, i) => ({ ref: p, idx: i }))
     .filter((p) => p.idx !== entryPort);
 
-  // Layout children spread horizontally below the label
-  const spacing = Fan.PORT_DELTA;
-  const totalWidth = Math.max(0, (auxPorts.length - 1) * spacing);
-  const startX = -totalWidth / 2;
-
-  auxPorts.forEach((aux, i) => {
+  // Render all children first so we know their bounds
+  const renderedChildren = auxPorts.map((aux) => {
     const childPortRef = aux.ref;
     const { node2D: child, endpoints: childEPs } = renderNodePort(
       childPortRef,
@@ -629,11 +625,39 @@ export function renderGenericAgent(
       redexes,
       level,
     );
-    const xPos = startX + i * spacing;
+    return { childPortRef, child, childEPs };
+  });
+
+  // Compute horizontal positions based on actual subtree widths
+  const positions: number[] = [];
+  if (renderedChildren.length <= 1) {
+    positions.push(0);
+  } else {
+    let x = 0;
+    positions.push(0);
+    for (let i = 1; i < renderedChildren.length; i++) {
+      const prev = renderedChildren[i - 1].child;
+      const curr = renderedChildren[i].child;
+      const gap = Math.max(
+        Fan.PORT_DELTA,
+        prev.bounds.max.x - curr.bounds.min.x + Fan.PORT_DELTA,
+      );
+      x += gap;
+      positions.push(x);
+    }
+    // Center the group
+    const center = (positions[0] + positions[positions.length - 1]) / 2;
+    for (let i = 0; i < positions.length; i++) {
+      positions[i] -= center;
+    }
+  }
+
+  renderedChildren.forEach(({ childPortRef, child, childEPs }, i) => {
+    const xPos = positions[i];
     child.pos.x = xPos;
     child.pos.y = child.isWireEndpoint
       ? Label.SIZE * 2
-      : label.bounds.max.y - child.bounds.min.y;
+      : label.bounds.max.y - child.bounds.min.y + Fan.PORT_DELTA;
 
     const redex = getRedex(nodePort.node, childPortRef.node, redexes);
 

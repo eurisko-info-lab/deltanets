@@ -471,6 +471,25 @@ export function getRedexes(
         }
       } else if (node.type === "era") {
         // nothing to do
+      } else if (!isExprAgent(node.type) && !node.type.startsWith("rep")) {
+        // Generic/custom agent: check principal port for redex,
+        // traverse all auxiliary ports.
+        if (port !== 0) {
+          // Arrived at aux port: check if principal forms a redex
+          const other = node.ports[0].node;
+          if (node.ports[0].port === 0 && other.ports[0].node === node) {
+            const redex = getRedex(node, other, redexes);
+            if (redex) {
+              redex.optimal = true;
+              return true;
+            }
+          }
+        }
+        // Traverse other auxiliary ports
+        for (let i = 1; i < node.ports.length; i++) {
+          if (i === port) continue;
+          if (traverse(node.ports[i])) return true;
+        }
       }
       return false;
     };
@@ -518,6 +537,21 @@ export function getRedexes(
         return;
       } else if (node.type === "era") {
         // nothing to do
+      } else if (!isExprAgent(node.type) && !node.type.startsWith("rep")) {
+        // Generic/custom agent: check principal port, traverse aux ports.
+        if (port !== 0) {
+          const o = node.ports[0].node;
+          if (node.ports[0].port === 0 && o.ports[0].node === node) {
+            const redex = getRedex(node, o, redexes);
+            if (redex) {
+              redex.optimal = true;
+            }
+          }
+        }
+        for (let i = 1; i < node.ports.length; i++) {
+          if (i === port) continue;
+          traverse2(node.ports[i]);
+        }
       }
       return;
     };

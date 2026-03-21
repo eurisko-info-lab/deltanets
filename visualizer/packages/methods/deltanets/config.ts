@@ -5,12 +5,21 @@ import type { AgentRole, AgentStyleDef } from "@deltanets/lang";
 // Agent visual styles from .iview files
 export const agentStyles = signal<Map<string, AgentStyleDef>>(new Map());
 
-// Style-aware isExprAgent: checks style level, falls back to hardcoded set
+// Style-aware isExprAgent: checks style level, falls back to hardcoded set.
+// Unknown/custom agent types default to expression-level so their redexes
+// are not filtered out in the normal (non-type) reduction mode.
 const FALLBACK_EXPR_TYPES = new Set(["abs", "app", "var", "era", "root"]);
+const NON_EXPR_TYPES = new Set([
+  "type-base", "type-arrow", "type-hole", "kind-star", "kind-arrow",
+  "pi", "sigma", "forall",
+]);
 export function isExprAgentFromStyles(type: string): boolean {
   const style = agentStyles.peek().get(type);
   if (style?.level) return style.level === "expr";
-  return FALLBACK_EXPR_TYPES.has(type) || type.startsWith("rep");
+  if (FALLBACK_EXPR_TYPES.has(type) || type.startsWith("rep")) return true;
+  if (NON_EXPR_TYPES.has(type)) return false;
+  // Unknown/custom agent types are expression-level by default
+  return true;
 }
 
 // Infer agent role from type name (fallback when no style is loaded)
