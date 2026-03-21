@@ -20,6 +20,7 @@ for (
     "lambda.inet",
     "typing.inet",
     "lambda-cube.inet",
+    "lanes.inet",
   ]
 ) {
   Deno.test(`example: ${file} compiles`, async () => {

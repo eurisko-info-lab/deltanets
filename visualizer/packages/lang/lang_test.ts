@@ -274,3 +274,93 @@ Deno.test("include: circular includes are skipped", () => {
   assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
   assert(result.systems.has("S"));
 });
+
+// ─── Lane Views ────────────────────────────────────────────────────
+
+const laneSource = `
+lanes "Test Lanes" {
+  lane "Track A" { lines: 3 }
+  lane "Track B"
+
+  at 0 "Track A" place "Item1"
+  at 1 "Track B" place "Item2" duration 2
+  at 3 "Track A" place "Item3"
+
+  bar 0 "Start"
+  bar 4
+
+  link "Item1" -> "Item2" "depends"
+  link "Item2" -> "Item3"
+}
+`;
+
+Deno.test("lanes: compiles without errors", () => {
+  const result = compileCore(laneSource);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("lanes: produces lane view definition", () => {
+  const result = compileCore(laneSource);
+  assert(result.laneViews.has("Test Lanes"), "lane view exists");
+  const view = result.laneViews.get("Test Lanes")!;
+  assertEquals(view.name, "Test Lanes");
+});
+
+Deno.test("lanes: parses lane definitions", () => {
+  const result = compileCore(laneSource);
+  const view = result.laneViews.get("Test Lanes")!;
+  assertEquals(view.lanes.length, 2);
+  assertEquals(view.lanes[0].name, "Track A");
+  assertEquals(view.lanes[0].props.lines, 3);
+  assertEquals(view.lanes[1].name, "Track B");
+});
+
+Deno.test("lanes: parses items with position and duration", () => {
+  const result = compileCore(laneSource);
+  const view = result.laneViews.get("Test Lanes")!;
+  assertEquals(view.items.length, 3);
+  assertEquals(view.items[0], {
+    position: 0,
+    lane: "Track A",
+    label: "Item1",
+    duration: 0,
+  });
+  assertEquals(view.items[1], {
+    position: 1,
+    lane: "Track B",
+    label: "Item2",
+    duration: 2,
+  });
+});
+
+Deno.test("lanes: parses markers", () => {
+  const result = compileCore(laneSource);
+  const view = result.laneViews.get("Test Lanes")!;
+  assertEquals(view.markers.length, 2);
+  assertEquals(view.markers[0], { position: 0, label: "Start" });
+  assertEquals(view.markers[1], { position: 4, label: undefined });
+});
+
+Deno.test("lanes: parses links", () => {
+  const result = compileCore(laneSource);
+  const view = result.laneViews.get("Test Lanes")!;
+  assertEquals(view.links.length, 2);
+  assertEquals(view.links[0], {
+    from: "Item1",
+    to: "Item2",
+    label: "depends",
+  });
+  assertEquals(view.links[1], { from: "Item2", to: "Item3", label: undefined });
+});
+
+Deno.test("lanes: multiple lane views", () => {
+  const source = `
+    lanes "View A" { lane "X" }
+    lanes "View B" { lane "Y" }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  assertEquals(result.laneViews.size, 2);
+  assert(result.laneViews.has("View A"));
+  assert(result.laneViews.has("View B"));
+});

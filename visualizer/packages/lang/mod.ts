@@ -8,6 +8,7 @@ export type {
   CoreResult,
   GraphDef,
   IncludeResolver,
+  LaneViewDef,
   ModeDef,
   RuleDef,
   SystemDef,
@@ -19,6 +20,7 @@ export {
   type ExtractedGraph,
   extractGraph,
   isINetSource,
+  LANE_VIEW_PREFIX,
   resolveAgentStyles,
 } from "./bridge.ts";
 export { DEFAULT_IVIEW } from "./defaults.ts";

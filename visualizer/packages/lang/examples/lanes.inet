@@ -1,0 +1,43 @@
+# Swimming lanes example — domain-agnostic parallel tracks
+# Demonstrates: lanes, items, markers, and cross-lane links.
+
+lanes "Process Flow" {
+  lane "Client"   { lines: 0 }
+  lane "API"      { lines: 0 }
+  lane "Database" { lines: 0 }
+
+  at 0 "Client"   place "Request"
+  at 1 "API"      place "Validate"
+  at 2 "API"      place "Transform"
+  at 3 "Database" place "Query" duration 2
+  at 5 "API"      place "Serialize"
+  at 6 "Client"   place "Render"
+
+  bar 0 "Start"
+  bar 7 "End"
+
+  link "Request" -> "Validate"
+  link "Validate" -> "Transform"
+  link "Transform" -> "Query"
+  link "Query" -> "Serialize"
+  link "Serialize" -> "Render"
+}
+
+lanes "Timeline" {
+  lane "Design"     { lines: 0 }
+  lane "Engineering" { lines: 0 }
+  lane "QA"         { lines: 0 }
+
+  at 0 "Design"      place "Mockups" duration 2
+  at 2 "Engineering"  place "Frontend" duration 3
+  at 2 "Engineering"  place "Backend" duration 3
+  at 5 "QA"          place "Testing" duration 2
+
+  bar 0 "Sprint Start"
+  bar 7 "Sprint End"
+
+  link "Mockups" -> "Frontend"
+  link "Mockups" -> "Backend"
+  link "Frontend" -> "Testing"
+  link "Backend" -> "Testing"
+}

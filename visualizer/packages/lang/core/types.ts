@@ -14,7 +14,8 @@ export type Statement =
   | ModeDecl
   | GraphDecl
   | DefDecl
-  | IncludeDecl;
+  | IncludeDecl
+  | LanesDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -145,6 +146,52 @@ export type DefDecl = {
 export type IncludeDecl = {
   kind: "include";
   path: string;
+};
+
+// ─── Lane declarations ─────────────────────────────────────────────
+
+// lanes "name" { lane... at... bar... link... }
+export type LanesDecl = {
+  kind: "lanes";
+  name: string;
+  body: LaneStmt[];
+};
+
+export type LaneStmt =
+  | LaneDef
+  | LaneItem
+  | LaneMarker
+  | LaneLink;
+
+// lane "name" { key: value, ... }
+export type LaneDef = {
+  kind: "lane-def";
+  name: string;
+  props: Record<string, string | number>;
+};
+
+// at <pos> "lane" place "label" [duration <n>]
+export type LaneItem = {
+  kind: "lane-item";
+  position: number;
+  lane: string;
+  label: string;
+  duration: number; // 0 = point event
+};
+
+// bar <pos> ["label"]
+export type LaneMarker = {
+  kind: "lane-marker";
+  position: number;
+  label?: string;
+};
+
+// link "from" -> "to" ["label"]
+export type LaneLink = {
+  kind: "lane-link";
+  from: string;
+  to: string;
+  label?: string;
 };
 
 // Lambda calculus expressions

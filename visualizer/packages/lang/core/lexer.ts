@@ -24,6 +24,8 @@ export const TT = {
   EXTEND: "EXTEND",
   COMPOSE: "COMPOSE",
   INCLUDE: "INCLUDE",
+  LANES: "LANES",
+  LANE: "LANE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -78,6 +80,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   extend: TT.EXTEND,
   compose: TT.COMPOSE,
   include: TT.INCLUDE,
+  lanes: TT.LANES,
+  lane: TT.LANE,
 };
 
 export class LexError extends Error {

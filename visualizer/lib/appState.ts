@@ -13,13 +13,14 @@ import {
   typeCheck,
 } from "@deltanets/core";
 import type { TypeCheckStep, TypeResult } from "@deltanets/core";
-import { Node2D, Pos } from "@deltanets/render";
+import { Node2D, Pos, renderLaneView } from "@deltanets/render";
 import { METHODS } from "@deltanets/methods";
 import { agentStyles, typeReductionMode } from "@deltanets/methods";
 import {
   compileINet,
   extractGraph,
   isINetSource,
+  LANE_VIEW_PREFIX,
   resolveAgentStyles,
 } from "@deltanets/lang";
 import type { CoreResult } from "@deltanets/lang";
@@ -99,6 +100,7 @@ export const inetMode = signal<boolean>(false);
 export const inetCore = signal<CoreResult | null>(null);
 export const inetGraphNames = signal<string[]>([]);
 export const inetSelectedGraph = signal<string>("");
+export const isLaneView = signal<boolean>(false);
 
 // Keep track of whether the splitter is being dragged
 export const isDraggingSplitter = signal<boolean>(false);
@@ -111,6 +113,7 @@ export const codeEditorRef: { current: any } = { current: null };
 
 /** Set AST and compute type-checking state from it (call inside batch). */
 const applyAst = (astNode: AstNode | null) => {
+  isLaneView.value = false;
   ast.value = astNode;
   if (astNode) {
     systemType.value = getExpressionType(astNode);
@@ -132,6 +135,7 @@ const applyINetGraph = (
 ) => {
   const initFromGraph = METHODS.deltanets.initFromGraph;
   if (!initFromGraph) return false;
+  isLaneView.value = false;
   ast.value = null;
   typeResult.value = { ok: true, type: { kind: "hole" } };
   typeCheckSteps.value = [];
@@ -140,6 +144,17 @@ const applyINetGraph = (
   method.value = "deltanets";
   METHODS.deltanets.state.value = initFromGraph(graph);
   return true;
+};
+
+/** Render a lane view directly to the scene (no method state). Call inside batch. */
+const applyLaneView = (laneView: Parameters<typeof renderLaneView>[0]) => {
+  isLaneView.value = true;
+  ast.value = null;
+  typeResult.value = null;
+  typeCheckSteps.value = [];
+  typeCheckMode.value = false;
+  typeCheckStepIdx.value = -1;
+  scene.value = renderLaneView(laneView);
 };
 
 /** Format mixed error values into display strings. */
@@ -191,6 +206,18 @@ export const updateAst = (source: string) => {
           exprError.value = false;
           parseErrors.value = [];
           applyINetGraph(extracted.graph);
+        });
+        return;
+      }
+      if (extracted && extracted.kind === "lane-view") {
+        batch(() => {
+          inetMode.value = true;
+          inetCore.value = result.core;
+          inetGraphNames.value = result.graphNames;
+          inetSelectedGraph.value = graphName;
+          exprError.value = false;
+          parseErrors.value = [];
+          applyLaneView(extracted.laneView);
         });
         return;
       }
@@ -253,6 +280,14 @@ export const selectINetGraph = (graphName: string) => {
         inetSelectedGraph.value = graphName;
         applyINetGraph(extracted.graph);
         typeReductionMode.value = false;
+        isFirstLoad.value = true;
+      })
+    );
+  } else if (extracted && extracted.kind === "lane-view") {
+    withCenterReset(() =>
+      batch(() => {
+        inetSelectedGraph.value = graphName;
+        applyLaneView(extracted.laneView);
         isFirstLoad.value = true;
       })
     );

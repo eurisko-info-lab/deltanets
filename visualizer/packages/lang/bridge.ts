@@ -7,7 +7,11 @@
 
 import { compile as compileCore } from "./core/index.ts";
 import { compile as compileView } from "./view/index.ts";
-import type { CoreResult, GraphDef, IncludeResolver } from "./core/index.ts";
+import type {
+  CoreResult,
+  IncludeResolver,
+  LaneViewDef,
+} from "./core/index.ts";
 import type { ViewResult } from "./view/index.ts";
 import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
@@ -16,7 +20,7 @@ import type { Graph } from "@deltanets/core";
 
 // Keywords that indicate .inet format (as first non-comment token)
 const INET_KEYWORDS =
-  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def|include)\b/;
+  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def|include|lanes)\b/;
 
 /** Returns true if the source looks like .inet format rather than raw lambda calculus. */
 export function isINetSource(source: string): boolean {
@@ -31,13 +35,19 @@ export type BridgeResult = {
   errors: string[];
 };
 
+/** Prefix used to tag lane view names in the graph selector. */
+export const LANE_VIEW_PREFIX = "lanes:";
+
 /** Compile .inet source and extract graph names. */
 export function compileINet(
   source: string,
   resolver?: IncludeResolver,
 ): BridgeResult {
   const core = compileCore(source, resolver);
-  const graphNames = [...core.graphs.keys()];
+  const graphNames = [
+    ...core.graphs.keys(),
+    ...[...core.laneViews.keys()].map((n) => LANE_VIEW_PREFIX + n),
+  ];
   return { core, graphNames, errors: core.errors };
 }
 
@@ -45,7 +55,8 @@ export function compileINet(
 
 export type ExtractedGraph =
   | { kind: "ast"; ast: AstNode }
-  | { kind: "graph"; graph: Graph };
+  | { kind: "graph"; graph: Graph }
+  | { kind: "lane-view"; laneView: LaneViewDef };
 
 /**
  * Extract a renderable graph from a CoreResult by name.
@@ -55,6 +66,13 @@ export function extractGraph(
   core: CoreResult,
   name: string,
 ): ExtractedGraph | null {
+  // Check for lane view (prefixed name)
+  if (name.startsWith(LANE_VIEW_PREFIX)) {
+    const viewName = name.slice(LANE_VIEW_PREFIX.length);
+    const laneView = core.laneViews.get(viewName);
+    return laneView ? { kind: "lane-view", laneView } : null;
+  }
+
   const graphDef = core.graphs.get(name);
   if (!graphDef) return null;
 

@@ -6,6 +6,14 @@
 //   program      = statement*
 //   statement    = systemDecl | extendDecl | composeDecl | agentDecl
 //                | ruleDecl | modeDecl | graphDecl | defDecl | includeDecl
+//                | lanesDecl
+//   lanesDecl    = "lanes" STRING "{" laneStmt* "}"
+//   laneStmt     = laneDef | laneItem | laneMarker | laneLink
+//   laneDef      = "lane" STRING ["{" (IDENT ":" (NUMBER | STRING) ","?)* "}"]
+//   laneItem     = "at" NUMBER STRING "place" STRING ["duration" NUMBER]
+//   laneMarker   = "bar" NUMBER [STRING]
+//   laneLink     = "link" STRING "->" STRING [STRING]
+//                | ruleDecl | modeDecl | graphDecl | defDecl | includeDecl
 //   includeDecl  = "include" STRING
 //   systemDecl   = "system" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
 //   extendDecl   = "system" STRING "extend" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
@@ -78,6 +86,25 @@ class Parser {
     return this.eat(TT.IDENT).value;
   }
 
+  /** Check if the next token is an IDENT with a specific value. */
+  checkIdent(value: string): boolean {
+    const tok = this.peek();
+    return tok.type === TT.IDENT && tok.value === value;
+  }
+
+  /** Eat an IDENT with a specific value, or throw. */
+  eatIdentValue(value: string): Token {
+    const tok = this.peek();
+    if (tok.type !== TT.IDENT || tok.value !== value) {
+      throw new ParseError(
+        `Expected '${value}' but got '${tok.value || tok.type}'`,
+        tok.line,
+        tok.col,
+      );
+    }
+    return this.advance();
+  }
+
   // Accept IDENT, or LEFT/RIGHT as identifier (used in port refs)
   eatName(): string {
     const tok = this.peek();
@@ -120,6 +147,8 @@ class Parser {
         return this.parseDefDecl();
       case TT.INCLUDE:
         return this.parseIncludeDecl();
+      case TT.LANES:
+        return this.parseLanesDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -135,6 +164,95 @@ class Parser {
     this.eat(TT.INCLUDE);
     const path = this.eat(TT.STRING).value;
     return { kind: "include", path };
+  }
+
+  // ─── Lanes ─────────────────────────────────────────────────────────
+
+  parseLanesDecl(): AST.LanesDecl {
+    this.eat(TT.LANES);
+    const name = this.eat(TT.STRING).value;
+    this.eat(TT.LBRACE);
+    const body: AST.LaneStmt[] = [];
+    while (!this.check(TT.RBRACE)) {
+      const tok = this.peek();
+      if (tok.type === TT.LANE) {
+        body.push(this.parseLaneDef());
+      } else if (tok.type === TT.IDENT && tok.value === "at") {
+        body.push(this.parseLaneItem());
+      } else if (tok.type === TT.IDENT && tok.value === "bar") {
+        body.push(this.parseLaneMarker());
+      } else if (tok.type === TT.IDENT && tok.value === "link") {
+        body.push(this.parseLaneLink());
+      } else {
+        throw new ParseError(
+          `Unexpected '${tok.value || tok.type}' in lanes block`,
+          tok.line,
+          tok.col,
+        );
+      }
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "lanes", name, body };
+  }
+
+  parseLaneDef(): AST.LaneDef {
+    this.eat(TT.LANE);
+    const name = this.eat(TT.STRING).value;
+    const props: Record<string, string | number> = {};
+    if (this.check(TT.LBRACE)) {
+      this.advance();
+      while (!this.check(TT.RBRACE)) {
+        const key = this.eatIdent();
+        this.eat(TT.COLON);
+        const val = this.peek();
+        if (val.type === TT.NUMBER) {
+          props[key] = parseFloat(this.advance().value);
+        } else if (val.type === TT.STRING) {
+          props[key] = this.advance().value;
+        } else {
+          props[key] = this.eatIdent();
+        }
+        if (this.check(TT.COMMA)) this.advance();
+      }
+      this.eat(TT.RBRACE);
+    }
+    return { kind: "lane-def", name, props };
+  }
+
+  parseLaneItem(): AST.LaneItem {
+    this.eatIdentValue("at");
+    const position = parseFloat(this.eat(TT.NUMBER).value);
+    const lane = this.eat(TT.STRING).value;
+    this.eatIdentValue("place");
+    const label = this.eat(TT.STRING).value;
+    let duration = 0;
+    if (this.checkIdent("duration")) {
+      this.advance();
+      duration = parseFloat(this.eat(TT.NUMBER).value);
+    }
+    return { kind: "lane-item", position, lane, label, duration };
+  }
+
+  parseLaneMarker(): AST.LaneMarker {
+    this.eatIdentValue("bar");
+    const position = parseFloat(this.eat(TT.NUMBER).value);
+    let label: string | undefined;
+    if (this.check(TT.STRING)) {
+      label = this.advance().value;
+    }
+    return { kind: "lane-marker", position, label };
+  }
+
+  parseLaneLink(): AST.LaneLink {
+    this.eatIdentValue("link");
+    const from = this.eat(TT.STRING).value;
+    this.eat(TT.ARROW);
+    const to = this.eat(TT.STRING).value;
+    let label: string | undefined;
+    if (this.check(TT.STRING)) {
+      label = this.advance().value;
+    }
+    return { kind: "lane-link", from, to, label };
   }
 
   // ─── System / Extend / Compose ───────────────────────────────────

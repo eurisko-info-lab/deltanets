@@ -48,9 +48,25 @@ export type GraphDef =
   | { kind: "from-term"; name: string; astNode: AstNode }
   | { kind: "explicit"; name: string; graph: Graph };
 
+// ─── Lane view output types ────────────────────────────────────────
+
+export type LaneViewDef = {
+  name: string;
+  lanes: { name: string; props: Record<string, string | number> }[];
+  items: {
+    position: number;
+    lane: string;
+    label: string;
+    duration: number;
+  }[];
+  markers: { position: number; label?: string }[];
+  links: { from: string; to: string; label?: string }[];
+};
+
 export type CoreResult = {
   systems: Map<string, SystemDef>;
   graphs: Map<string, GraphDef>;
+  laneViews: Map<string, LaneViewDef>;
   definitions: Map<string, AST.LamExpr>;
   errors: string[];
 };
@@ -116,6 +132,7 @@ export function evaluate(
   );
   const systems = new Map<string, SystemDef>();
   const graphs = new Map<string, GraphDef>();
+  const laneViews = new Map<string, LaneViewDef>();
   const definitions = new Map<string, AST.LamExpr>();
   const errors: string[] = [...includeErrors];
 
@@ -179,6 +196,11 @@ export function evaluate(
           definitions.set(stmt.name, stmt.expr);
           break;
         }
+        case "lanes": {
+          const view = evalLaneView(stmt);
+          laneViews.set(view.name, view);
+          break;
+        }
       }
     } catch (e) {
       errors.push((e as Error).message);
@@ -195,5 +217,36 @@ export function evaluate(
     });
   }
 
-  return { systems, graphs, definitions, errors };
+  return { systems, graphs, laneViews, definitions, errors };
+}
+
+// ─── Lane view evaluation ──────────────────────────────────────────
+
+function evalLaneView(decl: AST.LanesDecl): LaneViewDef {
+  const lanes: LaneViewDef["lanes"] = [];
+  const items: LaneViewDef["items"] = [];
+  const markers: LaneViewDef["markers"] = [];
+  const links: LaneViewDef["links"] = [];
+  for (const stmt of decl.body) {
+    switch (stmt.kind) {
+      case "lane-def":
+        lanes.push({ name: stmt.name, props: stmt.props });
+        break;
+      case "lane-item":
+        items.push({
+          position: stmt.position,
+          lane: stmt.lane,
+          label: stmt.label,
+          duration: stmt.duration,
+        });
+        break;
+      case "lane-marker":
+        markers.push({ position: stmt.position, label: stmt.label });
+        break;
+      case "lane-link":
+        links.push({ from: stmt.from, to: stmt.to, label: stmt.label });
+        break;
+    }
+  }
+  return { name: decl.name, lanes, items, markers, links };
 }

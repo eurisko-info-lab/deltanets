@@ -16,6 +16,7 @@ export type {
   CoreResult,
   GraphDef,
   IncludeResolver,
+  LaneViewDef,
   ModeDef,
   RuleDef,
   SystemDef,
@@ -37,6 +38,7 @@ export function compile(
       return {
         systems: new Map(),
         graphs: new Map(),
+        laneViews: new Map(),
         definitions: new Map(),
         errors: [e.message],
       };
@@ -44,6 +46,7 @@ export function compile(
     return {
       systems: new Map(),
       graphs: new Map(),
+      laneViews: new Map(),
       definitions: new Map(),
       errors: [`Internal error: ${(e as Error).message}`],
     };

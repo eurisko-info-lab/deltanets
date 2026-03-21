@@ -10,6 +10,7 @@ import {
   debug,
   initializeStates,
   isFirstLoad,
+  isLaneView,
   method,
   relativeLevel,
   scene,
@@ -27,6 +28,9 @@ export function useSceneEffects() {
 
   // Update `scene` when `METHODS`, `method`, or type check state changes
   useSignalEffect(() => {
+    // Lane views manage scene.value directly; skip method-based rendering.
+    if (isLaneView.value) return;
+
     // Subscribe to type check signals to re-render when stepping
     const tcMode = typeCheckMode.value;
     const tcIdx = typeCheckStepIdx.value;
