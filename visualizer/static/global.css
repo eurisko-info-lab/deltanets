@@ -33,3 +33,14 @@ button:focus {
 *:focus {
   outline: none;
 }
+
+/* Music note playback highlight */
+.music-note-active ellipse,
+.music-note-active line,
+.music-note-active path {
+  filter: drop-shadow(0 0 4px #60a5fa) drop-shadow(0 0 8px #3b82f6);
+  stroke: #60a5fa;
+}
+.music-note-active ellipse[fill]:not([fill="none"]) {
+  fill: #60a5fa;
+}

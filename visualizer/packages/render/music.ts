@@ -200,6 +200,7 @@ export class MusicNoteNode extends Node2D {
   private hasStem: boolean;
   private flagCount: number;
   private stemUp: boolean;
+  beatPosition = -1;
 
   constructor(
     private pitch: Pitch,
@@ -226,7 +227,9 @@ export class MusicNoteNode extends Node2D {
     pos: Pos,
     theme: "light" | "dark",
   ): SVG | null {
-    const g = d3.create("svg:g");
+    const g = d3.create("svg:g")
+      .attr("class", "music-note")
+      .attr("data-beat", this.beatPosition);
     const color = defaultStroke(theme);
     const pitch = this.pitch;
     const staffPos = pitchToStaffPosition(pitch, this.clef);

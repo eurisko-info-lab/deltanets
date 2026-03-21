@@ -191,6 +191,7 @@ export function renderLaneView(input: LaneViewInput): Node2D {
           staffTop,
           clef,
         );
+        noteNode.beatPosition = item.position;
         noteNode.pos = { x, y };
         noteNode.zIndex = 1;
         root.add(noteNode);
