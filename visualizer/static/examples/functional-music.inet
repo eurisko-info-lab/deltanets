@@ -1,0 +1,246 @@
+# Functional Music
+# Lambda calculus as a theory of musical composition.
+#
+# The combinators of lambda calculus correspond to the
+# fundamental operations of musical composition:
+#
+#   B  (composition)    →  Sequence (play A then B)
+#   W  (duplication)    →  Canon (copy a voice)
+#   K  (constant)       →  Pedal point (sustain)
+#   S  (distribution)   →  Counterpoint (two voices)
+#   ×2 (Church double)  →  Augmentation (stretch time)
+#
+# In delta-nets, the REPLICATOR copies subgraphs —
+# this is exactly what a CANON does to a melody.
+# The ERASER removes subgraphs — this IS musical rest.
+
+include "prelude"
+
+system "delta-nets" extend "Prelude" {
+  agent abs(principal, body, bind, type)
+  agent app(func, result, arg)
+  agent rep-in(principal, ..aux)
+  agent rep-out(principal, ..aux)
+  agent era(principal)
+
+  rule abs <> app -> annihilate
+  rule abs <> era -> erase
+  rule app <> era -> erase
+  rule rep-in <> era -> erase
+  rule rep-out <> era -> erase
+  rule rep-in <> rep-out -> annihilate
+  rule rep-in <> rep-in -> commute
+  rule app <> rep-out -> aux-fan
+}
+
+# ─── The Combinators ────────────────────────────────────────────
+
+# B = composition = sequencing: "do g, then do f"
+def B = \f.\g.\x.f (g x)
+
+# W = duplication = canon: "use x in two voices" (replicator!)
+def W = \f.\x.f x x
+
+# K = constant = pedal point: "always return the first"
+def K = \x.\y.x
+
+# S = distribution = counterpoint: "apply f and g to same x"
+def S = \f.\g.\x.f x (g x)
+
+# Church pair = two simultaneous voices
+def Pair = \a.\b.\f.f a b
+def Fst = \p.p (\x.\y.x)
+def Snd = \p.p (\x.\y.y)
+
+# Church numerals = repetition counts
+def Twice = \f.\x.f (f x)
+def Thrice = \f.\x.f (f (f x))
+
+# ─── Graphs ─────────────────────────────────────────────────────
+# Each graph shows a musical operation as an interaction net.
+# Step through reductions to see lambda calculus at work.
+
+# B: compose two phrases into a sequence
+graph sequencing = term B (\x.x) (\x.x)
+
+# W: the replicator copies input to two consumers
+graph canon = term W (\a.\b.a)
+
+# K: the eraser deletes the second argument
+graph pedal = term K (\x.x) (\y.y)
+
+# S: input is distributed to two transformations
+graph counterpoint = term S (\x.x) (\x.x)
+
+# Church 3: three iterations
+graph three-times = term Thrice
+
+# ─── The Music ──────────────────────────────────────────────────
+# Each piece realizes a combinator as music.
+# Switch between graphs and lanes in the dropdown
+# to see both the functional and musical perspectives.
+
+# ── Theme ───────────────────────────────────────────────────────
+# A melody is the basic "value" — the argument to our combinators.
+lanes "Theme" {
+  lane "Melody" { clef: "treble" }
+
+  at 0  "Melody" place "C4" duration 1
+  at 1  "Melody" place "E4" duration 1
+  at 2  "Melody" place "G4" duration 1
+  at 3  "Melody" place "E4" duration 1
+  at 4  "Melody" place "F4" duration 1
+  at 5  "Melody" place "D4" duration 1
+  at 6  "Melody" place "C4" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+}
+
+# ── B (Sequence) ────────────────────────────────────────────────
+# Composition chains phrases: B f g x = f (g x)
+# Play phrase A, then phrase B, then A again (ABA form).
+lanes "Sequence (B)" {
+  lane "Melody" { clef: "treble" }
+
+  # Phrase A
+  at 0  "Melody" place "C4" duration 1
+  at 1  "Melody" place "E4" duration 1
+  at 2  "Melody" place "G4" duration 1
+  at 3  "Melody" place "E4" duration 1
+
+  # Phrase B
+  at 4  "Melody" place "F4" duration 1
+  at 5  "Melody" place "A4" duration 1
+  at 6  "Melody" place "G4" duration 2
+
+  # Phrase A again (ABA = B A (B I A))
+  at 8  "Melody" place "C4" duration 1
+  at 9  "Melody" place "E4" duration 1
+  at 10 "Melody" place "G4" duration 1
+  at 11 "Melody" place "E4" duration 1
+
+  bar 0 "A"
+  bar 4 "B"
+  bar 8 "A"
+  bar 12
+}
+
+# ── W (Canon) ───────────────────────────────────────────────────
+# Duplication copies a voice: W f x = f x x
+# The replicator fans out x to two consumers.
+# In music: a canon plays the same melody at a delay.
+# Dux = first copy, Comes = second copy.
+lanes "Canon (W)" {
+  lane "Dux"   { clef: "treble" }
+  lane "Comes" { clef: "treble" }
+
+  # Dux (leader)
+  at 0  "Dux" place "C4" duration 1
+  at 1  "Dux" place "E4" duration 1
+  at 2  "Dux" place "G4" duration 1
+  at 3  "Dux" place "E4" duration 1
+  at 4  "Dux" place "F4" duration 1
+  at 5  "Dux" place "D4" duration 1
+  at 6  "Dux" place "C4" duration 2
+
+  # Comes (follower) — same melody, delayed 4 beats
+  at 4  "Comes" place "C4" duration 1
+  at 5  "Comes" place "E4" duration 1
+  at 6  "Comes" place "G4" duration 1
+  at 7  "Comes" place "E4" duration 1
+  at 8  "Comes" place "F4" duration 1
+  at 9  "Comes" place "D4" duration 1
+  at 10 "Comes" place "C4" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+  bar 12
+}
+
+# ── S (Counterpoint) ────────────────────────────────────────────
+# S applies two functions to the same input: S f g x = f x (g x)
+# Two independent voices, both derived from one thematic idea.
+lanes "Counterpoint (S)" {
+  lane "Soprano" { clef: "treble" }
+  lane "Bass"    { clef: "bass" }
+
+  # Soprano — ascending line
+  at 0  "Soprano" place "E5" duration 1
+  at 1  "Soprano" place "D5" duration 1
+  at 2  "Soprano" place "C5" duration 2
+  at 4  "Soprano" place "D5" duration 1
+  at 5  "Soprano" place "E5" duration 1
+  at 6  "Soprano" place "F5" duration 2
+  at 8  "Soprano" place "E5" duration 1
+  at 9  "Soprano" place "D5" duration 1
+  at 10 "Soprano" place "C5" duration 2
+
+  # Bass — contrary motion
+  at 0  "Bass" place "C3" duration 2
+  at 2  "Bass" place "E3" duration 2
+  at 4  "Bass" place "F3" duration 2
+  at 6  "Bass" place "G3" duration 2
+  at 8  "Bass" place "F3" duration 1
+  at 9  "Bass" place "E3" duration 1
+  at 10 "Bass" place "C3" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+  bar 12
+}
+
+# ── K (Pedal Point) ─────────────────────────────────────────────
+# K always returns its first argument: K x y = x
+# The bass holds one note (constant) while melody moves above.
+# The eraser deletes y — the pedal is impervious to change.
+lanes "Pedal Point (K)" {
+  lane "Melody" { clef: "treble" }
+  lane "Pedal"  { clef: "bass" }
+
+  at 0  "Melody" place "E4" duration 1
+  at 1  "Melody" place "F4" duration 1
+  at 2  "Melody" place "G4" duration 2
+  at 4  "Melody" place "A4" duration 1
+  at 5  "Melody" place "G4" duration 1
+  at 6  "Melody" place "F4" duration 1
+  at 7  "Melody" place "E4" duration 1
+  at 8  "Melody" place "D4" duration 2
+  at 10 "Melody" place "C4" duration 2
+
+  at 0  "Pedal" place "C3" duration 4
+  at 4  "Pedal" place "C3" duration 4
+  at 8  "Pedal" place "C3" duration 4
+
+  bar 0
+  bar 4
+  bar 8
+  bar 12
+}
+
+# ── Augmentation (Map ×2) ───────────────────────────────────────
+# A higher-order function transforms each element of a list.
+# Augmentation doubles every duration: Map (×2) over notes.
+lanes "Augmentation (Map)" {
+  lane "Original"  { clef: "treble" }
+  lane "Augmented" { clef: "treble" }
+
+  # Original theme (quarter notes)
+  at 0  "Original" place "C4" duration 1
+  at 1  "Original" place "E4" duration 1
+  at 2  "Original" place "G4" duration 1
+  at 3  "Original" place "E4" duration 1
+
+  # Augmented: each duration doubled (half notes)
+  at 0  "Augmented" place "C4" duration 2
+  at 2  "Augmented" place "E4" duration 2
+  at 4  "Augmented" place "G4" duration 2
+  at 6  "Augmented" place "E4" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+}

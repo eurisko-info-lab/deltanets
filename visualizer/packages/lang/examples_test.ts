@@ -17,6 +17,7 @@ for (
   const file of [
     "deltanets.inet",
     "deltanets-composed.inet",
+    "functional-music.inet",
     "lambda.inet",
     "typing.inet",
     "lambda-cube.inet",
