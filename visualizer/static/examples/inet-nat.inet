@@ -1,0 +1,113 @@
+# Natural Numbers — Interaction Net Arithmetic
+#
+# Demonstrates custom interaction rules for Peano naturals.
+# Zero and Succ encode numbers; add performs addition by
+# walking down the first argument and accumulating into the second.
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+
+  # ─── Agents ──────────────────────────────────────────────────────
+  # Zero: a nullary constructor (only principal port)
+  agent Zero(principal)
+
+  # Succ: unary constructor, pred is the predecessor
+  agent Succ(principal, pred)
+
+  # add: binary operation
+  #   principal = first argument (connects to a Nat)
+  #   result    = where the sum comes out
+  #   accum     = second argument (accumulated Nat)
+  agent add(principal, result, accum)
+
+  # ─── Interaction Rules ──────────────────────────────────────────
+  #
+  # add(result, accum) >< Zero
+  #   The first argument is zero, so add returns the accumulator.
+  #   relink: result ← accum's neighbor, accum ← result's neighbor
+  rule add <> Zero -> {
+    relink left.result left.accum
+  }
+
+  # add(result, accum) >< Succ(pred)
+  #   Peel one Succ off the first argument, wrap the result in Succ,
+  #   and recurse with a new add on the predecessor.
+  #
+  #   Before:  ... ─result─ add ═══ Succ ─pred─ ...
+  #                          │               
+  #                        accum
+  #                          │
+  #                         ...
+  #
+  #   After:   ... ─── Succ' ─pred─ add' ─accum─ ...
+  #                              result
+  #                                │
+  #                               ...
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+# ─── Example Graphs ───────────────────────────────────────────────
+
+# 0 + 0 = 0
+graph zero-plus-zero {
+  let r   = root
+  let a   = add
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal -- a.result
+  wire a.principal -- z1.principal
+  wire a.accum    -- z2.principal
+}
+
+# 1 + 0 = 1
+graph one-plus-zero {
+  let r   = root
+  let a   = add
+  let s1  = Succ
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal -- a.result
+  wire a.principal -- s1.principal
+  wire s1.pred    -- z1.principal
+  wire a.accum    -- z2.principal
+}
+
+# 1 + 1 = 2
+graph one-plus-one {
+  let r   = root
+  let a   = add
+  let s1  = Succ
+  let z1  = Zero
+  let s2  = Succ
+  let z2  = Zero
+  wire r.principal -- a.result
+  wire a.principal -- s1.principal
+  wire s1.pred    -- z1.principal
+  wire a.accum    -- s2.principal
+  wire s2.pred    -- z2.principal
+}
+
+# 2 + 1 = 3
+graph two-plus-one {
+  let r   = root
+  let a   = add
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let s3  = Succ
+  let z2  = Zero
+  wire r.principal -- a.result
+  wire a.principal -- s1.principal
+  wire s1.pred    -- s2.principal
+  wire s2.pred    -- z1.principal
+  wire a.accum    -- s3.principal
+  wire s3.pred    -- z2.principal
+}
