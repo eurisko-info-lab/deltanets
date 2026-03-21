@@ -5,7 +5,8 @@
 // Grammar:
 //   program      = statement*
 //   statement    = systemDecl | extendDecl | composeDecl | agentDecl
-//                | ruleDecl | modeDecl | graphDecl | defDecl
+//                | ruleDecl | modeDecl | graphDecl | defDecl | includeDecl
+//   includeDecl  = "include" STRING
 //   systemDecl   = "system" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
 //   extendDecl   = "system" STRING "extend" STRING "{" (agentDecl | ruleDecl | modeDecl)* "}"
 //   composeDecl  = "system" STRING "=" "compose" STRING ("+" STRING)* "{" (agentDecl | ruleDecl | modeDecl)* "}"
@@ -117,6 +118,8 @@ class Parser {
         return this.parseGraphDecl();
       case TT.DEF:
         return this.parseDefDecl();
+      case TT.INCLUDE:
+        return this.parseIncludeDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -124,6 +127,14 @@ class Parser {
           tok.col,
         );
     }
+  }
+
+  // ─── Include ──────────────────────────────────────────────────────
+
+  parseIncludeDecl(): AST.IncludeDecl {
+    this.eat(TT.INCLUDE);
+    const path = this.eat(TT.STRING).value;
+    return { kind: "include", path };
   }
 
   // ─── System / Extend / Compose ───────────────────────────────────

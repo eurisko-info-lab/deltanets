@@ -1,11 +1,11 @@
 # INet: Lambda Calculus
 # Standard lambda calculus with combinators and Church encodings.
 
-system "lambda-calculus" {
+include "prelude"
+
+system "lambda-calculus" extend "Prelude" {
   agent abs(principal, body, bind)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
 
   rule abs <> app -> annihilate
 }

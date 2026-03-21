@@ -4,13 +4,13 @@
 # illustrating that the same language can express different calculi.
 # ═══════════════════════════════════════════════════════════════════
 
-system "Lambda Calculus" {
+include "prelude"
+
+system "Lambda Calculus" extend "Prelude" {
 
   # Tree-level agents (no replicators — copying is implicit)
   agent abs(principal, body, bind)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
 
   # The only rule: β-reduction
   rule abs <> app -> annihilate

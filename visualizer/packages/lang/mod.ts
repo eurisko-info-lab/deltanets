@@ -7,6 +7,7 @@ export type {
   AgentDef,
   CoreResult,
   GraphDef,
+  IncludeResolver,
   ModeDef,
   RuleDef,
   SystemDef,

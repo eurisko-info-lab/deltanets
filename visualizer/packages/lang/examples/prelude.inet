@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════════
+# Prelude — Structural agents shared by all interaction net systems.
+#
+# These agents are part of the meta-theory: every interaction net
+# system needs an entry point (root) and a way to reference free
+# variables (var).  Including this prelude and extending "Prelude"
+# saves redeclaring them in every system definition.
+#
+# Usage:
+#   include "prelude"
+#   system "MySystem" extend "Prelude" { ... }
+# ═══════════════════════════════════════════════════════════════════
+
+system "Prelude" {
+  agent root(principal)              # Entry point / output
+  agent var(principal)               # Free variable
+}

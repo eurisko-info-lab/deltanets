@@ -14,14 +14,14 @@
 #
 # ═══════════════════════════════════════════════════════════════════
 
+include "prelude"
+
 # ─── Component 1: Lambda ──────────────────────────────────────────
 # Pure lambda calculus with β-reduction only.
 
-system "Lambda" {
+system "Lambda" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
 
   # Type system agents
   agent type-base(principal)

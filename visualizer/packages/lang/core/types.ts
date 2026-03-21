@@ -13,7 +13,8 @@ export type Statement =
   | RuleDecl
   | ModeDecl
   | GraphDecl
-  | DefDecl;
+  | DefDecl
+  | IncludeDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -138,6 +139,12 @@ export type DefDecl = {
   kind: "def";
   name: string;
   expr: LamExpr;
+};
+
+// include "path"
+export type IncludeDecl = {
+  kind: "include";
+  path: string;
 };
 
 // Lambda calculus expressions

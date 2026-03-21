@@ -4,7 +4,9 @@
 # for the standard delta-nets encoding of lambda calculus.
 # ═══════════════════════════════════════════════════════════════════
 
-system "Δ-Nets" {
+include "prelude"
+
+system "Δ-Nets" extend "Prelude" {
 
   # ─── Agents ─────────────────────────────────────────────────────
   # Each agent has a principal port (first) and auxiliary ports.
@@ -15,8 +17,6 @@ system "Δ-Nets" {
   agent rep-in(principal, ..aux)            # Replicator fan-in  (variable arity)
   agent rep-out(principal, ..aux)           # Replicator fan-out (variable arity)
   agent era(principal)                      # Eraser (garbage collection)
-  agent var(principal)                      # Free variable
-  agent root(principal)                     # Root (entry point)
 
   # Type system agents
   agent type-base(principal)                # Base type

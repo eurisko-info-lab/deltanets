@@ -7,7 +7,7 @@
 
 import { compile as compileCore } from "./core/index.ts";
 import { compile as compileView } from "./view/index.ts";
-import type { CoreResult, GraphDef } from "./core/index.ts";
+import type { CoreResult, GraphDef, IncludeResolver } from "./core/index.ts";
 import type { ViewResult } from "./view/index.ts";
 import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
@@ -16,7 +16,7 @@ import type { Graph } from "@deltanets/core";
 
 // Keywords that indicate .inet format (as first non-comment token)
 const INET_KEYWORDS =
-  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def)\b/;
+  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def|include)\b/;
 
 /** Returns true if the source looks like .inet format rather than raw lambda calculus. */
 export function isINetSource(source: string): boolean {
@@ -32,8 +32,11 @@ export type BridgeResult = {
 };
 
 /** Compile .inet source and extract graph names. */
-export function compileINet(source: string): BridgeResult {
-  const core = compileCore(source);
+export function compileINet(
+  source: string,
+  resolver?: IncludeResolver,
+): BridgeResult {
+  const core = compileCore(source, resolver);
   const graphNames = [...core.graphs.keys()];
   return { core, graphNames, errors: core.errors };
 }

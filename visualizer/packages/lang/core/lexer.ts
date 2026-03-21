@@ -23,6 +23,7 @@ export const TT = {
   RIGHT: "RIGHT",
   EXTEND: "EXTEND",
   COMPOSE: "COMPOSE",
+  INCLUDE: "INCLUDE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -76,6 +77,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   right: TT.RIGHT,
   extend: TT.EXTEND,
   compose: TT.COMPOSE,
+  include: TT.INCLUDE,
 };
 
 export class LexError extends Error {

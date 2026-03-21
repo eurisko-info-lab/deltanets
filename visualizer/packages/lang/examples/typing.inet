@@ -8,11 +8,11 @@
 # consistency of annotations via the interaction net type graph.
 # ═══════════════════════════════════════════════════════════════════
 
-system "STLC" {
+include "prelude"
+
+system "STLC" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
 
   # Type agents for the interaction net
   agent type-base(principal)

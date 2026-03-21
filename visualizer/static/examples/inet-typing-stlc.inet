@@ -1,11 +1,11 @@
 # INet: Typing (STLC)
 # Type annotations: \x:T.body   Types: base (A, Nat), arrow (A -> B), hole (?)
 
-system "STLC" {
+include "prelude"
+
+system "STLC" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
   agent type-base(principal)
   agent type-arrow(principal, domain, codomain)
   agent type-hole(principal)

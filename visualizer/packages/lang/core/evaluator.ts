@@ -14,6 +14,9 @@ import {
   evalSystem,
 } from "./eval-system.ts";
 import { evalGraph } from "./eval-graph.ts";
+import { PRELUDE_SOURCE } from "./prelude.ts";
+import { tokenize } from "./lexer.ts";
+import { parse } from "./parser.ts";
 
 // ─── Output types ──────────────────────────────────────────────────
 
@@ -60,20 +63,68 @@ export class EvalError extends Error {
   }
 }
 
+// ─── Include resolution ────────────────────────────────────────────
+
+/** Resolves an include path to .inet source code, or null if not found. */
+export type IncludeResolver = (path: string) => string | null;
+
+/** Built-in resolver that handles `include "prelude"`. */
+function builtinResolver(path: string): string | null {
+  if (path === "prelude") return PRELUDE_SOURCE;
+  return null;
+}
+
+/** Expand all include statements by inlining their parsed AST. */
+function expandIncludes(
+  program: AST.Program,
+  resolver: IncludeResolver | undefined,
+  included: Set<string>,
+): { stmts: AST.Statement[]; errors: string[] } {
+  const stmts: AST.Statement[] = [];
+  const errors: string[] = [];
+  for (const stmt of program) {
+    if (stmt.kind === "include") {
+      if (included.has(stmt.path)) continue; // skip circular
+      included.add(stmt.path);
+      const source = resolver?.(stmt.path) ?? builtinResolver(stmt.path);
+      if (source === null) {
+        errors.push(`Cannot resolve include '${stmt.path}'`);
+        continue;
+      }
+      const tokens = tokenize(source);
+      const sub = parse(tokens);
+      const expanded = expandIncludes(sub, resolver, included);
+      stmts.push(...expanded.stmts);
+      errors.push(...expanded.errors);
+    } else {
+      stmts.push(stmt);
+    }
+  }
+  return { stmts, errors };
+}
+
 // ─── Main evaluator ────────────────────────────────────────────────
 
-export function evaluate(program: AST.Program): CoreResult {
+export function evaluate(
+  program: AST.Program,
+  resolver?: IncludeResolver,
+): CoreResult {
+  const { stmts, errors: includeErrors } = expandIncludes(
+    program,
+    resolver,
+    new Set(),
+  );
   const systems = new Map<string, SystemDef>();
   const graphs = new Map<string, GraphDef>();
   const definitions = new Map<string, AST.LamExpr>();
-  const errors: string[] = [];
+  const errors: string[] = [...includeErrors];
 
   // Ambient (top-level) agents/rules/modes not inside a system block
   const ambientAgents = new Map<string, AgentDef>();
   const ambientRules: RuleDef[] = [];
   const ambientModes = new Map<string, ModeDef>();
 
-  for (const stmt of program) {
+  for (const stmt of stmts) {
     try {
       switch (stmt.kind) {
         case "system": {

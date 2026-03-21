@@ -224,3 +224,53 @@ Deno.test("view error: empty source compiles with no styles", () => {
   const result = compileView("");
   assertEquals(result.styles.size, 0);
 });
+
+// ─── Include & Prelude ─────────────────────────────────────────────
+
+Deno.test("include: prelude provides root and var agents", () => {
+  const source = `
+    include "prelude"
+    system "Test" extend "Prelude" {
+      agent abs(principal, body, bind)
+      agent app(func, result, arg)
+      rule abs <> app -> annihilate
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const sys = result.systems.get("Test")!;
+  assert(sys.agents.has("root"), "inherits root from Prelude");
+  assert(sys.agents.has("var"), "inherits var from Prelude");
+  assert(sys.agents.has("abs"), "defines own abs");
+});
+
+Deno.test("include: unresolvable path reports error", () => {
+  const source = `include "nonexistent"`;
+  const result = compileCore(source);
+  assert(result.errors.length > 0, "should report unresolvable include");
+  assert(result.errors[0].includes("nonexistent"));
+});
+
+Deno.test("include: custom resolver", () => {
+  const source = `
+    include "custom"
+    system "A" extend "Base" {
+      agent foo(principal)
+    }
+  `;
+  const resolver = (path: string) =>
+    path === "custom" ? `system "Base" { agent bar(principal) }` : null;
+  const result = compileCore(source, resolver);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const sys = result.systems.get("A")!;
+  assert(sys.agents.has("bar"), "inherits bar from included Base");
+  assert(sys.agents.has("foo"), "defines own foo");
+});
+
+Deno.test("include: circular includes are skipped", () => {
+  const resolver = (path: string) =>
+    path === "a" ? `include "a"\nsystem "S" { agent x(principal) }` : null;
+  const result = compileCore(`include "a"`, resolver);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  assert(result.systems.has("S"));
+});

@@ -7,11 +7,11 @@
 # Composition via categorical pushout:
 #   Δ-Nets = Lambda + Erasable + Replicable
 
-system "Lambda" {
+include "prelude"
+
+system "Lambda" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
   rule abs <> app -> annihilate
   mode linear = {}
 }

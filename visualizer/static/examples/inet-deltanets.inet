@@ -3,14 +3,14 @@
 # with agents, rules, modes, definitions, and example graphs.
 # Use the graph selector dropdown to switch between graphs.
 
-system "delta-nets" {
+include "prelude"
+
+system "delta-nets" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
   agent rep-in(principal, ..aux)
   agent rep-out(principal, ..aux)
   agent era(principal)
-  agent var(principal)
-  agent root(principal)
 
   rule abs <> app -> annihilate
   rule abs <> era -> erase

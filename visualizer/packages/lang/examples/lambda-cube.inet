@@ -32,12 +32,12 @@
 # The foundation of the cube. Types classify terms, no dependency.
 # Agents: term-level abs/app + type-level arrow/base/hole.
 
-system "λ→" {
+include "prelude"
+
+system "λ→" extend "Prelude" {
   # Term agents
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
 
   # Type agents
   agent type-base(principal)

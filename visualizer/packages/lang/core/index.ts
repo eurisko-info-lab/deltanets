@@ -6,7 +6,7 @@
 import { LexError, tokenize } from "./lexer.ts";
 import { parse, ParseError } from "./parser.ts";
 import { EvalError, evaluate } from "./evaluator.ts";
-import type { CoreResult } from "./evaluator.ts";
+import type { CoreResult, IncludeResolver } from "./evaluator.ts";
 
 export { LexError, tokenize } from "./lexer.ts";
 export { parse, ParseError } from "./parser.ts";
@@ -15,17 +15,21 @@ export type {
   AgentDef,
   CoreResult,
   GraphDef,
+  IncludeResolver,
   ModeDef,
   RuleDef,
   SystemDef,
 } from "./evaluator.ts";
 export type * from "./types.ts";
 
-export function compile(source: string): CoreResult {
+export function compile(
+  source: string,
+  resolver?: IncludeResolver,
+): CoreResult {
   try {
     const tokens = tokenize(source);
     const ast = parse(tokens);
-    return evaluate(ast);
+    return evaluate(ast, resolver);
   } catch (e) {
     if (
       e instanceof LexError || e instanceof ParseError || e instanceof EvalError

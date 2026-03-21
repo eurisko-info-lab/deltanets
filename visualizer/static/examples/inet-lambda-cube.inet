@@ -2,11 +2,11 @@
 # Three axes beyond λ→: polymorphism, dependent types, type operators.
 # Each axis extends λ→; cube corners are pushout compositions.
 
-system "λ→" {
+include "prelude"
+
+system "λ→" extend "Prelude" {
   agent abs(principal, body, bind, type)
   agent app(func, result, arg)
-  agent var(principal)
-  agent root(principal)
   agent type-base(principal)
   agent type-arrow(principal, domain, codomain)
   agent type-hole(principal)
