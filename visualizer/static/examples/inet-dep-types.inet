@@ -65,6 +65,29 @@ system "NatEq" extend "Eq" {
 # ═══════════════════════════════════════════════════════════════════
 
 system "DepTypedProofs" extend "NatEq" {
+  # Infrastructure: duplicator for natural numbers
+  # Needed because interaction nets are linear — each wire connects
+  # exactly two ports. When a proof term uses a variable twice
+  # (like plus_comm uses k and m twice), we need to duplicate it.
+  # The `prove` keyword auto-inserts dup_nat when it detects multi-use.
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ
+    let s2 = Succ
+    let d  = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
   # ∀n. add(n, 0) = n
   prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
     | Zero -> refl
@@ -77,10 +100,19 @@ system "DepTypedProofs" extend "NatEq" {
     | Succ(k) -> cong_succ(plus_succ_right(k, m))
   }
 
-  # ∀n,m. add(n, m) = add(m, n)  — commutativity of addition
-  # Uses trans to chain two sub-lemmas together.
-  # Note: not all proof combinators are automatically typecheck-able yet
-  # (plus_comm requires ad-hoc type rules for the second recursion)
+  # ∀n,m. add(n, m) = add(m, n) — COMMUTATIVITY OF ADDITION
+  #
+  # This is the crown jewel theorem. The proof uses:
+  #   Zero case:  sym(plus_zero_right(m))
+  #   Succ case:  trans(cong_succ(plus_comm(k, m)),
+  #                     sym(plus_succ_right(m, k)))
+  #
+  # Variables k and m are each used twice in the Succ case.
+  # The `prove` desugarer automatically inserts dup_nat to duplicate them.
+  prove plus_comm(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+    | Zero -> sym(plus_zero_right(m))
+    | Succ(k) -> trans(cong_succ(plus_comm(k, m)), sym(plus_succ_right(m, k)))
+  }
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -232,4 +264,104 @@ graph verify-psr-typed {
   wire s2.pred        -- z2.principal
   wire add1.accum     -- s3.principal
   wire s3.pred        -- z3.principal
+}
+
+# ─── plus_comm ──────────────────────────────────────────────────────
+# The crown jewel: commutativity of addition, auto-compiled from
+# the typed `prove` block with automatic duplication.
+
+# pc(0, 0) → refl  [3 steps]
+graph pc-zero-zero {
+  let r  = root
+  let pc = plus_comm
+  let z1 = Zero
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- z1.principal
+  wire pc.m         -- z2.principal
+}
+
+# pc(0, 1) → refl  [5 steps]
+graph pc-zero-one {
+  let r  = root
+  let pc = plus_comm
+  let z  = Zero
+  let s  = Succ
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- z.principal
+  wire pc.m         -- s.principal
+  wire s.pred       -- z2.principal
+}
+
+# pc(1, 0) → refl  [11 steps]
+graph pc-one-zero {
+  let r  = root
+  let pc = plus_comm
+  let s  = Succ
+  let z1 = Zero
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s.principal
+  wire s.pred       -- z1.principal
+  wire pc.m         -- z2.principal
+}
+
+# pc(1, 1) → refl  [16 steps]
+graph pc-one-one {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let z1 = Zero
+  let s2 = Succ
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred      -- z1.principal
+  wire pc.m         -- s2.principal
+  wire s2.pred      -- z2.principal
+}
+
+# pc(2, 1) → refl  [29 steps]
+graph pc-two-one {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let s2 = Succ
+  let z1 = Zero
+  let s3 = Succ
+  let z2 = Zero
+  wire r.principal  -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z1.principal
+  wire pc.m         -- s3.principal
+  wire s3.pred      -- z2.principal
+}
+
+# ─── verification: subst(pc(1,1), add(1,1)) → Succ(Succ(Zero)) ───
+graph verify-comm {
+  let r    = root
+  let sub  = subst
+  let pc   = plus_comm
+  let add1 = add
+  let s1   = Succ
+  let z1   = Zero
+  let s2   = Succ
+  let z2   = Zero
+  let s3   = Succ
+  let z3   = Zero
+  let s4   = Succ
+  let z4   = Zero
+  wire r.principal    -- sub.result
+  wire sub.principal  -- pc.result
+  wire sub.value      -- add1.result
+  wire pc.principal   -- s1.principal
+  wire s1.pred        -- z1.principal
+  wire pc.m           -- s2.principal
+  wire s2.pred        -- z2.principal
+  wire add1.principal -- s3.principal
+  wire s3.pred        -- z3.principal
+  wire add1.accum     -- s4.principal
+  wire s4.pred        -- z4.principal
 }

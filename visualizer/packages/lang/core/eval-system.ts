@@ -6,7 +6,7 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { typecheckProve } from "./typecheck-prove.ts";
+import { type ProvedContext, typecheckProve } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl): SystemDef {
   const agents = new Map<string, AgentDef>();
@@ -26,6 +26,8 @@ export function evalBodyInto(
   rules: RuleDef[],
   modes: Map<string, ModeDef>,
 ): void {
+  const provedCtx: ProvedContext = new Map();
+
   for (const item of body) {
     switch (item.kind) {
       case "agent": {
@@ -56,9 +58,16 @@ export function evalBodyInto(
           rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
         }
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(item);
+        const typeErrors = typecheckProve(item, provedCtx);
         if (typeErrors.length > 0) {
           throw new EvalError(typeErrors.join("\n"));
+        }
+        // Register this prove's type for cross-lemma resolution
+        if (item.returnType) {
+          provedCtx.set(item.name, {
+            params: item.params,
+            returnType: item.returnType,
+          });
         }
         break;
       }
@@ -197,8 +206,83 @@ function desugarProve(
     // Translate proof expression to rule body
     const stmts: AST.RuleStmt[] = [];
 
+    // ── Auto-duplication for multi-use variables ──
+    // Count how many times each variable appears in the proof term
+    const varNames = new Set<string>([...varMap.keys()]);
+    const useCounts = countVarUses(caseArm.body, varNames);
+
+    // For variables used > 1 time, insert dup chains
+    const copyQueues = new Map<string, AST.PortRef[]>();
+
+    for (const [varName, count] of useCounts) {
+      if (count <= 1) continue;
+
+      // Determine type for duplicator: check param annotation, fall back to principal type
+      const paramInfo = prove.params.find((p) => p.name === varName);
+      const typeExpr = paramInfo?.type ?? prove.params[0]?.type;
+      const typeName = typeExpr?.kind === "ident" ? typeExpr.name : null;
+
+      if (!typeName) {
+        throw new EvalError(
+          `prove ${prove.name}: variable '${varName}' used ${count} times ` +
+            `but no type annotation available for auto-duplication`,
+        );
+      }
+
+      const dupAgentName = `dup_${typeName.toLowerCase()}`;
+      if (!agents.has(dupAgentName)) {
+        throw new EvalError(
+          `prove ${prove.name}: duplicator '${dupAgentName}' required ` +
+            `for multi-use variable '${varName}' but not defined`,
+        );
+      }
+
+      const originalPort = varMap.get(varName)!;
+      const queue: AST.PortRef[] = [];
+      let currentInput = originalPort;
+      let remaining = count;
+
+      while (remaining > 1) {
+        const label = `_d${counter++}`;
+        stmts.push({ kind: "let", varName: label, agentType: dupAgentName });
+
+        // Connect input to dup principal
+        if (isPreExisting(currentInput)) {
+          stmts.push({
+            kind: "relink",
+            portA: currentInput,
+            portB: { node: label, port: "principal" },
+          });
+        } else {
+          stmts.push({
+            kind: "wire",
+            portA: currentInput,
+            portB: { node: label, port: "principal" },
+          });
+        }
+
+        queue.push({ node: label, port: "copy1" });
+        remaining--;
+
+        if (remaining === 1) {
+          queue.push({ node: label, port: "copy2" });
+        } else {
+          currentInput = { node: label, port: "copy2" };
+        }
+      }
+
+      copyQueues.set(varName, queue);
+      usedVars.add(varName); // original port consumed by dup chain
+    }
+
     function translateExpr(expr: AST.ProveExpr): AST.PortRef {
       if (expr.kind === "ident") {
+        // Variable with dup copies
+        if (copyQueues.has(expr.name)) {
+          const queue = copyQueues.get(expr.name)!;
+          usedVars.add(expr.name);
+          return queue.shift()!;
+        }
         // Variable reference or nullary agent
         if (varMap.has(expr.name)) {
           usedVars.add(expr.name);
@@ -284,4 +368,21 @@ function desugarProve(
 
 function isPreExisting(ref: AST.PortRef): boolean {
   return ref.node === "left" || ref.node === "right";
+}
+
+// Count how many times each variable from `vars` appears in expr
+function countVarUses(
+  expr: AST.ProveExpr,
+  vars: Set<string>,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  function walk(e: AST.ProveExpr) {
+    if (e.kind === "ident" && vars.has(e.name)) {
+      counts.set(e.name, (counts.get(e.name) || 0) + 1);
+    } else if (e.kind === "call") {
+      for (const arg of e.args) walk(arg);
+    }
+  }
+  walk(expr);
+  return counts;
 }

@@ -303,3 +303,150 @@ Deno.test("deptype: subst(pzr(2), add(2,0)) → Succ(Succ(Zero))", () => {
   // Should reduce to Succ(Succ(Zero)) — root connected to Succ
   assertEquals(readRootType(g.graph), "Succ");
 });
+
+// ─── plus_comm Tests ───────────────────────────────────────────────
+
+const COMM_SYSTEM = `
+system "Comm" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero  let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ  let s2 = Succ  let d = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+  prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+  prove plus_succ_right(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_succ_right(k, m))
+  }
+  prove plus_comm(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+    | Zero -> sym(plus_zero_right(m))
+    | Succ(k) -> trans(cong_succ(plus_comm(k, m)), sym(plus_succ_right(m, k)))
+  }
+}
+`;
+
+Deno.test("deptype: plus_comm compiles with auto-duplication and cross-lemma types", () => {
+  const result = compile(COMM_SYSTEM);
+  const sys = result.systems.get("Comm")!;
+  assertEquals(sys.agents.has("plus_comm"), true);
+  // plus_comm should have ports: principal, result, m
+  const pc = sys.agents.get("plus_comm")!;
+  assertEquals(pc.ports.map((p: { name: string }) => p.name), ["principal", "result", "m"]);
+});
+
+Deno.test("deptype: plus_comm(0, 0) → refl in 3 steps", () => {
+  const core = compile(COMM_SYSTEM + `
+    graph test {
+      let r = root  let pc = plus_comm  let z1 = Zero  let z2 = Zero
+      wire r.principal -- pc.result
+      wire pc.principal -- z1.principal
+      wire pc.m -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 3);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: plus_comm(1, 0) → refl in 11 steps", () => {
+  const core = compile(COMM_SYSTEM + `
+    graph test {
+      let r = root  let pc = plus_comm
+      let s = Succ  let z1 = Zero  let z2 = Zero
+      wire r.principal -- pc.result
+      wire pc.principal -- s.principal
+      wire s.pred -- z1.principal
+      wire pc.m -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 11);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: plus_comm(1, 1) → refl in 16 steps", () => {
+  const core = compile(COMM_SYSTEM + `
+    graph test {
+      let r = root  let pc = plus_comm
+      let s1 = Succ  let z1 = Zero  let s2 = Succ  let z2 = Zero
+      wire r.principal -- pc.result
+      wire pc.principal -- s1.principal
+      wire s1.pred -- z1.principal
+      wire pc.m -- s2.principal
+      wire s2.pred -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 16);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: plus_comm(2, 1) → refl in 29 steps", () => {
+  const core = compile(COMM_SYSTEM + `
+    graph test {
+      let r = root  let pc = plus_comm
+      let s1 = Succ  let s2 = Succ  let z1 = Zero
+      let s3 = Succ  let z2 = Zero
+      wire r.principal -- pc.result
+      wire pc.principal -- s1.principal
+      wire s1.pred -- s2.principal
+      wire s2.pred -- z1.principal
+      wire pc.m -- s3.principal
+      wire s3.pred -- z2.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 29);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: wrong plus_comm proof is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "Wrong" extend "NatEq" {
+      agent dup_nat(principal, copy1, copy2)
+      rule dup_nat <> Zero -> {
+        let z1 = Zero  let z2 = Zero
+        relink left.copy1 z1.principal
+        relink left.copy2 z2.principal
+      }
+      rule dup_nat <> Succ -> {
+        let s1 = Succ  let s2 = Succ  let d = dup_nat
+        relink left.copy1 s1.principal
+        relink left.copy2 s2.principal
+        wire s1.pred -- d.copy1
+        wire s2.pred -- d.copy2
+        relink right.pred d.principal
+      }
+      prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+      prove bad_comm(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(bad_comm(k, m))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "expected type errors for wrong plus_comm");
+});

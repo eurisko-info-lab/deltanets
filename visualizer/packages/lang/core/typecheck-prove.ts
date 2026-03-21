@@ -18,6 +18,12 @@
 
 import type * as AST from "./types.ts";
 
+// Context of previously proved propositions for cross-lemma resolution
+export type ProvedContext = Map<
+  string,
+  { params: AST.ProveParam[]; returnType: AST.ProveExpr }
+>;
+
 // ─── ProveExpr helpers ─────────────────────────────────────────────
 
 function ident(name: string): AST.ProveExpr {
@@ -60,6 +66,22 @@ function substitute(
   return { kind: "call", name: newName, args: newArgs };
 }
 
+// Simultaneous substitution — avoids variable capture when parameter
+// names overlap with argument expressions (e.g. calling f(m, k) where
+// f's params are (n, m) would corrupt m with sequential substitution).
+function substituteAll(
+  expr: AST.ProveExpr,
+  bindings: Map<string, AST.ProveExpr>,
+): AST.ProveExpr {
+  if (expr.kind === "ident") {
+    return bindings.get(expr.name) ?? expr;
+  }
+  const newArgs = expr.args.map((a) => substituteAll(a, bindings));
+  const replacement = bindings.get(expr.name);
+  const newName = replacement?.kind === "ident" ? replacement.name : expr.name;
+  return { kind: "call", name: newName, args: newArgs };
+}
+
 // ─── Normalization ─────────────────────────────────────────────────
 // Reduces type expressions using computational rules.
 
@@ -97,6 +119,7 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
 type ProveCtx = {
   prove: AST.ProveDecl;
   caseBindings: Map<string, AST.ProveExpr>; // binding name → type var
+  provedCtx: ProvedContext; // previously proved propositions
 };
 
 type TypeResult =
@@ -167,13 +190,24 @@ function inferType(
     if (!ctx.prove.returnType) {
       return { ok: false, error: `recursive call to ${name} but no return type declared` };
     }
-    // Substitute args into the declared proposition
-    let result = ctx.prove.returnType;
+    // Substitute args into the declared proposition (simultaneous)
+    const bindings = new Map<string, AST.ProveExpr>();
     const paramNames = ctx.prove.params.map((p) => p.name);
     for (let i = 0; i < args.length && i < paramNames.length; i++) {
-      result = substitute(result, paramNames[i], args[i]);
+      bindings.set(paramNames[i], args[i]);
     }
-    return { ok: true, type: normalize(result) };
+    return { ok: true, type: normalize(substituteAll(ctx.prove.returnType, bindings)) };
+  }
+
+  // Cross-lemma call: look up previously proved proposition
+  const proved = ctx.provedCtx.get(name);
+  if (proved) {
+    const bindings = new Map<string, AST.ProveExpr>();
+    const paramNames = proved.params.map((p) => p.name);
+    for (let i = 0; i < args.length && i < paramNames.length; i++) {
+      bindings.set(paramNames[i], args[i]);
+    }
+    return { ok: true, type: normalize(substituteAll(proved.returnType, bindings)) };
   }
 
   return { ok: false, error: `unknown proof combinator '${name}'` };
@@ -190,7 +224,10 @@ function extractEq(
 
 // ─── Main type checker ─────────────────────────────────────────────
 
-export function typecheckProve(prove: AST.ProveDecl): string[] {
+export function typecheckProve(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext = new Map(),
+): string[] {
   if (!prove.returnType) return []; // no annotation → skip checking
 
   const errors: string[] = [];
@@ -213,6 +250,7 @@ export function typecheckProve(prove: AST.ProveDecl): string[] {
       caseBindings: new Map(
         caseArm.bindings.map((b) => [b, ident(b)]),
       ),
+      provedCtx,
     };
     const inferred = inferType(caseArm.body, ctx);
 
