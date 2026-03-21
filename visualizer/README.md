@@ -58,6 +58,8 @@ packages/
     core.ts              ← Node2D scene tree, bounds, SVG helpers
     primitives.ts        ← Drawing primitives (circles, triangles, etc.)
     agents/              ← Per-agent SVG renderers (enclosure, replicator, wire, etc.)
+    lanes.ts             ← Lane view renderer (swimlanes, staves, timelines)
+    music.ts             ← Music notation renderer (noteheads, clefs, staves)
   methods/               ← @deltanets/methods: reduction method registry
     index.ts             ← Method registry (lambdacalc, deltanets)
     lambdacalc.ts        ← Tree-stepping method with render
@@ -65,15 +67,20 @@ packages/
 
 islands/App.tsx          ← Main app shell, composes editor + graph + toolbar
 islands/Graph.tsx        ← SVG canvas with pan/zoom/drag (D3)
-components/Toolbar.tsx   ← Controls: examples, method, stepping, settings
+components/Toolbar.tsx   ← Controls: examples, method, stepping, playback, settings
 hooks/                   ← Extracted effects: editor init, scene rendering, layout
 lib/
   appState.ts            ← Central reactive state (Preact signals)
+  audio.ts               ← Web Audio playback engine with note highlighting
   config.ts              ← Shared constants and storage keys
 ```
 
-**Data flow:** Source text → `updateAst()` → AST / Graph → method `init()` →
-method `render()` → `Node2D` scene tree → D3 SVG.
+**Data flow:** Source text → `updateAst()` → AST / Graph / Lane View →
+method `init()` → method `render()` → `Node2D` scene tree → D3 SVG.
+
+For lane views (music, swimlanes): Source text → `applyLaneView()` →
+`renderLaneView()` → `Node2D` scene tree → D3 SVG. Playback:
+`playLaneView()` → Web Audio scheduling + RAF highlight loop.
 
 ## Reduction Methods
 
@@ -82,6 +89,29 @@ method `render()` → `Node2D` scene tree → D3 SVG.
 - **Delta-Nets (graph):** Compiles λ-terms to interaction nets, then reduces via
   annihilation, erasure, and commutation rules. Supports all four substructural
   systems: Linear (L), Affine (A), Relevant (I), and Full (K).
+
+## Lane Views
+
+The `lanes` block defines swim-lane diagrams, timelines, or music staves:
+
+```
+lanes "Ode to Joy" {
+  lane "Treble" { clef: "treble", lines: 5 }
+
+  at 0 "Treble" place "E4" duration 1
+  at 1 "Treble" place "E4" duration 1
+  at 2 "Treble" place "F4" duration 1
+  at 3 "Treble" place "G4" duration 1
+
+  bar 0
+  bar 4
+}
+```
+
+Lanes with a `clef` property (treble, bass, alto) render as music staves with
+noteheads, stems, flags, accidentals, and ledger lines. A play button appears
+in the toolbar for music views — clicking it plays the notes via Web Audio API
+with real-time note highlighting.
 
 ## The .inet Language
 
@@ -126,7 +156,7 @@ See `packages/lang/examples/` for complete examples.
 ```
 deno task test        # All tests
 deno task test:core   # Core package (reductions, readback, build, redexes, typechecker)
-deno task test:lang   # Lang package (compiler, examples)
+deno task test:lang   # Lang package (compiler, examples, lanes, music)
 ```
 
 ## About the λ-calculi parser

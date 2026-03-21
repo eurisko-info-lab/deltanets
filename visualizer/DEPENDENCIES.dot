@@ -138,6 +138,9 @@ digraph dependencies {
       "render/agents/replicator.ts" [label="replicator.ts", fillcolor="#fef7e0"];
       "render/agents/twine.ts"      [label="twine.ts", fillcolor="#fef7e0"];
     }
+
+    "render/lanes.ts"      [fillcolor="#fef7e0"];
+    "render/music.ts"      [fillcolor="#fef7e0"];
   }
 
   // Render internal edges
@@ -147,6 +150,10 @@ digraph dependencies {
   "render/agents/enclosure.ts"  -> { "render/primitives.ts" "render/agents/wire.ts" };
   "render/agents/replicator.ts" -> { "render/primitives.ts" "render/agents/simple.ts" };
   "render/agents/twine.ts"      -> "render/primitives.ts";
+
+  // Lanes and music
+  "render/lanes.ts"             -> { "render/core.ts" "render/music.ts" };
+  "render/music.ts"             -> "render/core.ts";
 
   // ═══════════════════════════════════════════════════════════════
   // Package: @deltanets/methods
@@ -216,6 +223,7 @@ digraph dependencies {
     fillcolor="#f3e8fd";
 
     "lib/appState.ts"  [fillcolor="#f3e8fd"];
+    "lib/audio.ts"     [fillcolor="#f3e8fd"];
     "lib/config.ts"    [fillcolor="#f3e8fd"];
     "lib/examples.ts"  [fillcolor="#f3e8fd"];
 
@@ -237,13 +245,14 @@ digraph dependencies {
   "hooks/useCodeEditor.ts"   -> { "lib/appState.ts" "lib/config.ts" "routes/index.tsx" };
   "hooks/useSceneEffects.ts" -> "lib/appState.ts";
   "hooks/useEditorLayout.ts" -> { "lib/appState.ts" "lib/config.ts" };
-  "components/Toolbar.tsx"   -> { "lib/appState.ts" "lib/config.ts" "components/Icons.tsx" "routes/index.tsx" };
+  "components/Toolbar.tsx"   -> { "lib/appState.ts" "lib/audio.ts" "lib/config.ts" "components/Icons.tsx" "routes/index.tsx" };
   "routes/index.tsx"         -> { "lib/examples.ts" "islands/App.tsx" };
   "islands/Graph.tsx"        -> "lib/config.ts";
 
   // App → package edges
   "lib/appState.ts"         -> "core/ast.ts"       [color="#4285f4", style=dashed];
   "lib/appState.ts"         -> "render/core.ts"     [color="#fbbc04", style=dashed];
+  "lib/appState.ts"         -> "render/lanes.ts"    [color="#fbbc04", style=dashed];
   "lib/appState.ts"         -> "methods/index.ts"   [color="#ea4335", style=dashed];
   "lib/appState.ts"         -> "lang/index.ts"      [color="#34a853", style=dashed];
   "hooks/useSceneEffects.ts"-> "core/ast.ts"        [color="#4285f4", style=dashed];
@@ -253,7 +262,12 @@ digraph dependencies {
   "components/Toolbar.tsx"  -> "core/ast.ts"        [color="#4285f4", style=dashed];
   "components/Toolbar.tsx"  -> "render/core.ts"     [color="#fbbc04", style=dashed];
   "components/Toolbar.tsx"  -> "methods/index.ts"   [color="#ea4335", style=dashed];
+  "components/Toolbar.tsx"  -> "lang/index.ts"      [color="#34a853", style=dashed];
   "islands/Graph.tsx"       -> "render/core.ts"     [color="#fbbc04", style=dashed];
+
+  // Audio cross-package edges
+  "lib/audio.ts"            -> "render/music.ts"    [color="#fbbc04", style=dashed];
+  "lib/audio.ts"            -> "render/lanes.ts"    [color="#fbbc04", style=dashed];
 
   // ═══════════════════════════════════════════════════════════════
   // Legend
