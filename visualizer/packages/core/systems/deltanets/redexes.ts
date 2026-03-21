@@ -483,6 +483,9 @@ export function getRedexes(
               redex.optimal = true;
               return true;
             }
+          } else {
+            // Principal is not in a redex — continue traversal through it
+            if (traverse(node.ports[0])) return true;
           }
         }
         // Traverse other auxiliary ports
@@ -546,6 +549,9 @@ export function getRedexes(
             if (redex) {
               redex.optimal = true;
             }
+          } else {
+            // Principal is not in a redex — continue traversal through it
+            traverse2(node.ports[0]);
           }
         }
         for (let i = 1; i < node.ports.length; i++) {

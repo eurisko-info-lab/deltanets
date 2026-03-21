@@ -1,0 +1,153 @@
+# Propositional Equality — Proof Reduction as Computation
+#
+# Just like numbers compute (0+0 → 0), proofs compute too!
+# The equality type has one constructor — refl (reflexivity) —
+# and several eliminators that reduce when they meet refl.
+#
+# This demonstrates that proof simplification in type theory
+# is exactly interaction net reduction.
+
+include "prelude"
+
+system "Eq" extend "Prelude" {
+
+  # ─── Constructors ────────────────────────────────────────────────
+
+  # refl: reflexivity — proves that any value equals itself.
+  #   The only way to introduce an equality proof.
+  agent refl(principal)
+
+  # ─── Eliminators ─────────────────────────────────────────────────
+
+  # subst (transport): given a proof of a = b, transfer a
+  #   witness of P(a) into a witness of P(b).
+  #   principal  = connects to equality proof
+  #   result     = output (witness of P(b))
+  #   value      = input  (witness of P(a))
+  agent subst(principal, result, value)
+
+  # sym: symmetry — if a = b then b = a.
+  #   principal  = connects to equality proof of a = b
+  #   result     = output (proof of b = a)
+  agent sym(principal, result)
+
+  # cong: congruence — if a = b then f(a) = f(b).
+  #   principal  = connects to equality proof of a = b
+  #   result     = output (proof of f(a) = f(b))
+  #   func       = the function witness (erased by refl)
+  agent cong(principal, result, func)
+
+  # trans: transitivity — if a = b and b = c then a = c.
+  #   principal  = connects to first proof  (a = b)
+  #   result     = output (proof of a = c)
+  #   second     = connects to second proof (b = c)
+  agent trans(principal, result, second)
+
+  # ─── Computation Rules ───────────────────────────────────────────
+  #
+  # Each eliminator has a computation rule when it meets refl.
+  # These are the "beta rules" for the identity type.
+
+  # subst >< refl: transporting along refl does nothing.
+  #   The value passes through unchanged.
+  #   subst(result, value) >< refl  →  result ← value
+  rule subst <> refl -> {
+    relink left.result left.value
+  }
+
+  # sym >< refl: symmetry of refl is refl.
+  #   sym(result) >< refl  →  result ← new refl
+  rule sym <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+
+  # cong >< refl: congruence applied to refl is refl.
+  #   cong(result, func) >< refl  →  result ← new refl, erase func
+  rule cong <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.func
+  }
+
+  # trans >< refl: first proof is refl, so a = b becomes a = a = c,
+  #   which simplifies to the second proof passing through.
+  #   trans(result, second) >< refl  →  result ← second
+  rule trans <> refl -> {
+    relink left.result left.second
+  }
+}
+
+# ─── Example Graphs ───────────────────────────────────────────────
+
+# subst(refl, value) → value
+# "Transporting along reflexivity gives back the original."
+graph subst-refl {
+  let r  = root
+  let s  = subst
+  let rf = refl
+  let v  = refl "value"
+  wire r.principal -- s.result
+  wire s.principal -- rf.principal
+  wire s.value    -- v.principal
+}
+
+# sym(refl) → refl
+# "The reverse of reflexivity is reflexivity."
+graph sym-refl {
+  let r  = root
+  let s  = sym
+  let rf = refl
+  wire r.principal -- s.result
+  wire s.principal -- rf.principal
+}
+
+# cong(refl) → refl  (function witness erased)
+# "Applying any function to both sides of refl gives refl."
+graph cong-refl {
+  let r  = root
+  let c  = cong
+  let rf = refl
+  let f  = refl "f"
+  wire r.principal -- c.result
+  wire c.principal -- rf.principal
+  wire c.func     -- f.principal
+}
+
+# trans(refl, refl) → refl
+# "Chaining two reflexivities is just reflexivity."
+graph trans-refl-refl {
+  let r  = root
+  let t  = trans
+  let r1 = refl
+  let r2 = refl
+  wire r.principal -- t.result
+  wire t.principal -- r1.principal
+  wire t.second   -- r2.principal
+}
+
+# sym(sym(refl)) → refl  (two steps)
+# "Reversing twice gets you back where you started."
+graph sym-sym-refl {
+  let r   = root
+  let s1  = sym
+  let s2  = sym
+  let rf  = refl
+  wire r.principal  -- s1.result
+  wire s1.principal -- s2.result
+  wire s2.principal -- rf.principal
+}
+
+# trans(refl, sym(refl)) → refl  (two steps)
+# "refl composed with sym(refl) reduces to refl."
+graph trans-refl-sym-refl {
+  let r   = root
+  let t   = trans
+  let r1  = refl
+  let s   = sym
+  let r2  = refl
+  wire r.principal  -- t.result
+  wire t.principal  -- r1.principal
+  wire t.second    -- s.result
+  wire s.principal  -- r2.principal
+}

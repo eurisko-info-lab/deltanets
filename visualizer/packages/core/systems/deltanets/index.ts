@@ -62,6 +62,12 @@ function findReachableNodes(graph: Graph): Set<Node> {
       }
     } else if (node.type === "era") {
       // nothing to do
+    } else {
+      // Generic/custom agents: traverse all ports except entry
+      for (let i = 0; i < node.ports.length; i++) {
+        if (i === port) continue;
+        traverse(node.ports[i]);
+      }
     }
   };
   traverse(rootNode.ports[0]);
