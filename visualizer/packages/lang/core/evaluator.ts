@@ -9,6 +9,7 @@ import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
 import {
   evalAgent,
+  evalBodyInto,
   evalCompose,
   evalExtend,
   evalSystem,
@@ -177,6 +178,21 @@ export function evaluate(
             name: stmt.name,
             excludedAgents: stmt.exclude,
           });
+          break;
+        }
+        case "prove": {
+          // Top-level prove: desugar using ambient + system agents
+          const allAgents = new Map(ambientAgents);
+          for (const sys of systems.values()) {
+            for (const [name, agent] of sys.agents) {
+              if (!allAgents.has(name)) allAgents.set(name, agent);
+            }
+          }
+          evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
+          // Copy back newly created agents
+          for (const [name, agent] of allAgents) {
+            if (!ambientAgents.has(name)) ambientAgents.set(name, agent);
+          }
           break;
         }
         case "graph":

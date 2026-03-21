@@ -149,6 +149,8 @@ class Parser {
         return this.parseIncludeDecl();
       case TT.LANES:
         return this.parseLanesDecl();
+      case TT.PROVE:
+        return this.parseProveDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -290,16 +292,17 @@ class Parser {
     return { kind: "system", name, body };
   }
 
-  parseSystemBody(): (AST.AgentDecl | AST.RuleDecl | AST.ModeDecl)[] {
+  parseSystemBody(): AST.SystemBody[] {
     this.eat(TT.LBRACE);
-    const body: (AST.AgentDecl | AST.RuleDecl | AST.ModeDecl)[] = [];
+    const body: AST.SystemBody[] = [];
     while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
       const tok = this.peek();
       if (tok.type === TT.AGENT) body.push(this.parseAgentDecl());
       else if (tok.type === TT.RULE) body.push(this.parseRuleDecl());
       else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
+      else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -444,6 +447,61 @@ class Parser {
       port = this.eatName();
     }
     return { node, port };
+  }
+
+  // ─── Prove (tactic sugar) ────────────────────────────────────────
+
+  parseProveDecl(): AST.ProveDecl {
+    this.eat(TT.PROVE);
+    const name = this.eatIdent();
+    this.eat(TT.LPAREN);
+    const params: string[] = [this.eatIdent()];
+    while (this.check(TT.COMMA)) {
+      this.advance();
+      params.push(this.eatIdent());
+    }
+    this.eat(TT.RPAREN);
+    this.eat(TT.LBRACE);
+    const cases: AST.ProveCase[] = [];
+    while (this.check(TT.PIPE)) {
+      this.advance(); // eat |
+      const pattern = this.eatIdent();
+      const bindings: string[] = [];
+      if (this.check(TT.LPAREN)) {
+        this.advance();
+        if (!this.check(TT.RPAREN)) {
+          bindings.push(this.eatIdent());
+          while (this.check(TT.COMMA)) {
+            this.advance();
+            bindings.push(this.eatIdent());
+          }
+        }
+        this.eat(TT.RPAREN);
+      }
+      this.eat(TT.ARROW);
+      const body = this.parseProveExpr();
+      cases.push({ pattern, bindings, body });
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "prove", name, params, cases };
+  }
+
+  parseProveExpr(): AST.ProveExpr {
+    const name = this.eatIdent();
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      const args: AST.ProveExpr[] = [];
+      if (!this.check(TT.RPAREN)) {
+        args.push(this.parseProveExpr());
+        while (this.check(TT.COMMA)) {
+          this.advance();
+          args.push(this.parseProveExpr());
+        }
+      }
+      this.eat(TT.RPAREN);
+      return { kind: "call", name, args };
+    }
+    return { kind: "ident", name };
   }
 
   // ─── Mode ────────────────────────────────────────────────────────

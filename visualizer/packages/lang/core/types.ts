@@ -15,13 +15,14 @@ export type Statement =
   | GraphDecl
   | DefDecl
   | IncludeDecl
-  | LanesDecl;
+  | LanesDecl
+  | ProveDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
   kind: "system";
   name: string;
-  body: (AgentDecl | RuleDecl | ModeDecl)[];
+  body: SystemBody[];
 };
 
 // system "B" extend "A" { agent..., rule..., mode... }
@@ -29,7 +30,7 @@ export type ExtendDecl = {
   kind: "extend";
   name: string; // new system name
   base: string; // system to extend
-  body: (AgentDecl | RuleDecl | ModeDecl)[];
+  body: SystemBody[];
 };
 
 // system "C" = compose "A" + "B" { rule... }
@@ -38,8 +39,30 @@ export type ComposeDecl = {
   kind: "compose";
   name: string; // new system name
   components: string[]; // systems to compose (≥2)
-  body: (AgentDecl | RuleDecl | ModeDecl)[]; // cross-interaction rules
+  body: SystemBody[]; // cross-interaction rules
 };
+
+// Items allowed inside a system body
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl;
+
+// prove name(param, ...) { | Constructor -> expr ... }
+// Desugars into an AgentDecl + RuleDecl[] during evaluation.
+export type ProveDecl = {
+  kind: "prove";
+  name: string;
+  params: string[]; // first = principal (induction var), rest = aux ports
+  cases: ProveCase[];
+};
+
+export type ProveCase = {
+  pattern: string; // constructor name (Zero, Succ, ...)
+  bindings: string[]; // bound variables from the constructor (e.g., k in Succ(k))
+  body: ProveExpr;
+};
+
+export type ProveExpr =
+  | { kind: "ident"; name: string } // variable reference or nullary agent
+  | { kind: "call"; name: string; args: ProveExpr[] }; // agent application
 
 // agent name(port, port, ..variadicPort)
 export type AgentDecl = {

@@ -1,0 +1,192 @@
+# Proof Tactic Sugar — Declarative Proofs via `prove`
+#
+# The `prove` keyword auto-generates an agent + interaction rules
+# from a case-split proof term. Instead of manually writing:
+#
+#   agent plus_zero_right(principal, result)
+#   rule plus_zero_right <> Zero -> { ... }
+#   rule plus_zero_right <> Succ -> { ... }
+#
+# You write:
+#
+#   prove plus_zero_right(n) {
+#     | Zero -> refl
+#     | Succ(k) -> cong_succ(plus_zero_right(k))
+#   }
+#
+# The first parameter is the induction variable (principal port).
+# Additional parameters become auxiliary ports.
+# Unused parameters are automatically erased.
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent cong(principal, result, func)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> { relink left.result left.value }
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule cong <> refl -> { let r = refl  relink left.result r.principal  erase left.func }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ─── Proofs using `prove` syntax ────────────────────────────────────
+
+system "TacticProofs" extend "NatEq" {
+  # plus_zero_right: n + 0 = n
+  # Equivalent to the manually-written version from inet-induction.inet
+  prove plus_zero_right(n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+
+  # plus_succ_right: n + S(m) = S(n + m)
+  # The parameter m is threaded through and erased at base.
+  prove plus_succ_right(n, m) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_succ_right(k, m))
+  }
+}
+
+# ─── Example graphs ─────────────────────────────────────────────────
+
+# pzr-zero: plus_zero_right(0) → refl (1 step)
+graph pzr-zero {
+  let r   = root
+  let pzr = plus_zero_right
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- z.principal
+}
+
+# pzr-one: plus_zero_right(1) → refl (3 steps)
+graph pzr-one {
+  let r   = root
+  let pzr = plus_zero_right
+  let s   = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s.principal
+  wire s.pred       -- z.principal
+}
+
+# pzr-two: plus_zero_right(2) → refl (5 steps)
+graph pzr-two {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z.principal
+}
+
+# pzr-three: plus_zero_right(3) → refl (7 steps)
+graph pzr-three {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let s3  = Succ
+  let z   = Zero
+  wire r.principal   -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- s3.principal
+  wire s3.pred       -- z.principal
+}
+
+# psr-zero-zero: plus_succ_right(0, 0) → refl (2 steps)
+graph psr-zero-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# psr-one-zero: plus_succ_right(1, 0) → refl (4 steps)
+graph psr-one-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let s   = Succ
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s.principal
+  wire s.pred        -- z1.principal
+  wire psr.m         -- z2.principal
+}
+
+# psr-two-one: plus_succ_right(2, 1) → refl (7 steps)
+graph psr-two-one {
+  let r   = root
+  let psr = plus_succ_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  let sm  = Succ
+  let zm  = Zero
+  wire r.principal   -- psr.result
+  wire psr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z.principal
+  wire psr.m         -- sm.principal
+  wire sm.pred       -- zm.principal
+}
+
+# verify-pzr: subst(plus_zero_right(2), add(2, 0)) → S(S(Zero))
+graph verify-pzr {
+  let r   = root
+  let sub = subst
+  let pzr = plus_zero_right
+  let add1 = add
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let s3  = Succ
+  let s4  = Succ
+  let z2  = Zero
+  let z3  = Zero
+  wire r.principal    -- sub.result
+  wire sub.principal  -- pzr.result
+  wire sub.value      -- add1.result
+  wire pzr.principal  -- s1.principal
+  wire s1.pred        -- s2.principal
+  wire s2.pred        -- z1.principal
+  wire add1.principal -- s3.principal
+  wire s3.pred        -- s4.principal
+  wire s4.pred        -- z2.principal
+  wire add1.accum     -- z3.principal
+}

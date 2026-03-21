@@ -26,6 +26,8 @@ export const TT = {
   INCLUDE: "INCLUDE",
   LANES: "LANES",
   LANE: "LANE",
+  PROVE: "PROVE",
+  PIPE: "PIPE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -82,6 +84,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   include: TT.INCLUDE,
   lanes: TT.LANES,
   lane: TT.LANE,
+  prove: TT.PROVE,
 };
 
 export class LexError extends Error {
@@ -167,6 +170,7 @@ export function tokenize(source: string): Token[] {
       ":": TT.COLON,
       "?": TT.QUESTION,
       "-": TT.MINUS,
+      "|": TT.PIPE,
     };
     if (singles[source[i]]) {
       tokens.push({
