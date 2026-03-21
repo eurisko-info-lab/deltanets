@@ -1,0 +1,154 @@
+# Proofs About Natural Numbers — Equality Meets Arithmetic
+#
+# Combines the Nat and Eq systems to demonstrate that proofs
+# about numbers are just interaction net reductions.
+#
+# Key idea: "cong_succ" turns a proof of a = b into a proof
+# of Succ(a) = Succ(b).  Together with refl, sym, and trans
+# we can build and simplify proofs about addition.
+
+include "prelude"
+
+# ─── Nat system (Peano arithmetic) ────────────────────────────────
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> {
+    relink left.result left.accum
+  }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+# ─── Eq system (propositional equality) ───────────────────────────
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent cong(principal, result, func)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> {
+    relink left.result left.value
+  }
+  rule sym <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+  rule cong <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.func
+  }
+  rule trans <> refl -> {
+    relink left.result left.second
+  }
+}
+
+# ─── NatEq: proofs about numbers ─────────────────────────────────
+
+system "NatEq" extend "Eq" {
+
+  # cong_succ: if a = b then Succ(a) = Succ(b).
+  #   This is the workhorse of inductive proofs about Nat.
+  #   principal  = proof of a = b
+  #   result     = proof of Succ(a) = Succ(b)
+  agent cong_succ(principal, result)
+
+  # cong_succ >< refl → new refl
+  #   Since a = a, we know Succ(a) = Succ(a), which is just refl.
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ─── Example Graphs ───────────────────────────────────────────────
+#
+# Each graph is a proof term that reduces to a simpler proof.
+# The "result" of full reduction is always refl — the simplest
+# possible equality proof.
+
+# ─── Basic: cong_succ(refl) → refl ───────────────────────────────
+# "If a = a (refl) then Succ(a) = Succ(a) (refl)."
+graph cong-succ-refl {
+  let r   = root
+  let cs  = cong_succ
+  let rf  = refl
+  wire r.principal  -- cs.result
+  wire cs.principal -- rf.principal
+}
+
+# ─── Nested: cong_succ(cong_succ(refl)) → refl ──────────────────
+# "Succ(Succ(a)) = Succ(Succ(a)) by applying cong_succ twice."
+graph cong-succ-cong-succ-refl {
+  let r    = root
+  let cs1  = cong_succ
+  let cs2  = cong_succ
+  let rf   = refl
+  wire r.principal   -- cs1.result
+  wire cs1.principal -- cs2.result
+  wire cs2.principal -- rf.principal
+}
+
+# ─── sym(cong_succ(refl)) → refl ────────────────────────────────
+# "Succ(a) = Succ(a) reversed is still refl."
+graph sym-cong-succ-refl {
+  let r   = root
+  let s   = sym
+  let cs  = cong_succ
+  let rf  = refl
+  wire r.principal  -- s.result
+  wire s.principal  -- cs.result
+  wire cs.principal -- rf.principal
+}
+
+# ─── trans(cong_succ(refl), cong_succ(refl)) → refl ─────────────
+# "Succ(a) = Succ(a) chained with Succ(a) = Succ(a) is refl."
+graph trans-cong-succ {
+  let r    = root
+  let t    = trans
+  let cs1  = cong_succ
+  let cs2  = cong_succ
+  let rf1  = refl
+  let rf2  = refl
+  wire r.principal   -- t.result
+  wire t.principal   -- cs1.result
+  wire cs1.principal -- rf1.principal
+  wire t.second      -- cs2.result
+  wire cs2.principal -- rf2.principal
+}
+
+# ─── Arithmetic proof: 0+0 = 0 via refl ─────────────────────────
+# After add(Zero, Zero) reduces to Zero, only refl remains.
+# This graph packages "add then prove equal" into one net.
+#
+# The idea: we build the proof of add(0,0) = 0 by:
+#   1. subst carries the proof obligation through add
+#   2. add(Zero, Zero) reduces to Zero
+#   3. subst(refl, ...) passes through → refl
+graph zero-plus-zero-eq {
+  let r   = root
+  let sub = subst
+  let rf  = refl
+  let a   = add
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal   -- sub.result
+  wire sub.principal -- rf.principal
+  wire sub.value     -- a.result
+  wire a.principal   -- z1.principal
+  wire a.accum       -- z2.principal
+}
