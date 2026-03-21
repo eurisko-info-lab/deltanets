@@ -1,0 +1,78 @@
+# Music notation — rendering notes on standard staves
+# Uses the lane system with `clef` property to trigger music mode.
+
+# ── Simple melody (Ode to Joy opening) ──────────────────────────
+lanes "Ode to Joy" {
+  lane "Treble" { clef: "treble", lines: 5 }
+
+  at 0  "Treble" place "E4" duration 1
+  at 1  "Treble" place "E4" duration 1
+  at 2  "Treble" place "F4" duration 1
+  at 3  "Treble" place "G4" duration 1
+
+  at 4  "Treble" place "G4" duration 1
+  at 5  "Treble" place "F4" duration 1
+  at 6  "Treble" place "E4" duration 1
+  at 7  "Treble" place "D4" duration 1
+
+  at 8  "Treble" place "C4" duration 1
+  at 9  "Treble" place "C4" duration 1
+  at 10 "Treble" place "D4" duration 1
+  at 11 "Treble" place "E4" duration 1
+
+  at 12 "Treble" place "E4" duration 2
+  at 14 "Treble" place "D4" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+  bar 12
+  bar 16
+}
+
+# ── Piano (treble + bass, varied durations) ─────────────────────
+lanes "Piano" {
+  lane "Right Hand" { clef: "treble", lines: 5 }
+  lane "Left Hand"  { clef: "bass",   lines: 5 }
+
+  # Right hand — melody with mixed note values
+  at 0 "Right Hand" place "C5" duration 2
+  at 2 "Right Hand" place "B4" duration 1
+  at 3 "Right Hand" place "A4" duration 1
+  at 4 "Right Hand" place "G4" duration 2
+  at 6 "Right Hand" place "F4" duration 1
+  at 7 "Right Hand" place "E4" duration 0.5
+  at 8 "Right Hand" place "D4" duration 0.5
+
+  # Left hand — bass accompaniment
+  at 0 "Left Hand" place "C3" duration 4
+  at 4 "Left Hand" place "G2" duration 2
+  at 6 "Left Hand" place "A2" duration 2
+
+  bar 0
+  bar 4
+  bar 8
+}
+
+# ── Accidentals and ledger lines ────────────────────────────────
+lanes "Chromatic" {
+  lane "Staff" { clef: "treble", lines: 5 }
+
+  at 0 "Staff" place "C4" duration 1
+  at 1 "Staff" place "C#4" duration 1
+  at 2 "Staff" place "D4" duration 1
+  at 3 "Staff" place "Eb4" duration 1
+  at 4 "Staff" place "E4" duration 1
+  at 5 "Staff" place "F4" duration 1
+  at 6 "Staff" place "F#4" duration 1
+  at 7 "Staff" place "G4" duration 1
+  at 8 "Staff" place "A4" duration 1
+  at 9 "Staff" place "Bb4" duration 1
+  at 10 "Staff" place "B4" duration 1
+  at 11 "Staff" place "C5" duration 1
+
+  bar 0
+  bar 4
+  bar 8
+  bar 12
+}

@@ -214,13 +214,27 @@ export function tokenize(source: string): Token[] {
       continue;
     }
 
-    // Number literal
+    // Number literal (supports decimals: 0.5, 3.14)
     if (/[0-9]/.test(source[i])) {
       let num = "";
       while (i < source.length && /[0-9]/.test(source[i])) {
         num += source[i];
         i++;
         col++;
+      }
+      // Decimal part
+      if (
+        i < source.length && source[i] === "." && i + 1 < source.length &&
+        /[0-9]/.test(source[i + 1])
+      ) {
+        num += source[i]; // '.'
+        i++;
+        col++;
+        while (i < source.length && /[0-9]/.test(source[i])) {
+          num += source[i];
+          i++;
+          col++;
+        }
       }
       tokens.push({ type: TT.NUMBER, value: num, line, col: startCol });
       continue;
