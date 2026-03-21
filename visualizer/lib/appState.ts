@@ -1,13 +1,13 @@
 import { batch, signal } from "@preact/signals";
 import { IS_BROWSER } from "$fresh/runtime.ts";
-import { AstNode, getExpressionType, parseSource, SystemType } from "./ast.ts";
-import { typeCheck, hasTypeAnnotations, generateTypeCheckSteps, tagAstWithTypeCheckIndices } from "./core/index.ts";
-import type { TypeResult, TypeCheckStep } from "./core/index.ts";
-import { Node2D, Pos } from "./render.ts";
-import { METHODS } from "./methods/index.ts";
-import { typeReductionMode, agentStyles } from "./methods/deltanets/index.ts";
-import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "./lang/bridge.ts";
-import type { CoreResult } from "./lang/core/index.ts";
+import { AstNode, getExpressionType, parseSource, SystemType } from "@deltanets/core";
+import { typeCheck, hasTypeAnnotations, generateTypeCheckSteps, tagAstWithTypeCheckIndices } from "@deltanets/core";
+import type { TypeResult, TypeCheckStep } from "@deltanets/core";
+import { Node2D, Pos } from "@deltanets/render";
+import { METHODS } from "@deltanets/methods";
+import { typeReductionMode, agentStyles } from "@deltanets/methods";
+import { isINetSource, compileINet, extractGraph, resolveAgentStyles } from "@deltanets/lang";
+import type { CoreResult } from "@deltanets/lang";
 
 // Constants
 export const TITLE = "Interactive λ-Reduction";

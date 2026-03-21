@@ -6,12 +6,12 @@ import {
   codeEditorRef, updateAst, selectINetGraph, enterTypeCheckMode, exitTypeCheckMode,
   parseErrors,
 } from "../lib/appState.ts";
-import { OPTIMAL_HIGHLIGHT_COLOR } from "../lib/render.ts";
-import { typeToString, type SystemType } from "../lib/ast.ts";
-import { hasTypeAnnotations } from "../lib/core/index.ts";
+import { OPTIMAL_HIGHLIGHT_COLOR } from "@deltanets/render";
+import { typeToString, type SystemType } from "@deltanets/core";
+import { hasTypeAnnotations } from "@deltanets/core";
 import { GitHubIcon, DarkThemeIcon, LightThemeIcon } from "./Icons.tsx";
-import { METHODS } from "../lib/methods/index.ts";
-import { typeReductionMode } from "../lib/methods/deltanets/index.ts";
+import { METHODS } from "@deltanets/methods";
+import { typeReductionMode } from "@deltanets/methods";
 import type { Example } from "../routes/index.tsx";
 
 import IconArrowBarToLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-bar-to-left.tsx";

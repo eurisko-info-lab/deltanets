@@ -1,6 +1,6 @@
 import { batch, Signal, useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
-import { defaultStroke, Pos } from "../lib/render.ts";
+import { defaultStroke, Pos } from "@deltanets/render";
 
 export function Graph(
   { theme, translate, scale, center }: {

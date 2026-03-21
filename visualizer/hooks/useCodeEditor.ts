@@ -1,6 +1,6 @@
 import { useEffect } from "preact/hooks";
 import loader, { type Monaco } from "@monaco-editor/loader";
-import { METHODS } from "../lib/methods/index.ts";
+import { METHODS } from "@deltanets/methods";
 import {
   method, theme, editorWidth, isFirstLoad,
   typeCheckMode, typeCheckSteps, typeCheckStepIdx,

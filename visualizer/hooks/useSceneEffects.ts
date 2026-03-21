@@ -1,8 +1,8 @@
 import { Signal, useSignalEffect } from "@preact/signals";
-import { AstNode } from "../lib/ast.ts";
-import { Node2D, render } from "../lib/render.ts";
-import { METHODS } from "../lib/methods/index.ts";
-import type { MethodState } from "../lib/methods/index.ts";
+import { AstNode } from "@deltanets/core";
+import { Node2D, render } from "@deltanets/render";
+import { METHODS } from "@deltanets/methods";
+import type { MethodState } from "@deltanets/methods";
 import {
   method, ast, scene, center, debug, theme,
   typeCheckMode, typeCheckSteps, typeCheckStepIdx,

@@ -1,0 +1,9 @@
+{
+  "name": "@deltanets/render",
+  "version": "0.1.0",
+  "exports": "./mod.ts",
+  "imports": {
+    "d3": "https://esm.sh/v132/d3@7.8.4",
+    "d3-selection-multi": "https://esm.sh/v132/d3-selection-multi@1.0.1"
+  }
+}
