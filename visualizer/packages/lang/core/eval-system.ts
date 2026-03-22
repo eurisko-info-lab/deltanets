@@ -13,9 +13,9 @@ export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: 
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
+  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
 }
 
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
@@ -26,8 +26,9 @@ export function evalBodyInto(
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
   modes: Map<string, ModeDef>,
-): ProofTree[] {
-  const provedCtx: ProvedContext = new Map();
+  initialCtx?: ProvedContext,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext } {
+  const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
 
   for (const item of body) {
@@ -84,7 +85,7 @@ export function evalBodyInto(
       }
     }
   }
-  return proofTrees;
+  return { proofTrees, provedCtx };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -101,10 +102,10 @@ export function evalExtend(
   const rules = [...base.rules];
   const modes = new Map(base.modes);
 
-  // Merge new declarations
-  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
+  // Merge new declarations — inherit base system's proved propositions
+  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx);
 
-  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -116,8 +117,9 @@ export function evalCompose(
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
+  const mergedCtx: ProvedContext = new Map();
 
-  // Union: merge all agents, rules, modes from each component
+  // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
     const comp = systems.get(compName);
     if (!comp) {
@@ -143,12 +145,17 @@ export function evalCompose(
     for (const [name, mode] of comp.modes) {
       modes.set(name, mode);
     }
+
+    // Proved context: merge
+    for (const [name, entry] of comp.provedCtx) {
+      mergedCtx.set(name, entry);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
+  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx);
 
-  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────

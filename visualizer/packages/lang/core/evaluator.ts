@@ -43,6 +43,7 @@ export type SystemDef = {
   agents: Map<string, AgentDef>;
   rules: RuleDef[];
   modes: Map<string, ModeDef>;
+  provedCtx: import("./typecheck-prove.ts").ProvedContext;
 };
 
 export type GraphDef =

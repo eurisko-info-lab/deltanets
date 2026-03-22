@@ -1447,3 +1447,54 @@ Deno.test("tactic: rewrite proof tree shows rule", () => {
   assertEquals(succ.rule, "rewrite");
   assertEquals(succ.children.length, 1);
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Include-aware proof context tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("include-aware: extend inherits proved context from base", () => {
+  // System A proves pzr, then system B extends A and uses pzr as a cross-lemma
+  const result = compile(`
+    system "IncBase" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+    system "IncExt" extend "IncBase" {
+      prove double_pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+  `);
+  // double_pzr should type-check because pzr is in scope from IncBase
+  const tree = result.proofTrees.get("double_pzr")!;
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("include-aware: compose merges proved context from components", () => {
+  const result = compile(`
+    system "CompA" extend "NatEq" {
+      prove lemma_a(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(lemma_a(k))
+      }
+    }
+    system "CompB" extend "NatEq" {
+      prove lemma_b(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(lemma_b(k))
+      }
+    }
+    system "Merged" = compose "CompA" + "CompB" {
+      prove uses_both(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(lemma_a(k))
+      }
+    }
+  `);
+  // uses_both should work because lemma_a is available from CompA
+  const tree = result.proofTrees.get("uses_both")!;
+  assertEquals(tree.hasHoles, false);
+});
