@@ -33,7 +33,7 @@ import {
   resolveAgentStyles,
 } from "@deltanets/lang";
 import type { CoreResult } from "@deltanets/lang";
-import type { ProofTree } from "@deltanets/lang";
+import type { ProofNode, ProofTree } from "@deltanets/lang";
 import { MAX_AUTO_SCALE, MIN_PANE_SIZE, STORAGE_KEYS } from "./config.ts";
 
 // Re-export for consumers that imported from here.
@@ -119,6 +119,93 @@ export const isDraggingSplitter = signal<boolean>(false);
 // Mutable ref for the Monaco editor instance
 // deno-lint-ignore no-explicit-any
 export const codeEditorRef: { current: any } = { current: null };
+
+// --- Inline goal hints ---
+
+/** Track previous decoration IDs so we can replace them. */
+let goalDecorationIds: string[] = [];
+
+/** Find positions of standalone `?` tokens in .inet source (skipping comments and strings). */
+function findHolePositions(source: string): { line: number; col: number }[] {
+  const positions: { line: number; col: number }[] = [];
+  let line = 1, col = 1;
+  let inComment = false;
+  let inString = false;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "\n") {
+      line++;
+      col = 1;
+      inComment = false;
+      continue;
+    }
+    if (inComment) { col++; continue; }
+    if (ch === "#") { inComment = true; col++; continue; }
+    if (ch === '"' && !inString) { inString = true; col++; continue; }
+    if (ch === '"' && inString) { inString = false; col++; continue; }
+    if (!inString && ch === "?") {
+      positions.push({ line, col });
+    }
+    col++;
+  }
+  return positions;
+}
+
+/** Collect all goal nodes from proof trees in DFS source order. */
+function collectGoals(proofTrees: Map<string, ProofTree>): { conclusion: string; suggestions: string[] }[] {
+  const goals: { conclusion: string; suggestions: string[] }[] = [];
+  function walk(node: ProofNode) {
+    if (node.isGoal) {
+      goals.push({ conclusion: node.conclusion, suggestions: node.suggestions || [] });
+    }
+    for (const child of node.children) walk(child);
+  }
+  for (const tree of proofTrees.values()) {
+    for (const c of tree.cases) walk(c.tree);
+  }
+  return goals;
+}
+
+/** Update Monaco editor decorations to show goal types inline next to `?` holes. */
+function updateGoalHints(source: string, proofTrees: Map<string, ProofTree>) {
+  const editor = codeEditorRef.current;
+  if (!editor) return;
+
+  const holes = findHolePositions(source);
+  const goals = collectGoals(proofTrees);
+
+  // deno-lint-ignore no-explicit-any
+  const decorations: any[] = [];
+  const count = Math.min(holes.length, goals.length);
+  for (let i = 0; i < count; i++) {
+    const { line, col } = holes[i];
+    const { conclusion, suggestions } = goals[i];
+    let hint = ` : ${conclusion}`;
+    if (suggestions.length > 0) {
+      hint += `  [try: ${suggestions.join(", ")}]`;
+    }
+    decorations.push({
+      range: { startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1 },
+      options: {
+        after: {
+          content: hint,
+          inlineClassName: "goal-hint-text",
+        },
+      },
+    });
+  }
+
+  goalDecorationIds = editor.deltaDecorations(goalDecorationIds, decorations);
+}
+
+/** Clear all goal hint decorations. */
+function clearGoalHints() {
+  const editor = codeEditorRef.current;
+  if (!editor) return;
+  if (goalDecorationIds.length > 0) {
+    goalDecorationIds = editor.deltaDecorations(goalDecorationIds, []);
+  }
+}
 
 // --- Internal helpers ---
 
@@ -222,6 +309,7 @@ export const updateAst = (source: string) => {
 
   if (source.length === 0) {
     scene.value = null;
+    clearGoalHints();
     return;
   }
 
@@ -230,6 +318,7 @@ export const updateAst = (source: string) => {
     const result = compileINet(source);
     if (result.errors.length === 0 && result.graphNames.length > 0) {
       agentStyles.value = resolveAgentStyles(result.core);
+      updateGoalHints(source, result.core.proofTrees);
 
       const graphName = inetSelectedGraph.peek() &&
           result.graphNames.includes(inetSelectedGraph.peek())
@@ -293,11 +382,13 @@ export const updateAst = (source: string) => {
       exprError.value = true;
       parseErrors.value = formatErrors(result.errors);
       inetMode.value = false;
+      clearGoalHints();
       return;
     }
   }
 
   // Fall back to standard lambda calculus parser
+  clearGoalHints();
   inetMode.value = false;
   inetCore.value = null;
   inetGraphNames.value = [];

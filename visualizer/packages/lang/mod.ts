@@ -11,6 +11,7 @@ export type {
   IncludeResolver,
   LaneViewDef,
   ModeDef,
+  ProofNode,
   ProofTree,
   RuleDef,
   SystemDef,
