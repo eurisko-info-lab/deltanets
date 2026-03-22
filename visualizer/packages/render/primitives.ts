@@ -280,23 +280,19 @@ export class Edge extends Node2D {
         click: this.onClick,
         touchend: this.onClick,
         // d3 event handlers receive the DOM element as `this`
-        mousedown: function () {
-          // deno-lint-ignore no-explicit-any
-          d3.select(this as any).attr("stroke-width", "36px");
+        mousedown: function (this: Element) {
+          d3.select(this).attr("stroke-width", "36px");
         },
-        mouseup: function () {
-          // deno-lint-ignore no-explicit-any
-          d3.select(this as any).attr("stroke-width", "40px");
+        mouseup: function (this: Element) {
+          d3.select(this).attr("stroke-width", "40px");
         },
-        mouseover: function () {
-          // deno-lint-ignore no-explicit-any
-          d3.select(this as any)
+        mouseover: function (this: Element) {
+          d3.select(this)
             .attr("stroke-width", "40px")
             .attr("cursor", "pointer");
         },
-        mouseout: function () {
-          // deno-lint-ignore no-explicit-any
-          d3.select(this as any).attr("stroke-width", "36px");
+        mouseout: function (this: Element) {
+          d3.select(this).attr("stroke-width", "36px");
         },
         ...this.highlightPath.eventHandlers,
       };

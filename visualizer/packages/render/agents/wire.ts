@@ -134,19 +134,19 @@ export class Wire extends Node2D {
       this.highlightPath.eventHandlers = {
         click: this.onClick,
         touchend: this.onClick,
-        mousedown: function () {
-          d3.select(this as any).attr("stroke-width", "36px");
+        mousedown: function (this: Element) {
+          d3.select(this).attr("stroke-width", "36px");
         },
-        mouseup: function () {
-          d3.select(this as any).attr("stroke-width", "40px");
+        mouseup: function (this: Element) {
+          d3.select(this).attr("stroke-width", "40px");
         },
-        mouseover: function () {
-          d3.select(this as any)
+        mouseover: function (this: Element) {
+          d3.select(this)
             .attr("stroke-width", "40px")
             .attr("cursor", "pointer");
         },
-        mouseout: function () {
-          d3.select(this as any).attr("stroke-width", "36px");
+        mouseout: function (this: Element) {
+          d3.select(this).attr("stroke-width", "36px");
         },
         ...this.highlightPath.eventHandlers,
       };

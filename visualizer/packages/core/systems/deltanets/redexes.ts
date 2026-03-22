@@ -21,7 +21,6 @@ import {
   ERASE_RULE_PAIRS,
   formatRepLabel,
   isExprAgent,
-  isParentPort,
   isTypeNode,
   parseRepLabel,
   reduceAuxFan,
@@ -54,6 +53,68 @@ function findRule(
       (r.agentA === typeA && r.agentB === typeB) ||
       (r.agentA === typeB && r.agentB === typeA),
   );
+}
+
+/** Parameterized net traversal for marking optimal redexes. */
+function walkNet(
+  start: NodePort,
+  redexes: Redex[],
+  config: {
+    preVisit: (nodePort: NodePort) => boolean | undefined;
+    stopOnOptimal: boolean;
+    traverseAppArg: boolean;
+    traverseRepOutAux: boolean;
+    traversedKey: "traversed" | "traversed2";
+  },
+): boolean {
+  const walk = (nodePort: NodePort): boolean => {
+    const node = nodePort.node;
+    const port = nodePort.port;
+    const preResult = config.preVisit(nodePort);
+    if (preResult !== undefined) return preResult;
+    if (node[config.traversedKey]) return false;
+    node[config.traversedKey] = true;
+    if (node.type === "abs" && port === Ports.abs.principal) {
+      if (node.ports[Ports.abs.bind].node.type === "era") {
+        if (walk(node.ports[Ports.abs.bind])) return true;
+      }
+      return walk(node.ports[Ports.abs.body]);
+    }
+    if (node.type === "app" && port === Ports.app.result) {
+      if (walk(node.ports[Ports.app.func])) return true;
+      return config.traverseAppArg ? walk(node.ports[Ports.app.arg]) : false;
+    }
+    if (isTypeNode(node)) return false;
+    if (node.type === "rep-in" && port !== 0) return walk(node.ports[0]);
+    if (node.type === "rep-out" && port === 0) {
+      if (!config.traverseRepOutAux) return false;
+      for (let i = 1; i < node.ports.length; i++) {
+        if (walk(node.ports[i])) return true;
+      }
+      return false;
+    }
+    if (node.type === "era") return false;
+    if (!isExprAgent(node.type) && !node.type.startsWith("rep")) {
+      if (port !== 0) {
+        const other = node.ports[0].node;
+        if (node.ports[0].port === 0 && other.ports[0].node === node) {
+          const redex = getRedex(node, other, redexes);
+          if (redex) {
+            redex.optimal = true;
+            if (config.stopOnOptimal) return true;
+          }
+        } else {
+          if (walk(node.ports[0])) return true;
+        }
+      }
+      for (let i = 1; i < node.ports.length; i++) {
+        if (i === port) continue;
+        if (walk(node.ports[i])) return true;
+      }
+    }
+    return false;
+  };
+  return walk(start);
 }
 
 export function getRedexes(
@@ -202,47 +263,25 @@ export function getRedexes(
           }
         } else if (
           node.type.startsWith("rep") &&
-          !other.type.startsWith("rep") &&
-          !isExprAgent(other.type) &&
-          !isTypeNode(other) &&
-          other.type !== "var" &&
-          other.type !== "root"
+          !other.type.startsWith("rep")
         ) {
-          // Rep commutation with lambda cube agents
-          const rep = node;
-          const level = parseRepLabel(rep.label!).level;
+          // Rep commutation with expression agents (abs, app, custom)
+          const level = parseRepLabel(node.label!).level;
           createRedex(node, other, false, () => {
-            const { nodeClones } = reduceCommute(rep, graph);
+            const { nodeClones } = reduceCommute(node, graph);
             nodeClones.forEach((clone, i) => {
-              clone.label = formatRepLabel(
-                i === 0 ? level : (relativeLevel ? level + 1 : level),
-                "unknown",
-              );
-              if (i > 0) {
+              if (i === 0) {
+                clone.label = formatRepLabel(level, "unknown");
+              } else if (other.type === "abs" && i >= 2) {
+                // Abs type-port clone: base level, no type flip
+                clone.label = formatRepLabel(level, "unknown");
+              } else {
+                clone.label = formatRepLabel(
+                  relativeLevel ? level + 1 : level, "unknown",
+                );
                 clone.type = clone.type === "rep-in" ? "rep-out" : "rep-in";
               }
             });
-          });
-        } else if (
-          (node.type.startsWith("rep") && (other.type === "abs" ||
-            other.type === "app"))
-        ) {
-          const rep = node.type.startsWith("rep") ? node : other;
-          const level = parseRepLabel(rep.label!).level;
-          createRedex(node, other, false, () => {
-            const { nodeClones } = reduceCommute(rep, graph);
-            nodeClones[0].label = formatRepLabel(level, "unknown");
-            nodeClones[1].label = formatRepLabel(
-              relativeLevel ? level + 1 : level,
-              "unknown",
-            );
-            nodeClones[1].type = nodeClones[1].type === "rep-in"
-              ? "rep-out"
-              : "rep-in";
-            // Handle type port replicator for abs nodes (3 aux ports)
-            if (nodeClones.length > 2) {
-              nodeClones[2].label = formatRepLabel(level, "unknown");
-            }
           });
         } else if (
           node.type.startsWith("rep") &&
@@ -359,101 +398,38 @@ export function getRedexes(
     // Traverse net and mark the leftmost-outermost redex as optimal
     const rootNode = graph.find((node) => node.type === "root")!;
     let firstAuxFanReplication: Redex | undefined = undefined;
-    const traverse = (nodePort: NodePort) => {
-      const node = nodePort.node;
-      const port = nodePort.port;
-
-      if (
-        nodePort.port === 0 &&
-        nodePort.node.ports[0].node.ports[0].node === nodePort.node
-      ) {
-        const redex = getRedex(
-          nodePort.node,
-          nodePort.node.ports[0].node,
-          redexes,
-        );
-        if (redex) {
-          redex.optimal = true;
-          return true;
+    const res = walkNet(rootNode.ports[0], redexes, {
+      traversedKey: "traversed",
+      stopOnOptimal: true,
+      traverseAppArg: true,
+      traverseRepOutAux: true,
+      preVisit: (np) => {
+        const node = np.node;
+        if (
+          np.port === 0 &&
+          node.ports[0].node.ports[0].node === node
+        ) {
+          const redex = getRedex(node, node.ports[0].node, redexes);
+          if (redex) { redex.optimal = true; return true; }
         }
-      }
-
-      if (
-        node.type.startsWith("rep") && node.ports[0].node.type.startsWith("rep")
-      ) {
-        const redex = getRedex(node, node.ports[0].node, redexes);
-        if (redex) {
-          redex.optimal = true;
-          return true;
+        if (
+          node.type.startsWith("rep") &&
+          node.ports[0].node.type.startsWith("rep")
+        ) {
+          const redex = getRedex(node, node.ports[0].node, redexes);
+          if (redex) { redex.optimal = true; return true; }
         }
-      }
-
-      if (
-        firstAuxFanReplication === undefined && node.type.startsWith("rep") &&
-        node.ports[0].node.type === "app" &&
-        node.ports[0].port === Ports.app.result
-      ) {
-        firstAuxFanReplication = getRedex(node, node.ports[0].node, redexes);
-      }
-
-      if (node.traversed) {
-        return false;
-      }
-      node.traversed = true;
-      if (node.type === "abs" && port === Ports.abs.principal) {
-        if (node.ports[Ports.abs.bind].node.type === "era") {
-          if (traverse(node.ports[Ports.abs.bind])) {
-            return true;
-          }
+        if (
+          firstAuxFanReplication === undefined &&
+          node.type.startsWith("rep") &&
+          node.ports[0].node.type === "app" &&
+          node.ports[0].port === Ports.app.result
+        ) {
+          firstAuxFanReplication = getRedex(node, node.ports[0].node, redexes);
         }
-        if (traverse(node.ports[Ports.abs.body])) {
-          return true;
-        }
-      } else if (node.type === "app" && port === Ports.app.result) {
-        if (traverse(node.ports[Ports.app.func])) {
-          return true;
-        }
-        if (traverse(node.ports[Ports.app.arg])) {
-          return true;
-        }
-      } else if (isTypeNode(node)) {
-        // Type subgraphs don't contain redexes
-      } else if (node.type === "rep-in" && port !== 0) {
-        return traverse(node.ports[0]);
-      } else if (node.type === "rep-out" && port === 0) {
-        for (let i = 1; i < node.ports.length; i++) {
-          if (traverse(node.ports[i])) {
-            return true;
-          }
-        }
-      } else if (node.type === "era") {
-        // nothing to do
-      } else if (!isExprAgent(node.type) && !node.type.startsWith("rep")) {
-        // Generic/custom agent: check principal port for redex,
-        // traverse all auxiliary ports.
-        if (port !== 0) {
-          // Arrived at aux port: check if principal forms a redex
-          const other = node.ports[0].node;
-          if (node.ports[0].port === 0 && other.ports[0].node === node) {
-            const redex = getRedex(node, other, redexes);
-            if (redex) {
-              redex.optimal = true;
-              return true;
-            }
-          } else {
-            // Principal is not in a redex — continue traversal through it
-            if (traverse(node.ports[0])) return true;
-          }
-        }
-        // Traverse other auxiliary ports
-        for (let i = 1; i < node.ports.length; i++) {
-          if (i === port) continue;
-          if (traverse(node.ports[i])) return true;
-        }
-      }
-      return false;
-    };
-    const res = traverse(rootNode.ports[0]);
+        return undefined;
+      },
+    });
     if (res === false && firstAuxFanReplication !== undefined) {
       (firstAuxFanReplication as Redex).optimal = true;
     }
@@ -461,64 +437,27 @@ export function getRedexes(
     redexes.sort((a, b) => a.optimal ? -1 : b.optimal ? 1 : 0);
 
     // Mark certain redexes in the spine as optimal as well
-    const traverse2 = (nodePort: NodePort) => {
-      const node = nodePort.node;
-      const port = nodePort.port;
-      const other = nodePort.node.ports[0].node;
-
-      if (
-        port === 0 && other.ports[0].node === node &&
-        (!node.type.startsWith("rep") ||
-          parseRepLabel(node.label!).status === "unknown") &&
-        (!other.type.startsWith("rep") ||
-          parseRepLabel(other.label!).status === "unknown")
-      ) {
-        const redex = getRedex(nodePort.node, other, redexes);
-        if (redex) {
-          redex.optimal = true;
+    walkNet(rootNode.ports[0], redexes, {
+      traversedKey: "traversed2",
+      stopOnOptimal: false,
+      traverseAppArg: false,
+      traverseRepOutAux: false,
+      preVisit: (np) => {
+        const node = np.node;
+        const other = node.ports[0].node;
+        if (
+          np.port === 0 && other.ports[0].node === node &&
+          (!node.type.startsWith("rep") ||
+            parseRepLabel(node.label!).status === "unknown") &&
+          (!other.type.startsWith("rep") ||
+            parseRepLabel(other.label!).status === "unknown")
+        ) {
+          const redex = getRedex(node, other, redexes);
+          if (redex) { redex.optimal = true; }
         }
-      }
-
-      if (node.traversed2) {
-        return;
-      }
-      node.traversed2 = true;
-      if (node.type === "abs" && port === Ports.abs.principal) {
-        if (node.ports[Ports.abs.bind].node.type === "era") {
-          traverse2(node.ports[Ports.abs.bind]);
-        }
-        traverse2(node.ports[Ports.abs.body]);
-      } else if (node.type === "app" && port === Ports.app.result) {
-        traverse2(node.ports[Ports.app.func]);
-        return;
-      } else if (node.type === "rep-in" && port !== 0) {
-        traverse2(node.ports[0]);
-      } else if (node.type === "rep-out" && port === 0) {
-        return;
-      } else if (node.type === "era") {
-        // nothing to do
-      } else if (!isExprAgent(node.type) && !node.type.startsWith("rep")) {
-        // Generic/custom agent: check principal port, traverse aux ports.
-        if (port !== 0) {
-          const o = node.ports[0].node;
-          if (node.ports[0].port === 0 && o.ports[0].node === node) {
-            const redex = getRedex(node, o, redexes);
-            if (redex) {
-              redex.optimal = true;
-            }
-          } else {
-            // Principal is not in a redex — continue traversal through it
-            traverse2(node.ports[0]);
-          }
-        }
-        for (let i = 1; i < node.ports.length; i++) {
-          if (i === port) continue;
-          traverse2(node.ports[i]);
-        }
-      }
-      return;
-    };
-    traverse2(rootNode.ports[0]);
+        return undefined;
+      },
+    });
   }
 
   return redexes;

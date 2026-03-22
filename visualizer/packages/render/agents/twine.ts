@@ -232,30 +232,30 @@ export class Twine extends Node2D {
       this.highlightRect.eventHandlers = {
         click: this.onClick,
         touchend: this.onClick,
-        mousedown: function () {
-          d3.select(this as any)
+        mousedown: function (this: Element) {
+          d3.select(this)
             .attr("x", hX)
             .attr("y", hY)
             .attr("width", hWidth)
             .attr("height", hHeight);
         },
-        mouseup: function () {
-          d3.select(this as any)
+        mouseup: function (this: Element) {
+          d3.select(this)
             .attr("x", hXBig)
             .attr("y", hYBig)
             .attr("width", hWidthBig)
             .attr("height", hHeightBig);
         },
-        mouseover: function () {
-          d3.select(this as any)
+        mouseover: function (this: Element) {
+          d3.select(this)
             .attr("x", hXBig)
             .attr("y", hYBig)
             .attr("width", hWidthBig)
             .attr("height", hHeightBig)
             .attr("cursor", "pointer");
         },
-        mouseout: function () {
-          d3.select(this as any)
+        mouseout: function (this: Element) {
+          d3.select(this)
             .attr("x", hX)
             .attr("y", hY)
             .attr("width", hWidth)

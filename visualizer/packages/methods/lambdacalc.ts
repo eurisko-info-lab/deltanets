@@ -289,8 +289,8 @@ function renderAstNode(
       edge.highlightPath.attrs.class = "redex-edge-" + redexId;
       edge.highlightPath.eventHandlers = {
         ...edge.highlightPath.eventHandlers,
-        mouseover: function () {
-          d3.select(this as any)
+        mouseover: function (this: Element) {
+          d3.select(this)
             .attr("stroke-width", "40px")
             .attr("cursor", "pointer");
           d3.selectAll(".redex-var-" + redexId).attr("display", null).attr(
@@ -298,8 +298,8 @@ function renderAstNode(
             isOptimal ? OPTIMAL_HIGHLIGHT_COLOR : SUBOPTIMAL_HIGHLIGHT_COLOR,
           );
         },
-        mouseout: function () {
-          d3.select(this as any).attr("stroke-width", "36px");
+        mouseout: function (this: Element) {
+          d3.select(this).attr("stroke-width", "36px");
           d3.selectAll(".redex-var-" + redexId).attr("display", "none");
         },
       };
