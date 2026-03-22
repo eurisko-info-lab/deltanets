@@ -854,3 +854,150 @@ Deno.test("search: ? in Zero case of plus_comm suggests sym(pzr(m))", () => {
     `expected sym(pzr(m)) in suggestions, got: ${zeroNode.suggestions}`,
   );
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Sigma types (dependent pairs) tests
+// ═══════════════════════════════════════════════════════════════════
+
+const SIGMA_SYSTEM = `
+system "SigmaBase" extend "NatEq" {
+  agent pair(principal, fst_val, snd_val)
+  agent fst(principal, result)
+  agent snd(principal, result)
+
+  rule fst <> pair -> {
+    relink left.result right.fst_val
+    erase right.snd_val
+  }
+  rule snd <> pair -> {
+    relink left.result right.snd_val
+    erase right.fst_val
+  }
+}
+`;
+
+Deno.test("sigma: pair(Zero, refl) type-checks for Sigma(Nat, k, Eq(k, Zero))", () => {
+  const result = compile(SIGMA_SYSTEM + `
+    system "Sigma1" extend "SigmaBase" {
+      prove sigma_test(n : Nat) -> Sigma(Nat, k, Eq(k, n)) {
+        | Zero -> pair(Zero, refl)
+        | Succ(m) -> pair(Succ(m), refl)
+      }
+    }
+  `);
+  const sys = result.systems.get("Sigma1")!;
+  assertEquals(sys.agents.has("sigma_test"), true);
+  // pair should exist as well
+  assertEquals(sys.agents.has("pair"), true);
+});
+
+Deno.test("sigma: pair with wrong witness is caught", () => {
+  const source = BASE_SYSTEM + SIGMA_SYSTEM + `
+    system "SigmaBad" extend "SigmaBase" {
+      prove bad_sigma(n : Nat) -> Sigma(Nat, k, Eq(k, n)) {
+        | Zero -> pair(Zero, refl)
+        | Succ(m) -> pair(m, refl)
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // Succ case: required Sigma(Nat, k, Eq(k, Succ(m))), witness=m → Eq(m, Succ(m))
+  // refl needs equal sides: m ≠ Succ(m) → type error
+  assertEquals(result.errors.length > 0, true, "expected type error for wrong witness");
+});
+
+Deno.test("sigma: proof tree for pair shows ∃-intro rule", () => {
+  const result = compile(SIGMA_SYSTEM + `
+    system "SigmaTree" extend "SigmaBase" {
+      prove sigma_test(n : Nat) -> Sigma(Nat, k, Eq(k, n)) {
+        | Zero -> pair(Zero, refl)
+        | Succ(m) -> pair(Succ(m), refl)
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("sigma_test")!;
+  assertEquals(tree.hasHoles, false);
+
+  // Zero case: pair(Zero, refl) → ∃-intro with refl child
+  const zero = tree.cases[0].tree;
+  assertEquals(zero.rule, "∃-intro");
+  assertEquals(zero.children.length, 1);
+  assertEquals(zero.children[0].rule, "refl");
+});
+
+Deno.test("sigma: ? hole in pair gets correct inner goal", () => {
+  const result = compile(SIGMA_SYSTEM + `
+    system "SigmaHole" extend "SigmaBase" {
+      prove sigma_test(n : Nat) -> Sigma(Nat, k, Eq(k, n)) {
+        | Zero -> pair(Zero, ?)
+        | Succ(m) -> pair(Succ(m), ?)
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("sigma_test")!;
+  assertEquals(tree.hasHoles, true);
+
+  // Zero case: pair(Zero, ?) with expected Sigma(Nat, k, Eq(k, Zero))
+  // Inner goal: Eq(Zero, Zero) (after subst k=Zero)
+  const zeroHole = tree.cases[0].tree.children[0];
+  assertEquals(zeroHole.isGoal, true);
+  assertEquals(zeroHole.conclusion, "Eq(Zero, Zero)");
+
+  // Succ case: pair(Succ(m), ?) → inner goal Eq(Succ(m), Succ(m))
+  const succHole = tree.cases[1].tree.children[0];
+  assertEquals(succHole.isGoal, true);
+  assertEquals(succHole.conclusion, "Eq(Succ(m), Succ(m))");
+});
+
+Deno.test("sigma: snd in proof position is not yet supported", () => {
+  const source = BASE_SYSTEM + SIGMA_SYSTEM + `
+    system "SigmaAdd" extend "SigmaBase" {
+      agent dup_nat(principal, copy1, copy2)
+      rule dup_nat <> Zero -> {
+        let z1 = Zero  let z2 = Zero
+        relink left.copy1 z1.principal
+        relink left.copy2 z2.principal
+      }
+      rule dup_nat <> Succ -> {
+        let s1 = Succ  let s2 = Succ  let d = dup_nat
+        relink left.copy1 s1.principal
+        relink left.copy2 s2.principal
+        wire s1.pred -- d.copy1
+        wire s2.pred -- d.copy2
+        relink right.pred d.principal
+      }
+      prove sigma_add(n : Nat) -> Sigma(Nat, k, Eq(add(k, Zero), n)) {
+        | Zero -> pair(Zero, refl)
+        | Succ(m) -> pair(Succ(m), cong_succ(snd(sigma_add(m))))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // snd(sigma_add(m)) is an unknown proof combinator — type error expected
+  assertEquals(result.errors.length > 0, true, "expected type error for snd in proof position");
+});
+
+Deno.test("sigma: fst/snd reduction in INet", () => {
+  const core = compile(SIGMA_SYSTEM + `
+    system "SigmaReduce" extend "SigmaBase" {
+      prove sigma_id(n : Nat) -> Sigma(Nat, k, Eq(k, n)) {
+        | Zero -> pair(Zero, refl)
+        | Succ(m) -> pair(Succ(m), refl)
+      }
+    }
+    graph test {
+      let r = root
+      let f = fst
+      let s = sigma_id
+      let z = Zero
+      wire r.principal -- f.result
+      wire f.principal -- s.result
+      wire s.principal -- z.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  // fst(sigma_id(Zero)) → fst(pair(Zero, refl)) → Zero
+  assertEquals(readRootType(g.graph), "Zero");
+});

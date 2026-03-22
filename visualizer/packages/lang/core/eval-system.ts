@@ -319,12 +319,16 @@ function desugarProve(
       const label = `_p${counter++}`;
       stmts.push({ kind: "let", varName: label, agentType: expr.name });
 
-      // Map args to agent ports: args[0]→principal, args[1]→aux1, ...
-      // Agent ports: [principal, result, aux1, aux2, ...]
-      const argPorts = [
-        agentDef.ports[0].name,
-        ...agentDef.ports.slice(2).map((p) => p.name),
-      ];
+      // Detect whether this agent is a proof combinator (has "result" port at index 1)
+      // vs a data constructor (no "result" port — e.g. pair, Succ, Cons).
+      const hasResult = agentDef.ports.length > 1 && agentDef.ports[1].name === "result";
+
+      // Map args to agent ports:
+      //   Proof agents: args[0]→principal, args[1]→port[2], args[2]→port[3], ...
+      //   Constructors: args[0]→port[1], args[1]→port[2], ... (skip principal)
+      const argPorts = hasResult
+        ? [agentDef.ports[0].name, ...agentDef.ports.slice(2).map((p) => p.name)]
+        : agentDef.ports.slice(1).map((p) => p.name);
 
       for (let i = 0; i < expr.args.length; i++) {
         const argOutput = translateExpr(expr.args[i]);
@@ -339,8 +343,8 @@ function desugarProve(
         }
       }
 
-      // Output is the result port
-      return { node: label, port: "result" };
+      // Output: "result" port for proof agents, "principal" for constructors
+      return { node: label, port: hasResult ? "result" : "principal" };
     }
 
     const outputPort = translateExpr(caseArm.body);

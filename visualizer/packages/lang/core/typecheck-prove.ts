@@ -9,11 +9,14 @@
 //   cong_X(p, ...)  : Eq(X(...,a), X(...,b)) when p : Eq(a, b)  (generalized)
 //   sym(p)          : Eq(b, a)       when p : Eq(a, b)
 //   trans(p, q)     : Eq(a, c)       when p : Eq(a, b), q : Eq(b, c)
+//   pair(w, p)      : Sigma(w, T)    when p : T  (∃-introduction)
 //   recursive(args) : substitute args into declared proposition
 //
 // Normalization rules (computes with types):
 //   add(Zero, y)    → y
 //   add(Succ(k), y) → Succ(add(k, y))
+//   fst(pair(a, b)) → a
+//   snd(pair(a, b)) → b
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
@@ -191,6 +194,26 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     return normalize(app("Succ", app("length", e.args[0].args[1])));
   }
 
+  // ── Sigma (dependent pairs) ──
+
+  // fst(pair(a, b)) → a
+  if (
+    e.name === "fst" && e.args.length === 1 &&
+    e.args[0].kind === "call" && e.args[0].name === "pair" &&
+    e.args[0].args.length === 2
+  ) {
+    return e.args[0].args[0];
+  }
+
+  // snd(pair(a, b)) → b
+  if (
+    e.name === "snd" && e.args.length === 1 &&
+    e.args[0].kind === "call" && e.args[0].name === "pair" &&
+    e.args[0].args.length === 2
+  ) {
+    return e.args[0].args[1];
+  }
+
   return e;
 }
 
@@ -281,6 +304,13 @@ function inferType(
     return { ok: true, type: app("Eq", eq1.left, eq2.right) };
   }
 
+  // pair(witness, proof) : Sigma(witness, proofType) — ∃-introduction
+  if (name === "pair" && args.length === 2) {
+    const proofResult = inferType(args[1], ctx);
+    if (!proofResult.ok) return proofResult;
+    return { ok: true, type: app("Sigma", args[0], proofResult.type) };
+  }
+
   // Recursive call to a prove-declared agent
   if (name === ctx.prove.name) {
     if (!ctx.prove.returnType) {
@@ -316,6 +346,42 @@ function extractEq(
     return { left: type.args[0], right: type.args[1] };
   }
   return null;
+}
+
+// Extract a declared Sigma type: Sigma(Domain, boundVar, Predicate)
+function extractSigma(
+  type: AST.ProveExpr,
+): { domain: AST.ProveExpr; boundVar: string; predicate: AST.ProveExpr } | null {
+  if (
+    type.kind === "call" && type.name === "Sigma" && type.args.length === 3 &&
+    type.args[1].kind === "ident"
+  ) {
+    return {
+      domain: type.args[0],
+      boundVar: type.args[1].name,
+      predicate: type.args[2],
+    };
+  }
+  return null;
+}
+
+// Match an Eq type with refl handling: returns true when inferred matches required.
+function eqTypeMatches(
+  inferred: AST.ProveExpr,
+  required: AST.ProveExpr,
+): boolean {
+  const infEq = extractEq(inferred);
+  const reqEq = extractEq(required);
+  if (!infEq || !reqEq) return false;
+  // refl: Eq(_refl_a, _refl_a) — check required sides are equal
+  if (
+    infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
+    infEq.right.kind === "ident" && infEq.right.name === "_refl_a"
+  ) {
+    return exprEqual(normalize(reqEq.left), normalize(reqEq.right));
+  }
+  return exprEqual(normalize(infEq.left), normalize(reqEq.left)) &&
+    exprEqual(normalize(infEq.right), normalize(reqEq.right));
 }
 
 // ─── Proof search (auto-fill candidates) ──────────────────────────
@@ -504,6 +570,22 @@ function buildNode(
       children: [buildNode(args[0], ctx, leftExpected), buildNode(args[1], ctx, rightExpected)],
     };
   }
+  // pair(witness, proof) — ∃-introduction for Sigma types
+  if (name === "pair" && args.length === 2) {
+    let proofExpected: AST.ProveExpr | undefined;
+    if (expected) {
+      const sigma = extractSigma(normalize(expected));
+      if (sigma) {
+        proofExpected = normalize(substitute(sigma.predicate, sigma.boundVar, args[0]));
+      }
+    }
+    return {
+      rule: "∃-intro",
+      term,
+      conclusion,
+      children: [buildNode(args[1], ctx, proofExpected)],
+    };
+  }
   if (name === ctx.prove.name) {
     return { rule: "IH", term, conclusion, children: [] };
   }
@@ -604,37 +686,45 @@ export function typecheckProve(
     const infEq = extractEq(inferred.type);
 
     if (reqEq && infEq) {
-      // For refl: infEq has placeholder _refl_a — check required sides are equal
-      if (
-        infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
-        infEq.right.kind === "ident" && infEq.right.name === "_refl_a"
-      ) {
-        // This is refl — check that the required type's sides are equal
-        if (!exprEqual(normalize(reqEq.left), normalize(reqEq.right))) {
-          errors.push(
-            `prove ${prove.name}, case ${caseArm.pattern}: refl requires equal sides, ` +
-              `but got Eq(${exprToString(normalize(reqEq.left))}, ${exprToString(normalize(reqEq.right))})`,
-          );
-        }
-        continue;
-      }
-
-      // General case: check inferred type matches required type
-      if (
-        !exprEqual(normalize(infEq.left), normalize(reqEq.left)) ||
-        !exprEqual(normalize(infEq.right), normalize(reqEq.right))
-      ) {
+      if (!eqTypeMatches(inferred.type, requiredType)) {
         errors.push(
           `prove ${prove.name}, case ${caseArm.pattern}: type mismatch\n` +
             `  expected: ${exprToString(requiredType)}\n` +
             `  inferred: ${exprToString(normalize(inferred.type))}`,
         );
       }
+      continue;
     } else if (reqEq || infEq) {
       errors.push(
         `prove ${prove.name}, case ${caseArm.pattern}: type structure mismatch\n` +
           `  expected: ${exprToString(requiredType)}\n` +
           `  inferred: ${exprToString(inferred.type)}`,
+      );
+      continue;
+    }
+
+    // Sigma types: required = Sigma(A, x, P), inferred = Sigma(witness, proofType)
+    const reqSigma = extractSigma(requiredType);
+    if (reqSigma && inferred.type.kind === "call" && inferred.type.name === "Sigma" &&
+        inferred.type.args.length === 2) {
+      const witness = inferred.type.args[0];
+      const infProofType = inferred.type.args[1];
+      // Expected predicate with bound var replaced by the witness
+      const expectedPred = normalize(substitute(reqSigma.predicate, reqSigma.boundVar, witness));
+      if (!eqTypeMatches(infProofType, expectedPred) && !exprEqual(normalize(infProofType), expectedPred)) {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: Sigma predicate mismatch\n` +
+            `  expected: ${exprToString(expectedPred)}\n` +
+            `  inferred: ${exprToString(normalize(infProofType))}`,
+        );
+      }
+      continue;
+    }
+    if (reqSigma || (inferred.type.kind === "call" && inferred.type.name === "Sigma")) {
+      errors.push(
+        `prove ${prove.name}, case ${caseArm.pattern}: type structure mismatch\n` +
+          `  expected: ${exprToString(requiredType)}\n` +
+          `  inferred: ${exprToString(normalize(inferred.type))}`,
       );
     }
   }
