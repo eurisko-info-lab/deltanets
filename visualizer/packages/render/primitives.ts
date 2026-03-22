@@ -131,12 +131,6 @@ export class Label extends Node2D {
     this.text = new Text(label);
     this.text.zIndex = 3;
 
-    // TODO: SCALE RECT TO TEXT SIZE
-    // const tempSVG = this.text.renderSelf();
-    // var bbox = tempSVG.getBBox(); // or getComputedTextLength()
-    // var width = bbox.width;
-    // var height = bbox.height;
-
     this.mainRect = new Rect(
       Label.SIZE * 2,
       Label.SIZE * 2,

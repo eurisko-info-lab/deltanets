@@ -123,6 +123,9 @@ Deno.test("compose: Erasable extends Lambda", () => {
   const erasable = result.systems.get("Erasable")!;
   assert(erasable.agents.has("abs"), "Erasable inherits abs");
   assert(erasable.agents.has("era"), "Erasable defines era");
+  assertEquals(erasable.agents.get("abs")!.ports.length, 3, "abs has 3 ports");
+  assertEquals(erasable.agents.get("era")!.ports.length, 1, "era has 1 port");
+  assertEquals(erasable.rules.length, 3, "annihilate + 2 erase rules");
 });
 
 // ─── View Language ─────────────────────────────────────────────────

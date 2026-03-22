@@ -151,7 +151,6 @@ export function render(
     era.pos.x = lastX;
     node2D.add(era);
 
-    // const redex = getRedex(node, node.ports[0].node, currState.stack[currState.idx].redexes);
     const redex = getRedex(
       node,
       node.ports[0].node,

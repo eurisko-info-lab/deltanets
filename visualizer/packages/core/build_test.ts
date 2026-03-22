@@ -68,8 +68,10 @@ Deno.test("build: bound variable connects to abs bind port", () => {
   const graph = build("λx.x", "linear");
   const abs = graph.find((n) => n.type === "abs")!;
   assert(abs !== undefined, "has abs");
-  // In linear system with single use, bind port connects to the variable usage
-  // (no eraser, no replicator since trivial rep was removed)
+  // In linear: body → bind is direct (no rep). abs has 4 ports: principal, body, bind, type
+  assertEquals(abs.ports.length, 4, "abs has 4 ports (principal, body, bind, type)");
+  // bind port (2) should point to a node that points back
+  assertEquals(abs.ports[2].node.ports[abs.ports[2].port].node, abs, "bind is bidirectional");
 });
 
 Deno.test("build: unused variable creates eraser", () => {
@@ -122,7 +124,9 @@ Deno.test("build: full system preserves non-trivial replicators", () => {
 
 Deno.test("build: free variable creates var node", () => {
   const graph = build("λx.y", "affine");
-  assert(graph.some((n) => n.type === "var"), "has var node for free variable");
+  const varNode = graph.find((n) => n.type === "var");
+  assert(varNode !== undefined, "has var node for free variable");
+  assertEquals(varNode.ports.length, 1, "var node has 1 port (principal)");
 });
 
 // ─── Type annotations ──────────────────────────────────────────────
@@ -153,10 +157,9 @@ Deno.test("build: arrow type annotation creates type-arrow", () => {
 
 Deno.test("build: unannotated creates type-hole", () => {
   const graph = build("λx.x");
-  assert(
-    graph.some((n) => n.type === "type-hole"),
-    "has type-hole for unannotated param",
-  );
+  const hole = graph.find((n) => n.type === "type-hole");
+  assert(hole !== undefined, "has type-hole for unannotated param");
+  assertEquals(hole.ports.length, 1, "type-hole has 1 port");
 });
 
 // ─── Port sanity checks ───────────────────────────────────────────

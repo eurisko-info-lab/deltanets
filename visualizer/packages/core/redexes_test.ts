@@ -77,13 +77,12 @@ Deno.test("redexes: full system with duplication", () => {
   const { redexes } = buildAndGetRedexes("(λx.x x) (λy.y)");
   assert(redexes.length >= 1, "should have at least one redex");
   // Must include an abs-app annihilation
-  assert(
-    redexes.some((r) => {
-      const ts = [r.a.type, r.b.type].sort();
-      return ts[0] === "abs" && ts[1] === "app";
-    }),
-    "should include abs-app redex",
-  );
+  const absApp = redexes.find((r) => {
+    const ts = [r.a.type, r.b.type].sort();
+    return ts[0] === "abs" && ts[1] === "app";
+  });
+  assert(absApp !== undefined, "should include abs-app redex");
+  assertEquals(absApp.a.ports[0].node, absApp.b, "redex pair via principal ports");
 });
 
 Deno.test("redexes: full system with erasure", () => {
@@ -95,6 +94,7 @@ Deno.test("redexes: full system with erasure", () => {
     return ts[0] === "abs" && ts[1] === "app";
   });
   assert(absApp !== undefined, "should include abs-app redex");
+  assertEquals(absApp.optimal, true, "abs-app should be optimal");
 });
 
 Deno.test("redexes: Church numeral application", () => {
@@ -149,26 +149,24 @@ Deno.test("redexes: affine system with erasure", () => {
   const { redexes } = buildAndGetRedexes("(λx.λy.y) (λz.z)", "affine");
   assert(redexes.length >= 1);
   // Should include at least an abs-app pair
-  assert(
-    redexes.some((r) => {
-      const ts = [r.a.type, r.b.type].sort();
-      return ts[0] === "abs" && ts[1] === "app";
-    }),
-    "affine system should detect abs-app redex",
-  );
+  const absApp = redexes.find((r) => {
+    const ts = [r.a.type, r.b.type].sort();
+    return ts[0] === "abs" && ts[1] === "app";
+  });
+  assert(absApp !== undefined, "affine system should detect abs-app redex");
+  assertEquals(absApp.a.ports[0].node, absApp.b, "connected via principal ports");
 });
 
 Deno.test("redexes: relevant system with sharing", () => {
   const { redexes } = buildAndGetRedexes("(λx.x x) (λy.y)", "relevant");
   assert(redexes.length >= 1);
   // Should include abs-app interaction
-  assert(
-    redexes.some((r) => {
-      const ts = [r.a.type, r.b.type].sort();
-      return ts[0] === "abs" && ts[1] === "app";
-    }),
-    "relevant system should detect abs-app redex",
-  );
+  const absApp = redexes.find((r) => {
+    const ts = [r.a.type, r.b.type].sort();
+    return ts[0] === "abs" && ts[1] === "app";
+  });
+  assert(absApp !== undefined, "relevant system should detect abs-app redex");
+  assertEquals(absApp.a.ports[0].node, absApp.b, "connected via principal ports");
 });
 
 // ─── Reduce closure ────────────────────────────────────────────────

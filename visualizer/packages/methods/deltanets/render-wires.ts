@@ -98,10 +98,6 @@ export const renderWires = (
       ? endpoints[i].level
       : undefined;
 
-    // TODO: show level even if one side? Would sill need to fix levels out of eraser "roots". And if those are fixed, then probably don't need this.
-    // Set level. Pick the non-undefined level if it exists. if both are defined, then make sure they are equal
-    // const level = endpoints[i].level === undefined ? endpoints[j].level : endpoints[j].level === undefined ? endpoints[i].level : endpoints[i].level// (endpoints[i].level === endpoints[j].level) ? endpoints[i].level : undefined;
-
     const wire = new Wire(
       endpoints[i].node2D,
       endpoints[j].node2D,

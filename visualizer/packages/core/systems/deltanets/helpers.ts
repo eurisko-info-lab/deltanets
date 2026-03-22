@@ -74,10 +74,6 @@ export function isConnectedToAllErasers(node: Node): boolean {
   return node.ports.every((p, i) => i > 0 ? p.node.type === "era" : true);
 }
 
-export function isConnectedToSomeErasers(node: Node): boolean {
-  return node.ports.some((p, i) => i > 0 ? p.node.type === "era" : false);
-}
-
 export function countAuxErasers(node: Node): number {
   return node.ports.reduce((count, p, i) => {
     if (i > 0 && p.node.type === "era") {
