@@ -1,6 +1,7 @@
 // @deltanets/lang — INet language parser, evaluator, and bridge.
 
 export { compileCore, compileView } from "./index.ts";
+export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
 export type {

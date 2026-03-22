@@ -3,7 +3,7 @@
 // to their untyped counterparts, and that type errors are caught.
 
 import { assertEquals, assertThrows } from "$std/assert/mod.ts";
-import { compileCore, type ProofTree } from "@deltanets/lang";
+import { compileCore, exportProofJSON, exportProofText, exportProofTerm, type ProofTree } from "@deltanets/lang";
 import type { AgentPortDefs, Graph, InteractionRule } from "./types.ts";
 import { getRedexes } from "./systems/deltanets/redexes.ts";
 
@@ -1097,4 +1097,99 @@ Deno.test("subst: succ_one(1) reduces to refl", () => {
   if (g.kind !== "explicit") throw new Error("expected explicit graph");
   reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
   assertEquals(readRootType(g.graph), "refl");
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Proof term export tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("export: JSON round-trips ProofTree", () => {
+  const result = compile(`
+    system "Ex" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  const json = exportProofJSON(tree);
+  const parsed = JSON.parse(json);
+  assertEquals(parsed.name, "pzr");
+  assertEquals(parsed.proposition, "Eq(add(n, Zero), n)");
+  assertEquals(parsed.hasHoles, false);
+  assertEquals(parsed.cases.length, 2);
+  assertEquals(parsed.cases[0].pattern, "Zero");
+  assertEquals(parsed.cases[1].pattern, "Succ");
+  assertEquals(parsed.cases[1].tree.rule, "cong_succ");
+});
+
+Deno.test("export: text format produces readable certificate", () => {
+  const result = compile(`
+    system "Ex" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  const text = exportProofText(tree);
+  // Should contain key elements
+  assertEquals(text.includes("theorem pzr"), true);
+  assertEquals(text.includes("[VERIFIED]"), true);
+  assertEquals(text.includes("case Zero:"), true);
+  assertEquals(text.includes("case Succ(k):"), true);
+  assertEquals(text.includes("refl"), true);
+  assertEquals(text.includes("cong_succ"), true);
+});
+
+Deno.test("export: text format marks incomplete proofs", () => {
+  const result = compile(`
+    system "Ex" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  const text = exportProofText(tree);
+  assertEquals(text.includes("[INCOMPLETE]"), true);
+  assertEquals(text.includes("? goal"), true);
+});
+
+Deno.test("export: term format produces Agda-like notation", () => {
+  const result = compile(`
+    system "Ex" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  const term = exportProofTerm(tree);
+  const lines = term.split("\n");
+  assertEquals(lines[0], "pzr : Eq(add(n, Zero), n)");
+  assertEquals(lines[1], "pzr Zero = refl");
+  assertEquals(lines[2], "pzr (Succ k) = cong_succ(pzr(k))");
+});
+
+Deno.test("export: JSON includes suggestions for holes", () => {
+  const result = compile(`
+    system "Ex" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> ?
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  const json = exportProofJSON(tree);
+  const parsed = JSON.parse(json);
+  assertEquals(parsed.hasHoles, true);
+  // Zero case should have suggestions
+  assertEquals(Array.isArray(parsed.cases[0].tree.suggestions), true);
+  assertEquals(parsed.cases[0].tree.suggestions.includes("refl"), true);
 });

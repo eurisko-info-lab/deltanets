@@ -9,5 +9,7 @@ import { compile as compileCore } from "./core/index.ts";
 import { compile as compileView } from "./view/index.ts";
 
 export { compileCore, compileView };
+export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
+export type { ProofNode, ProofTree } from "./core/typecheck-prove.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
