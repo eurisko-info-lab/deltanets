@@ -68,9 +68,24 @@ function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   return false;
 }
 
+const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
+function toSubscript(n: number): string {
+  return String(n).split("").map((d) => SUBSCRIPTS[parseInt(d)]).join("");
+}
+
 function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
-  if (e.kind === "ident") return e.name;
+  if (e.kind === "ident") {
+    if (e.name === "Type") return "Type" + toSubscript(0);
+    const m = e.name.match(/^Type(\d+)$/);
+    if (m) return "Type" + toSubscript(parseInt(m[1]));
+    return e.name;
+  }
+  // Type(n) → Typeₙ (canonical form from normalize)
+  if (e.name === "Type" && e.args.length === 1 &&
+      e.args[0].kind === "ident" && /^\d+$/.test(e.args[0].name)) {
+    return "Type" + toSubscript(parseInt(e.args[0].name));
+  }
   return `${e.name}(${e.args.map(exprToString).join(", ")})`;
 }
 
@@ -114,7 +129,15 @@ function substituteAll(
 // Reduces type expressions using computational rules.
 
 function normalize(expr: AST.ProveExpr): AST.ProveExpr {
-  if (expr.kind === "ident" || expr.kind === "hole") return expr;
+  // ── Universe level normalization ──
+  // Type → Type(0), Type0 → Type(0), Type1 → Type(1), etc.
+  if (expr.kind === "ident") {
+    if (expr.name === "Type") return app("Type", ident("0"));
+    const m = expr.name.match(/^Type(\d+)$/);
+    if (m) return app("Type", ident(m[1]));
+    return expr;
+  }
+  if (expr.kind === "hole") return expr;
 
   // Normalize children first
   const args = expr.args.map(normalize);
@@ -216,6 +239,36 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   }
 
   return e;
+}
+
+// ─── Universe levels ───────────────────────────────────────────────
+// Cumulative universe hierarchy: Type₀ : Type₁ : Type₂ : …
+
+/** Parse universe level from a type expression.
+ *  Returns the level (≥ 0) if the expression is a universe, or -1 otherwise. */
+export function universeLevel(type: AST.ProveExpr): number {
+  const n = normalize(type);
+  if (n.kind === "call" && n.name === "Type" && n.args.length === 1 &&
+      n.args[0].kind === "ident" && /^\d+$/.test(n.args[0].name)) {
+    return parseInt(n.args[0].name);
+  }
+  return -1;
+}
+
+/** Compute which universe level a type expression inhabits.
+ *  Type₀ → 1, Type₁ → 2, Nat → 0, Eq(a,b) → 0, Sigma → max of components. */
+export function typeUniverse(type: AST.ProveExpr): number {
+  const uLevel = universeLevel(type);
+  if (uLevel >= 0) return uLevel + 1;
+  const n = normalize(type);
+  if (n.kind === "ident") return 0;
+  if (n.kind === "call") {
+    if (n.name === "Eq") return 0;
+    if (n.name === "Sigma" && n.args.length >= 3) {
+      return Math.max(typeUniverse(n.args[0]), typeUniverse(n.args[2]));
+    }
+  }
+  return 0;
 }
 
 // ─── Expression-level pattern substitution ────────────────────────

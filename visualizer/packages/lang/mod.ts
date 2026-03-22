@@ -2,6 +2,7 @@
 
 export { compileCore, compileView } from "./index.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
+export { universeLevel, typeUniverse } from "./core/typecheck-prove.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
 export type {

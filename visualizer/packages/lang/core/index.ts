@@ -22,6 +22,7 @@ export type {
   SystemDef,
 } from "./evaluator.ts";
 export type { ProofNode, ProofTree } from "./typecheck-prove.ts";
+export { universeLevel, typeUniverse } from "./typecheck-prove.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./proof-export.ts";
 export type * from "./types.ts";
 

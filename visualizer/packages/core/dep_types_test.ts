@@ -3,7 +3,7 @@
 // to their untyped counterparts, and that type errors are caught.
 
 import { assertEquals, assertThrows } from "$std/assert/mod.ts";
-import { compileCore, exportProofJSON, exportProofText, exportProofTerm, type ProofTree } from "@deltanets/lang";
+import { compileCore, exportProofJSON, exportProofText, exportProofTerm, universeLevel, typeUniverse, type ProofTree } from "@deltanets/lang";
 import type { AgentPortDefs, Graph, InteractionRule } from "./types.ts";
 import { getRedexes } from "./systems/deltanets/redexes.ts";
 
@@ -947,6 +947,90 @@ Deno.test("sigma: ? hole in pair gets correct inner goal", () => {
   const succHole = tree.cases[1].tree.children[0];
   assertEquals(succHole.isGoal, true);
   assertEquals(succHole.conclusion, "Eq(Succ(m), Succ(m))");
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Universe levels tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("universe: Type₀ equality provable with refl", () => {
+  const result = compile(`
+    system "Univ1" extend "NatEq" {
+      prove type_refl(n : Nat) -> Eq(Type0, Type0) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("type_refl")!;
+  assertEquals(tree.proposition, "Eq(Type\u2080, Type\u2080)");
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("universe: Type alias — Type normalizes to Type₀", () => {
+  const result = compile(`
+    system "UnivAlias" extend "NatEq" {
+      prove type_alias(n : Nat) -> Eq(Type, Type0) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("type_alias")!;
+  assertEquals(tree.hasHoles, false);
+  // Both normalize to Type(0), so refl succeeds
+  assertEquals(tree.cases[0].tree.rule, "refl");
+});
+
+Deno.test("universe: Type₀ ≠ Type₁ — refl rejected", () => {
+  const source = BASE_SYSTEM + `
+    system "UnivBad" extend "NatEq" {
+      prove type_bad(n : Nat) -> Eq(Type0, Type1) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "expected error for Type\u2080 \u2260 Type\u2081");
+});
+
+Deno.test("universe: subscript display in proof tree", () => {
+  const result = compile(`
+    system "UnivDisplay" extend "NatEq" {
+      prove u_refl(n : Nat) -> Eq(Type1, Type1) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("u_refl")!;
+  assertEquals(tree.proposition, "Eq(Type\u2081, Type\u2081)");
+});
+
+Deno.test("universe: universeLevel computation", () => {
+  // Type / Type0 → level 0
+  assertEquals(universeLevel({ kind: "ident", name: "Type" }), 0);
+  assertEquals(universeLevel({ kind: "ident", name: "Type0" }), 0);
+  // Type1 → level 1
+  assertEquals(universeLevel({ kind: "ident", name: "Type1" }), 1);
+  // Type2 → level 2
+  assertEquals(universeLevel({ kind: "ident", name: "Type2" }), 2);
+  // Nat → not a universe
+  assertEquals(universeLevel({ kind: "ident", name: "Nat" }), -1);
+});
+
+Deno.test("universe: typeUniverse computation", () => {
+  // Nat lives in Type₀
+  assertEquals(typeUniverse({ kind: "ident", name: "Nat" }), 0);
+  // Type₀ lives in Type₁
+  assertEquals(typeUniverse({ kind: "ident", name: "Type0" }), 1);
+  // Type₁ lives in Type₂
+  assertEquals(typeUniverse({ kind: "ident", name: "Type1" }), 2);
+  // Eq(a, b) lives in Type₀
+  assertEquals(typeUniverse({ kind: "call", name: "Eq", args: [
+    { kind: "ident", name: "a" }, { kind: "ident", name: "b" }
+  ] }), 0);
 });
 
 Deno.test("sigma: snd in proof position is not yet supported", () => {
