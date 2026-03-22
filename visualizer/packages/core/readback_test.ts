@@ -3,7 +3,7 @@
 import { assertEquals } from "$std/assert/mod.ts";
 import { astToString, getExpressionType, parseSource } from "./ast.ts";
 import { deltanets } from "./systems/deltanets/index.ts";
-import { readbackGraphToString } from "./systems/deltanets/readback.ts";
+import { readbackGraph, readbackGraphToString } from "./systems/deltanets/readback.ts";
 
 const { buildGraph } = deltanets;
 
@@ -41,3 +41,47 @@ Deno.test("readback: nested application left-associated", () =>
 
 Deno.test("readback: K combinator applied", () =>
   roundtrip("(λx.λy.x) (λa.a)"));
+
+// ─── AST readback (readbackGraph) ──────────────────────────────────
+
+function buildAndReadbackAST(source: string) {
+  const { ast } = parseSource(source);
+  if (!ast) throw new Error(`Parse error for "${source}"`);
+  const systemType = getExpressionType(ast);
+  const graph = buildGraph(ast, systemType, false);
+  return readbackGraph(graph);
+}
+
+Deno.test("readbackGraph: identity returns abs→var", () => {
+  const ast = buildAndReadbackAST("λx.x");
+  assertEquals(ast?.type, "abs");
+  if (ast?.type === "abs") {
+    assertEquals(ast.name, "x");
+    assertEquals(ast.body.type, "var");
+    if (ast.body.type === "var") assertEquals(ast.body.name, "x");
+  }
+});
+
+Deno.test("readbackGraph: application structure", () => {
+  const ast = buildAndReadbackAST("λf.λx.f x");
+  assertEquals(ast?.type, "abs");
+  if (ast?.type === "abs") {
+    assertEquals(ast.body.type, "abs");
+    if (ast.body.type === "abs") {
+      assertEquals(ast.body.body.type, "app");
+    }
+  }
+});
+
+Deno.test("readbackGraph: constant function erases second param", () => {
+  const ast = buildAndReadbackAST("λx.λy.x");
+  assertEquals(ast?.type, "abs");
+  if (ast?.type === "abs") {
+    assertEquals(ast.name, "x");
+    assertEquals(ast.body.type, "abs");
+    if (ast.body.type === "abs") {
+      assertEquals(ast.body.body.type, "var");
+      if (ast.body.body.type === "var") assertEquals(ast.body.body.name, "x");
+    }
+  }
+});
