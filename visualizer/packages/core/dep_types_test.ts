@@ -681,3 +681,111 @@ Deno.test("proof tree: untyped prove yields no tree", () => {
   `);
   assertEquals(result.proofTrees.has("plus_zero_right"), false);
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Interactive proof mode (? holes) tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("hole: ? compiles without error and produces goal in tree", () => {
+  const result = compile(`
+    system "Hole1" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr");
+  assertEquals(tree != null, true);
+  assertEquals(tree!.hasHoles, true);
+
+  // Zero case should be normal
+  assertEquals(tree!.cases[0].tree.rule, "refl");
+  assertEquals(tree!.cases[0].tree.isGoal, undefined);
+
+  // Succ case should be a goal node with the required type
+  const succ = tree!.cases[1].tree;
+  assertEquals(succ.isGoal, true);
+  assertEquals(succ.rule, "goal");
+  assertEquals(succ.term, "?");
+  // Goal type: Eq(add(n, Zero), n) with n=Succ(k) normalizes to Eq(Succ(add(k, Zero)), Succ(k))
+  assertEquals(succ.conclusion, "Eq(Succ(add(k, Zero)), Succ(k))");
+});
+
+Deno.test("hole: ? inside cong_succ gets correct inner goal", () => {
+  const result = compile(`
+    system "Hole2" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(?)
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  assertEquals(tree.hasHoles, true);
+
+  const succ = tree.cases[1].tree;
+  assertEquals(succ.rule, "cong_succ");
+  // The inner hole: cong_succ wraps Eq(Succ(a),Succ(b)), so inner goal is Eq(a,b)
+  const hole = succ.children[0];
+  assertEquals(hole.isGoal, true);
+  assertEquals(hole.conclusion, "Eq(add(k, Zero), k)");
+});
+
+Deno.test("hole: ? in trans gets goal from other arg", () => {
+  const result = compile(`
+    system "Hole3" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+
+      prove psr(a : Nat, b : Nat) -> Eq(add(a, Succ(b)), Succ(add(a, b))) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(psr(k, b))
+      }
+
+      prove pc(a : Nat, b : Nat) -> Eq(add(a, b), add(b, a)) {
+        | Zero -> sym(pzr(b))
+        | Succ(k) -> trans(?, sym(psr(b, k)))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pc")!;
+  assertEquals(tree.hasHoles, true);
+
+  const succ = tree.cases[1].tree;
+  assertEquals(succ.rule, "trans");
+  // First arg is ?, second is sym(psr(b,k)) : Eq(Succ(add(b,k)), add(b,Succ(k)))
+  // trans(?, q) : Eq(a, c) needs ? : Eq(a, b) where q : Eq(b, c)
+  // Goal: Eq(Succ(add(k,b)), add(b,Succ(k))) with q=sym(psr(b,k))
+  // q : Eq(Succ(add(b,k)), add(b,Succ(k)))  wait no — sym flips it
+  // psr(b,k) : Eq(add(b,Succ(k)), Succ(add(b,k)))
+  // sym(psr(b,k)) : Eq(Succ(add(b,k)), add(b,Succ(k)))
+  // trans(?, sym(psr(b,k))) needs overall Eq(Succ(add(k,b)), add(b,Succ(k)))
+  //   ? : Eq(Succ(add(k,b)), Succ(add(b,k)))
+  const hole = succ.children[0];
+  assertEquals(hole.isGoal, true);
+  assertEquals(hole.conclusion, "Eq(Succ(add(k, b)), Succ(add(b, k)))");
+});
+
+Deno.test("hole: all-? prove generates no agent/rules", () => {
+  const result = compile(`
+    system "HoleNoRules" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> ?
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  // No agent should be generated for a prove with holes
+  const sys = result.systems.get("HoleNoRules")!;
+  assertEquals(sys.agents.has("pzr"), false);
+  // But proof tree should still be generated
+  assertEquals(result.proofTrees.has("pzr"), true);
+  assertEquals(result.proofTrees.get("pzr")!.hasHoles, true);
+
+  // Check goal types
+  assertEquals(result.proofTrees.get("pzr")!.cases[0].tree.conclusion, "Eq(Zero, Zero)");
+  assertEquals(result.proofTrees.get("pzr")!.cases[1].tree.conclusion, "Eq(Succ(add(k, Zero)), Succ(k))");
+});

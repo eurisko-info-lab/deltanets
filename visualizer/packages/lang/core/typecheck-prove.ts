@@ -32,6 +32,7 @@ export type ProofNode = {
   term: string;        // the proof term at this node
   conclusion: string;  // the derived type (Eq(..., ...))
   children: ProofNode[];
+  isGoal?: boolean;    // true when this node is an unfilled ? hole
 };
 
 /** Proof derivation tree for one prove block. */
@@ -39,6 +40,7 @@ export type ProofTree = {
   name: string;          // prove block name
   proposition: string;   // declared proposition
   cases: { pattern: string; bindings: string[]; tree: ProofNode }[];
+  hasHoles: boolean;     // true if any case contains a ? hole
 };
 
 // ─── ProveExpr helpers ─────────────────────────────────────────────
@@ -52,6 +54,7 @@ function app(name: string, ...args: AST.ProveExpr[]): AST.ProveExpr {
 }
 
 function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
+  if (a.kind === "hole" || b.kind === "hole") return false;
   if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
   if (a.kind === "call" && b.kind === "call") {
     if (a.name !== b.name || a.args.length !== b.args.length) return false;
@@ -61,6 +64,7 @@ function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
 }
 
 function exprToString(e: AST.ProveExpr): string {
+  if (e.kind === "hole") return "?";
   if (e.kind === "ident") return e.name;
   return `${e.name}(${e.args.map(exprToString).join(", ")})`;
 }
@@ -72,6 +76,7 @@ function substitute(
   varName: string,
   value: AST.ProveExpr,
 ): AST.ProveExpr {
+  if (expr.kind === "hole") return expr;
   if (expr.kind === "ident") {
     return expr.name === varName ? value : expr;
   }
@@ -90,6 +95,7 @@ function substituteAll(
   expr: AST.ProveExpr,
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
+  if (expr.kind === "hole") return expr;
   if (expr.kind === "ident") {
     return bindings.get(expr.name) ?? expr;
   }
@@ -103,7 +109,7 @@ function substituteAll(
 // Reduces type expressions using computational rules.
 
 function normalize(expr: AST.ProveExpr): AST.ProveExpr {
-  if (expr.kind === "ident") return expr;
+  if (expr.kind === "ident" || expr.kind === "hole") return expr;
 
   // Normalize children first
   const args = expr.args.map(normalize);
@@ -204,6 +210,11 @@ function inferType(
   expr: AST.ProveExpr,
   ctx: ProveCtx,
 ): TypeResult {
+  // Hole → can't infer, needs goal from context
+  if (expr.kind === "hole") {
+    return { ok: false, error: "hole" };
+  }
+
   // refl → Eq(a, a) where 'a' is determined from context
   if (expr.kind === "ident" && expr.name === "refl") {
     return { ok: true, type: app("Eq", ident("_refl_a"), ident("_refl_a")) };
@@ -308,8 +319,19 @@ function extractEq(
 
 // ─── Proof tree builder ────────────────────────────────────────────
 // Builds a ProofNode tree by walking the proof expression, mirroring inferType.
+// The optional `expected` type enables goal-directed checking for ? holes.
 
-function buildNode(expr: AST.ProveExpr, ctx: ProveCtx): ProofNode {
+function buildNode(
+  expr: AST.ProveExpr,
+  ctx: ProveCtx,
+  expected?: AST.ProveExpr,
+): ProofNode {
+  // ? hole → show goal type from the expected type
+  if (expr.kind === "hole") {
+    const goalStr = expected ? exprToString(normalize(expected)) : "?";
+    return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true };
+  }
+
   const result = inferType(expr, ctx);
   const conclusion = result.ok
     ? exprToString(normalize(result.type))
@@ -325,18 +347,61 @@ function buildNode(expr: AST.ProveExpr, ctx: ProveCtx): ProofNode {
 
   const { name, args } = expr;
 
+  // Goal-directed: propagate expected types into sub-expressions
   if (name.startsWith("cong_") && args.length >= 1) {
-    return { rule: name, term, conclusion, children: [buildNode(args[0], ctx)] };
+    // If expected is Eq(X(...,a), X(...,b)), inner goal is Eq(a, b)
+    let innerExpected: AST.ProveExpr | undefined;
+    if (expected) {
+      const eq = extractEq(normalize(expected));
+      if (eq) {
+        const suffix = name.slice(5);
+        const cons = suffix.charAt(0).toUpperCase() + suffix.slice(1);
+        if (eq.left.kind === "call" && eq.left.name === cons &&
+            eq.right.kind === "call" && eq.right.name === cons) {
+          const last1 = eq.left.args[eq.left.args.length - 1];
+          const last2 = eq.right.args[eq.right.args.length - 1];
+          innerExpected = app("Eq", last1, last2);
+        }
+      }
+    }
+    return { rule: name, term, conclusion, children: [buildNode(args[0], ctx, innerExpected)] };
   }
   if (name === "sym" && args.length === 1) {
-    return { rule: "sym", term, conclusion, children: [buildNode(args[0], ctx)] };
+    // If expected is Eq(a, b), inner goal is Eq(b, a)
+    let innerExpected: AST.ProveExpr | undefined;
+    if (expected) {
+      const eq = extractEq(normalize(expected));
+      if (eq) innerExpected = app("Eq", eq.right, eq.left);
+    }
+    return { rule: "sym", term, conclusion, children: [buildNode(args[0], ctx, innerExpected)] };
   }
   if (name === "trans" && args.length === 2) {
+    // Goal-directed for trans: propagate what we can
+    // trans(p, q) : Eq(a, c) when p : Eq(a, b) and q : Eq(b, c)
+    // If one arg is inferrable and the other is ?, we can compute the goal for ?
+    let leftExpected: AST.ProveExpr | undefined;
+    let rightExpected: AST.ProveExpr | undefined;
+    if (expected) {
+      const goalEq = extractEq(normalize(expected));
+      if (goalEq) {
+        // Try inferring the non-hole arg to determine the other's goal
+        const t1 = args[0].kind !== "hole" ? inferType(args[0], ctx) : null;
+        const t2 = args[1].kind !== "hole" ? inferType(args[1], ctx) : null;
+        if (t2?.ok) {
+          const eq2 = extractEq(normalize(t2.type));
+          if (eq2) leftExpected = app("Eq", goalEq.left, eq2.left);
+        }
+        if (t1?.ok) {
+          const eq1 = extractEq(normalize(t1.type));
+          if (eq1) rightExpected = app("Eq", eq1.right, goalEq.right);
+        }
+      }
+    }
     return {
       rule: "trans",
       term,
       conclusion,
-      children: [buildNode(args[0], ctx), buildNode(args[1], ctx)],
+      children: [buildNode(args[0], ctx, leftExpected), buildNode(args[1], ctx, rightExpected)],
     };
   }
   if (name === ctx.prove.name) {
@@ -346,6 +411,11 @@ function buildNode(expr: AST.ProveExpr, ctx: ProveCtx): ProofNode {
     return { rule: name, term, conclusion, children: [] };
   }
   return { rule: "?", term, conclusion, children: [] };
+}
+
+function nodeHasHoles(node: ProofNode): boolean {
+  if (node.isGoal) return true;
+  return node.children.some(nodeHasHoles);
 }
 
 /** Build a proof derivation tree for a typed prove block. */
@@ -362,17 +432,28 @@ export function buildProofTree(
       caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
       provedCtx,
     };
+
+    // Compute expected type for this case arm
+    const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
+      ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
+      : ident(caseArm.pattern);
+    const principalName = prove.params[0].name;
+    const expectedType = normalize(substitute(prove.returnType, principalName, consExpr));
+
     cases.push({
       pattern: caseArm.pattern,
       bindings: caseArm.bindings,
-      tree: buildNode(caseArm.body, ctx),
+      tree: buildNode(caseArm.body, ctx, expectedType),
     });
   }
+
+  const hasHoles = cases.some((c) => nodeHasHoles(c.tree));
 
   return {
     name: prove.name,
     proposition: exprToString(prove.returnType),
     cases,
+    hasHoles,
   };
 }
 
@@ -409,9 +490,12 @@ export function typecheckProve(
     const inferred = inferType(caseArm.body, ctx);
 
     if (!inferred.ok) {
-      errors.push(
-        `prove ${prove.name}, case ${caseArm.pattern}: ${inferred.error}`,
-      );
+      // Holes are not errors — they're open goals
+      if (inferred.error !== "hole") {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: ${inferred.error}`,
+        );
+      }
       continue;
     }
 

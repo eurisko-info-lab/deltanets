@@ -53,11 +53,15 @@ export function evalBodyInto(
         break;
       }
       case "prove": {
-        const { agentDecl, ruleDecls } = desugarProve(item, agents);
-        const agent = evalAgent(agentDecl);
-        agents.set(agent.name, agent);
-        for (const r of ruleDecls) {
-          rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+        const hasHoles = proveContainsHole(item);
+        // Only generate agent + rules for complete proofs (no ? holes)
+        if (!hasHoles) {
+          const { agentDecl, ruleDecls } = desugarProve(item, agents);
+          const agent = evalAgent(agentDecl);
+          agents.set(agent.name, agent);
+          for (const r of ruleDecls) {
+            rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+          }
         }
         // Type check if return type is annotated
         const typeErrors = typecheckProve(item, provedCtx);
@@ -282,6 +286,10 @@ function desugarProve(
     }
 
     function translateExpr(expr: AST.ProveExpr): AST.PortRef {
+      if (expr.kind === "hole") {
+        // Should never reach here — proveContainsHole guards the call
+        throw new EvalError(`prove ${prove.name}: unexpected ? hole in desugaring`);
+      }
       if (expr.kind === "ident") {
         // Variable with dup copies
         if (copyQueues.has(expr.name)) {
@@ -391,4 +399,14 @@ function countVarUses(
   }
   walk(expr);
   return counts;
+}
+
+function exprContainsHole(e: AST.ProveExpr): boolean {
+  if (e.kind === "hole") return true;
+  if (e.kind === "call") return e.args.some(exprContainsHole);
+  return false;
+}
+
+function proveContainsHole(prove: AST.ProveDecl): boolean {
+  return prove.cases.some((c) => exprContainsHole(c.body));
 }

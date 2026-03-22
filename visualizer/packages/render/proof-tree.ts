@@ -20,6 +20,7 @@ export type ProofNode = {
   term: string;
   conclusion: string;
   children: ProofNode[];
+  isGoal?: boolean;
 };
 
 /** Proof derivation tree for one prove block. */
@@ -27,6 +28,7 @@ export type ProofTree = {
   name: string;
   proposition: string;
   cases: { pattern: string; bindings: string[]; tree: ProofNode }[];
+  hasHoles: boolean;
 };
 
 // ─── Layout constants ──────────────────────────────────────────────
@@ -43,6 +45,8 @@ const TITLE_GAP = 30;     // gap below title
 // Approximate character width for layout (monospace-ish)
 const CHAR_W = FONT_SIZE * 0.58;
 const RULE_CHAR_W = RULE_FONT_SIZE * 0.55;
+
+const GOAL_COLOR = "#e8a838"; // amber for open goals
 
 // ─── SVG text primitive ───────────────────────────────────────────
 
@@ -82,10 +86,12 @@ class ProofText extends Node2D {
 // Horizontal inference line
 class InferenceLine extends Node2D {
   width: number;
+  color?: string;
 
-  constructor(width: number) {
+  constructor(width: number, color?: string) {
     super();
     this.width = width;
+    this.color = color;
   }
 
   override renderSelf(pos: Pos, theme: "light" | "dark"): SVG | null {
@@ -94,8 +100,35 @@ class InferenceLine extends Node2D {
       .attr("y1", pos.y)
       .attr("x2", pos.x + this.width / 2)
       .attr("y2", pos.y)
-      .attr("stroke", defaultStroke(theme))
+      .attr("stroke", this.color ?? defaultStroke(theme))
       .attr("stroke-width", DEFAULT_LINE_WIDTH);
+  }
+}
+
+// Rounded rectangle highlight for goal nodes
+class GoalHighlight extends Node2D {
+  w: number;
+  h: number;
+
+  constructor(w: number, h: number) {
+    super();
+    this.w = w;
+    this.h = h;
+  }
+
+  override renderSelf(pos: Pos, _theme: "light" | "dark"): SVG | null {
+    return d3.create("svg:rect")
+      .attr("x", pos.x - this.w / 2 - 6)
+      .attr("y", pos.y - this.h / 2 - 4)
+      .attr("width", this.w + 12)
+      .attr("height", this.h + 8)
+      .attr("rx", 4)
+      .attr("ry", 4)
+      .attr("fill", GOAL_COLOR)
+      .attr("fill-opacity", 0.15)
+      .attr("stroke", GOAL_COLOR)
+      .attr("stroke-width", 1.5)
+      .attr("stroke-dasharray", "4,3");
   }
 }
 
@@ -115,6 +148,36 @@ function textWidth(text: string, charW: number): number {
 function layoutNode(node: ProofNode): LayoutNode {
   const conclusionW = textWidth(node.conclusion, CHAR_W);
   const ruleW = textWidth(node.rule, RULE_CHAR_W);
+
+  // Goal leaf (? hole) — render with highlight
+  if (node.isGoal) {
+    const lineW = conclusionW + 2 * LINE_PAD;
+    const totalW = lineW + ruleW + LINE_PAD;
+    const totalH = FONT_SIZE + LEVEL_GAP + DEFAULT_LINE_WIDTH;
+    return {
+      width: totalW,
+      height: totalH,
+      render(parent, cx, bottomY) {
+        // Highlight box behind the conclusion
+        const bg = new GoalHighlight(conclusionW, FONT_SIZE);
+        bg.pos = { x: cx, y: bottomY };
+        parent.add(bg, false);
+        // Conclusion text in goal color
+        const concText = new ProofText(node.conclusion, FONT_SIZE, { color: GOAL_COLOR, bold: true });
+        concText.pos = { x: cx, y: bottomY };
+        parent.add(concText, false);
+        // Inference line in goal color
+        const lineY = bottomY - FONT_SIZE / 2 - LEVEL_GAP;
+        const line = new InferenceLine(lineW, GOAL_COLOR);
+        line.pos = { x: cx, y: lineY };
+        parent.add(line, false);
+        // Rule label
+        const ruleLabel = new ProofText("?", RULE_FONT_SIZE, { italic: true, color: GOAL_COLOR });
+        ruleLabel.pos = { x: cx + lineW / 2 + LINE_PAD + ruleW / 2, y: lineY };
+        parent.add(ruleLabel, false);
+      },
+    };
+  }
 
   if (node.children.length === 0) {
     // Leaf (axiom or call)
@@ -189,8 +252,11 @@ export function renderProofTree(tree: ProofTree): Node2D {
   let y = 0;
 
   // Title
+  const titleStr = tree.hasHoles
+    ? `${tree.name} : ${tree.proposition}  [incomplete]`
+    : `${tree.name} : ${tree.proposition}`;
   const title = new ProofText(
-    `${tree.name} : ${tree.proposition}`,
+    titleStr,
     TITLE_FONT_SIZE,
     { bold: true },
   );

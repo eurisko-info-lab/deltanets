@@ -1,0 +1,200 @@
+# Interactive Proof Mode — Goal-Directed ? Holes
+#
+# The `?` placeholder lets you explore proof obligations
+# interactively.  Write `?` anywhere in a prove body and
+# the proof tree shows the TYPE that's needed at that spot,
+# highlighted in amber.
+#
+# Proves with holes are NOT compiled to interaction rules
+# (they're incomplete), but the proof tree is still generated
+# so you can see what remains to be proved.
+#
+# ═══════════════════════════════════════════════════════════
+# Workflow:
+#   1. Start with all `?` holes
+#   2. Look at the amber goals in the proof tree
+#   3. Fill in one hole at a time
+#   4. Watch the goals update as you go
+# ═══════════════════════════════════════════════════════════
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent sym(principal, result)
+  agent trans(principal, result, second)
+
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# Step 1: All holes — see every obligation
+# ═══════════════════════════════════════════════════════════
+#
+# The proof tree will show:
+#   Zero case goal:  Eq(add(Zero, Zero), Zero) = Eq(Zero, Zero)
+#   Succ case goal:  Eq(add(Succ(k), Zero), Succ(k))
+#                  = Eq(Succ(add(k, Zero)), Succ(k))
+
+system "Step1" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ
+    let s2 = Succ
+    let d  = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
+  prove pzr_step1(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> ?
+    | Succ(k) -> ?
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# Step 2: Fill in the easy case, drill into the hard one
+# ═══════════════════════════════════════════════════════════
+#
+# Zero case:  refl  ✓  (both sides normalize to Zero)
+# Succ case:  cong_succ(?) — we know we need congruence,
+#             but the inner goal propagates:
+#             Goal: Eq(add(k, Zero), k)
+#             This is exactly the inductive hypothesis!
+
+system "Step2" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ
+    let s2 = Succ
+    let d  = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
+  prove pzr_step2(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(?)
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# Step 3: Complete proof — no more holes!
+# ═══════════════════════════════════════════════════════════
+#
+# Fill the last hole with the recursive call.
+# The proof tree now has no amber goals — fully checked. ✓
+
+system "Step3" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ
+    let s2 = Succ
+    let d  = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
+  prove pzr_step3(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(pzr_step3(k))
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# Bonus: Holes inside trans — bidirectional goal propagation
+# ═══════════════════════════════════════════════════════════
+#
+# When ? appears inside trans(?, expr) or trans(expr, ?),
+# the system infers the other argument's type and computes
+# what the hole needs.
+#
+# plus_comm requires trans in the Succ case:
+#   Goal:  Eq(Succ(add(k, m)), Succ(add(m, k)))
+#
+# With trans(cong_succ(plus_comm_wip(k, m)), ?):
+#   First arg type: Eq(Succ(add(k, m)), Succ(add(m, k)))
+#   The ? gets goal:  determined from overall equation
+
+system "Bonus" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero
+    let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ
+    let s2 = Succ
+    let d  = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
+  prove plus_succ_right(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_succ_right(k, m))
+  }
+
+  # Explore plus_comm with holes for the hard case
+  prove plus_comm_wip(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+    | Zero -> ?
+    | Succ(k) -> trans(cong_succ(plus_comm_wip(k, m)), ?)
+  }
+}

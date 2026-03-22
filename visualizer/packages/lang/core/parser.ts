@@ -503,6 +503,10 @@ class Parser {
   }
 
   parseProveExpr(): AST.ProveExpr {
+    if (this.check(TT.QUESTION)) {
+      this.advance();
+      return { kind: "hole" };
+    }
     const name = this.eatIdent();
     if (this.check(TT.LPAREN)) {
       this.advance();
