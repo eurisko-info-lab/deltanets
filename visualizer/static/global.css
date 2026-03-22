@@ -51,3 +51,8 @@ button:focus {
   font-style: italic;
   opacity: 0.85;
 }
+
+.goal-hole-clickable {
+  cursor: pointer !important;
+  text-decoration: underline dotted #6b7280;
+}

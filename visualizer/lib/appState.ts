@@ -125,6 +125,9 @@ export const codeEditorRef: { current: any } = { current: null };
 /** Track previous decoration IDs so we can replace them. */
 let goalDecorationIds: string[] = [];
 
+/** Stored hole→suggestion data for click-to-fill. */
+let holeEntries: { line: number; col: number; suggestions: string[] }[] = [];
+
 /** Find positions of standalone `?` tokens in .inet source (skipping comments and strings). */
 function findHolePositions(source: string): { line: number; col: number }[] {
   const positions: { line: number; col: number }[] = [];
@@ -169,20 +172,22 @@ function collectGoals(proofTrees: Map<string, ProofTree>): { conclusion: string;
 /** Update Monaco editor decorations to show goal types inline next to `?` holes. */
 function updateGoalHints(source: string, proofTrees: Map<string, ProofTree>) {
   const editor = codeEditorRef.current;
-  if (!editor) return;
+  if (!editor) { holeEntries = []; return; }
 
   const holes = findHolePositions(source);
   const goals = collectGoals(proofTrees);
 
   // deno-lint-ignore no-explicit-any
   const decorations: any[] = [];
+  const entries: typeof holeEntries = [];
   const count = Math.min(holes.length, goals.length);
   for (let i = 0; i < count; i++) {
     const { line, col } = holes[i];
     const { conclusion, suggestions } = goals[i];
+    entries.push({ line, col, suggestions });
     let hint = ` : ${conclusion}`;
     if (suggestions.length > 0) {
-      hint += `  [try: ${suggestions.join(", ")}]`;
+      hint += `  [click ? or try: ${suggestions.join(", ")}]`;
     }
     decorations.push({
       range: { startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1 },
@@ -191,10 +196,12 @@ function updateGoalHints(source: string, proofTrees: Map<string, ProofTree>) {
           content: hint,
           inlineClassName: "goal-hint-text",
         },
+        className: suggestions.length > 0 ? "goal-hole-clickable" : undefined,
       },
     });
   }
 
+  holeEntries = entries;
   goalDecorationIds = editor.deltaDecorations(goalDecorationIds, decorations);
 }
 
@@ -202,9 +209,21 @@ function updateGoalHints(source: string, proofTrees: Map<string, ProofTree>) {
 function clearGoalHints() {
   const editor = codeEditorRef.current;
   if (!editor) return;
+  holeEntries = [];
   if (goalDecorationIds.length > 0) {
     goalDecorationIds = editor.deltaDecorations(goalDecorationIds, []);
   }
+}
+
+/** Try to fill a `?` hole at (line, col) with its first suggestion. Returns true if filled. */
+export function fillHoleAtPosition(line: number, col: number): boolean {
+  const editor = codeEditorRef.current;
+  if (!editor) return false;
+  const entry = holeEntries.find((h) => h.line === line && h.col === col);
+  if (!entry || entry.suggestions.length === 0) return false;
+  const range = { startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1 };
+  editor.executeEdits("fill-hole", [{ range, text: entry.suggestions[0], forceMoveMarkers: true }]);
+  return true;
 }
 
 // --- Internal helpers ---

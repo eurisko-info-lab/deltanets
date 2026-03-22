@@ -4,6 +4,7 @@ import { METHODS } from "@deltanets/methods";
 import {
   codeEditorRef,
   editorWidth,
+  fillHoleAtPosition,
   isFirstLoad,
   method,
   theme,
@@ -76,6 +77,24 @@ export function useCodeEditor(examples: Example[]) {
           }
         },
       );
+
+      // Click-to-fill: clicking a `?` hole with suggestions replaces it
+      // deno-lint-ignore no-explicit-any
+      codeEditorRef.current.onMouseDown((e: any) => {
+        if (e.target?.position) {
+          const { lineNumber, column } = e.target.position;
+          const model = codeEditorRef.current.getModel();
+          if (model) {
+            const ch = model.getValueInRange({
+              startLineNumber: lineNumber, startColumn: column,
+              endLineNumber: lineNumber, endColumn: column + 1,
+            });
+            if (ch === "?") {
+              fillHoleAtPosition(lineNumber, column);
+            }
+          }
+        }
+      });
     });
 
     // Arrow-key navigation for reduction stepping / type-check stepping
