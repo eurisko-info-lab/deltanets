@@ -200,6 +200,54 @@ system "BoolProofs" extend "Eq" {
   }
 }
 
+# ═══════════════════════════════════════════════════════════════════
+# Typed proofs — the same theorems via `prove`, with
+# compile-time dependent type checking.
+# ═══════════════════════════════════════════════════════════════════
+
+system "TypedBoolProofs" extend "Eq" {
+
+  agent dup_bool(principal, copy1, copy2)
+  rule dup_bool <> True -> {
+    let t1 = True  let t2 = True
+    relink left.copy1 t1.principal
+    relink left.copy2 t2.principal
+  }
+  rule dup_bool <> False -> {
+    let f1 = False  let f2 = False
+    relink left.copy1 f1.principal
+    relink left.copy2 f2.principal
+  }
+
+  # ∀b. not(not(b)) = b
+  prove not_not(b : Bool) -> Eq(not(not(b)), b) {
+    | True -> refl
+    | False -> refl
+  }
+
+  # Helpers for nested case analysis in and_comm:
+  prove and_comm_t(b : Bool) -> Eq(and(True, b), and(b, True)) {
+    | True -> refl
+    | False -> refl
+  }
+  prove and_comm_f(b : Bool) -> Eq(and(False, b), and(b, False)) {
+    | True -> refl
+    | False -> refl
+  }
+
+  # ∀a,b. and(a, b) = and(b, a)
+  prove and_comm(a : Bool, b : Bool) -> Eq(and(a, b), and(b, a)) {
+    | True -> and_comm_t(b)
+    | False -> and_comm_f(b)
+  }
+
+  # De Morgan: ∀a,b. not(and(a, b)) = or(not(a), not(b))
+  prove demorgan(a : Bool, b : Bool) -> Eq(not(and(a, b)), or(not(a), not(b))) {
+    | True -> refl
+    | False -> refl
+  }
+}
+
 # ─── Example Graphs ───────────────────────────────────────────────
 
 # ─── Computation demo: not(True) → False ─────────────────────────

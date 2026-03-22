@@ -153,6 +153,29 @@ system "ListProofs" extend "Eq" {
   }
 }
 
+# ═══════════════════════════════════════════════════════════════════
+# Typed proofs — the same theorem via `prove`, with
+# compile-time dependent type checking.
+# ═══════════════════════════════════════════════════════════════════
+
+system "TypedListProofs" extend "Eq" {
+
+  agent cong_cons(principal, result, head)
+  rule cong_cons <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.head
+  }
+
+  # ∀xs. append(xs, Nil) = xs
+  # In the Cons case, cong_cons(proof, head) wraps the recursive
+  # result: proof goes to cong_cons.principal, head to cong_cons.head.
+  prove append_nil_right(xs : List) -> Eq(append(xs, Nil), xs) {
+    | Nil -> refl
+    | Cons(h, t) -> cong_cons(append_nil_right(t), h)
+  }
+}
+
 # ─── Example Graphs ───────────────────────────────────────────────
 
 # ═════════════════════════════════════════════════════════════════

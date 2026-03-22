@@ -110,6 +110,63 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     return normalize(app("Succ", app("add", k, e.args[1])));
   }
 
+  // ── Bool ──
+
+  // not(True) → False, not(False) → True
+  if (e.name === "not" && e.args.length === 1 && e.args[0].kind === "ident") {
+    if (e.args[0].name === "True") return ident("False");
+    if (e.args[0].name === "False") return ident("True");
+  }
+
+  // and(True, x) → x, and(False, x) → False
+  if (e.name === "and" && e.args.length === 2 && e.args[0].kind === "ident") {
+    if (e.args[0].name === "True") return e.args[1];
+    if (e.args[0].name === "False") return ident("False");
+  }
+
+  // or(True, x) → True, or(False, x) → x
+  if (e.name === "or" && e.args.length === 2 && e.args[0].kind === "ident") {
+    if (e.args[0].name === "True") return ident("True");
+    if (e.args[0].name === "False") return e.args[1];
+  }
+
+  // ── List ──
+
+  // append(Nil, ys) → ys
+  if (
+    e.name === "append" && e.args.length === 2 &&
+    e.args[0].kind === "ident" && e.args[0].name === "Nil"
+  ) {
+    return e.args[1];
+  }
+
+  // append(Cons(h, t), ys) → Cons(h, append(t, ys))
+  if (
+    e.name === "append" && e.args.length === 2 &&
+    e.args[0].kind === "call" && e.args[0].name === "Cons" &&
+    e.args[0].args.length === 2
+  ) {
+    const [h, t] = e.args[0].args;
+    return normalize(app("Cons", h, app("append", t, e.args[1])));
+  }
+
+  // length(Nil) → Zero
+  if (
+    e.name === "length" && e.args.length === 1 &&
+    e.args[0].kind === "ident" && e.args[0].name === "Nil"
+  ) {
+    return ident("Zero");
+  }
+
+  // length(Cons(h, t)) → Succ(length(t))
+  if (
+    e.name === "length" && e.args.length === 1 &&
+    e.args[0].kind === "call" && e.args[0].name === "Cons" &&
+    e.args[0].args.length === 2
+  ) {
+    return normalize(app("Succ", app("length", e.args[0].args[1])));
+  }
+
   return e;
 }
 
@@ -151,6 +208,19 @@ function inferType(
       return { ok: false, error: `cong_succ argument must have Eq type, got ${exprToString(inner.type)}` };
     }
     return { ok: true, type: app("Eq", app("Succ", eq.left), app("Succ", eq.right)) };
+  }
+
+  // cong_cons(p, h) : Eq(Cons(h, a), Cons(h, b)) when p : Eq(a, b)
+  // First arg is the proof, second arg is the head value (erased at runtime)
+  if (name === "cong_cons" && args.length === 2) {
+    const inner = inferType(args[0], ctx);
+    if (!inner.ok) return inner;
+    const eq = extractEq(inner.type);
+    if (!eq) {
+      return { ok: false, error: `cong_cons first argument must have Eq type, got ${exprToString(inner.type)}` };
+    }
+    // args[1] is the head element — appears identically on both sides
+    return { ok: true, type: app("Eq", app("Cons", args[1], eq.left), app("Cons", args[1], eq.right)) };
   }
 
   // sym(p) : Eq(b, a) when p : Eq(a, b)
