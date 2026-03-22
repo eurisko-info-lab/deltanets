@@ -31,10 +31,7 @@ system "Δ-Nets" extend "Prelude" {
   rule abs <> app -> annihilate
 
   # Garbage collection: eraser propagates through agents
-  rule abs <> era -> erase
-  rule app <> era -> erase
-  rule rep-in <> era -> erase
-  rule rep-out <> era -> erase
+  rule [abs, app, rep-in, rep-out] <> era -> erase
 
   # Same-level replicator pair cancels
   rule rep-in <> rep-out -> annihilate
@@ -83,6 +80,5 @@ graph manual-identity {
   let r   = root
   let a   = abs "λx"
   let e   = era
-  wire r.principal -- a.principal
-  wire a.bind      -- a.body
+  wire r ~ a, a.bind -- a.body
 }

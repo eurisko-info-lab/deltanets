@@ -133,7 +133,9 @@ class Parser {
   parseProgram(): AST.Program {
     const stmts: AST.Statement[] = [];
     while (!this.check(TT.EOF)) {
-      stmts.push(this.parseStatement());
+      const tok = this.peek();
+      if (tok.type === TT.RULE) stmts.push(...this.parseRuleDecl());
+      else stmts.push(this.parseStatement());
     }
     return stmts;
   }
@@ -146,7 +148,7 @@ class Parser {
       case TT.AGENT:
         return this.parseAgentDecl();
       case TT.RULE:
-        return this.parseRuleDecl();
+        return this.parseRuleDecl()[0]; // single-rule fallback
       case TT.MODE:
         return this.parseModeDecl();
       case TT.GRAPH:
@@ -306,7 +308,7 @@ class Parser {
     while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
       const tok = this.peek();
       if (tok.type === TT.AGENT) body.push(this.parseAgentDecl());
-      else if (tok.type === TT.RULE) body.push(this.parseRuleDecl());
+      else if (tok.type === TT.RULE) body.push(...this.parseRuleDecl());
       else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
       else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
       else {throw new ParseError(
@@ -341,14 +343,34 @@ class Parser {
 
   // ─── Rule ────────────────────────────────────────────────────────
 
-  parseRuleDecl(): AST.RuleDecl {
+  // rule agentA <> agentB -> action
+  // rule [a, b, c] <> agentB -> action  (batch: expands to multiple rules)
+  // Either side or both can use [brackets]
+  parseRuleDecl(): AST.RuleDecl[] {
     this.eat(TT.RULE);
-    const agentA = this.eatIdent();
+    const leftNames = this.parseAgentNameOrList();
     this.eat(TT.INTERACT);
-    const agentB = this.eatIdent();
+    const rightNames = this.parseAgentNameOrList();
     this.eat(TT.ARROW);
     const action = this.parseRuleAction();
-    return { kind: "rule", agentA, agentB, action };
+    const rules: AST.RuleDecl[] = [];
+    for (const a of leftNames) {
+      for (const b of rightNames) {
+        rules.push({ kind: "rule", agentA: a, agentB: b, action });
+      }
+    }
+    return rules;
+  }
+
+  /** Parse IDENT or "[" IDENT ("," IDENT)* "]" */
+  private parseAgentNameOrList(): string[] {
+    if (this.check(TT.LBRACKET)) {
+      this.advance();
+      const names = this.parseCommaList(() => this.eatIdent());
+      this.eat(TT.RBRACKET);
+      return names;
+    }
+    return [this.eatIdent()];
   }
 
   private static BUILTIN_RULES: Record<string, BuiltinAction["name"]> = {
@@ -374,16 +396,18 @@ class Parser {
     this.eat(TT.LBRACE);
     const stmts: AST.RuleStmt[] = [];
     while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
-      stmts.push(this.parseRuleStmt());
+      const result = this.parseRuleStmt();
+      if (Array.isArray(result)) stmts.push(...result);
+      else stmts.push(result);
     }
     this.eat(TT.RBRACE);
     return stmts;
   }
 
-  parseRuleStmt(): AST.RuleStmt {
+  parseRuleStmt(): AST.RuleStmt | AST.RuleStmt[] {
     const tok = this.peek();
     if (tok.type === TT.LET) return this.parseLetStmt();
-    if (tok.type === TT.WIRE) return this.parseWireStmt();
+    if (tok.type === TT.WIRE) return this.parseWireStmts();
     if (tok.type === TT.RELINK) return this.parseRelinkStmt();
     if (tok.type === TT.ERASE) return this.parseEraseStmt();
     throw new ParseError(
@@ -407,12 +431,46 @@ class Parser {
     return { kind: "let", varName, agentType, label };
   }
 
-  parseWireStmt(): AST.WireStmt {
+  // wire portRef -- portRef           (classic)
+  // wire a ~ b                        (tilde: bare names default to .principal)
+  // wire a ~ b, b.body ~ c, c -- d   (comma-separated chain)
+  parseWireStmts(): AST.WireStmt[] {
     this.eat(TT.WIRE);
-    const portA = this.parsePortRef();
+    const wires: AST.WireStmt[] = [];
+    wires.push(this.parseOneWire());
+    while (this.check(TT.COMMA)) {
+      this.advance();
+      wires.push(this.parseOneWire());
+    }
+    return wires;
+  }
+
+  private parseOneWire(): AST.WireStmt {
+    const a = this.parsePortRefOrPrincipal();
+    const portA = a.port !== null ? a as AST.PortRef : { node: a.node, port: "principal" };
+    if (this.check(TT.TILDE)) {
+      this.advance();
+      const b = this.parsePortRefOrPrincipal();
+      const portB = b.port !== null ? b as AST.PortRef : { node: b.node, port: "principal" };
+      return { kind: "wire", portA, portB };
+    }
     this.eat(TT.WIRE_OP);
     const portB = this.parsePortRef();
     return { kind: "wire", portA, portB };
+  }
+
+  /** Parse portRef, but allow bare IDENT (no .port) for tilde syntax. */
+  private parsePortRefOrPrincipal(): { node: string; port: string | null } {
+    const node = this.eatName();
+    if (this.check(TT.DOT)) {
+      this.advance();
+      const tok = this.peek();
+      let port: string;
+      if (tok.type === TT.NUMBER) port = this.advance().value;
+      else port = this.eatName();
+      return { node, port };
+    }
+    return { node, port: null };
   }
 
   parseRelinkStmt(): AST.RelinkStmt {
@@ -542,7 +600,7 @@ class Parser {
       while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
         const tok = this.peek();
         if (tok.type === TT.LET) body.push(this.parseLetStmt());
-        else if (tok.type === TT.WIRE) body.push(this.parseWireStmt());
+        else if (tok.type === TT.WIRE) body.push(...this.parseWireStmts());
         else {throw new ParseError(
             `Expected let/wire, got '${tok.value}'`,
             tok.line,

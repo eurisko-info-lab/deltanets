@@ -1,7 +1,7 @@
 // Tests for the core and view language compilers.
 
 import { assert, assertEquals } from "$std/assert/mod.ts";
-import { compileCore, compileView } from "@deltanets/lang";
+import { compileCore, compileView, core } from "@deltanets/lang";
 
 // ─── Core Language ─────────────────────────────────────────────────
 
@@ -444,4 +444,91 @@ lanes "Chromatic" {
   assertEquals(view.items[0].label, "C#4");
   assertEquals(view.items[1].label, "Eb4");
   assertEquals(view.items[2].label, "Bb4");
+});
+
+// ─── Syntax Extensions ────────────────────────────────────────────
+
+Deno.test("syntax: batch rules expand to cross product", () => {
+  const source = `
+system "T" {
+  agent a(principal)
+  agent b(principal, body, bind)
+  agent c(principal)
+  agent d(principal)
+  rule [a, b] <> [c, d] -> erase
+}
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const sys = result.systems.get("T")!;
+  assertEquals(sys.rules.length, 4);
+  const pairs = sys.rules.map((r) => `${r.agentA}<>${r.agentB}`).sort();
+  assertEquals(pairs, ["a<>c", "a<>d", "b<>c", "b<>d"]);
+});
+
+Deno.test("syntax: batch rule one-sided bracket", () => {
+  const source = `
+system "T" {
+  agent x(principal)
+  agent y(principal)
+  agent z(principal)
+  rule [x, y] <> z -> erase
+}
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+  const sys = result.systems.get("T")!;
+  assertEquals(sys.rules.length, 2);
+  const pairs = sys.rules.map((r) => `${r.agentA}<>${r.agentB}`).sort();
+  assertEquals(pairs, ["x<>z", "y<>z"]);
+});
+
+Deno.test("syntax: tilde shorthand wires principals", () => {
+  const source = `
+graph test {
+  let r = root
+  let a = abs "λx"
+  wire r ~ a
+}
+  `;
+  const ast = core.parse(core.tokenize(source));
+  const graph = ast.find((s): s is core.GraphExplicit => s.kind === "graph-explicit" && s.name === "test")!;
+  const wires = graph.body.filter((s): s is core.WireStmt => s.kind === "wire");
+  assertEquals(wires.length, 1);
+  assertEquals(wires[0].portA.port, "principal");
+  assertEquals(wires[0].portB.port, "principal");
+});
+
+Deno.test("syntax: tilde with explicit port on one side", () => {
+  const source = `
+graph test {
+  let r = root
+  let a = abs "λx"
+  wire a.body ~ r
+}
+  `;
+  const ast = core.parse(core.tokenize(source));
+  const graph = ast.find((s): s is core.GraphExplicit => s.kind === "graph-explicit" && s.name === "test")!;
+  const wires = graph.body.filter((s): s is core.WireStmt => s.kind === "wire");
+  assertEquals(wires.length, 1);
+  assertEquals(wires[0].portA.port, "body");
+  assertEquals(wires[0].portB.port, "principal");
+});
+
+Deno.test("syntax: wire chain with commas", () => {
+  const source = `
+graph test {
+  let r = root
+  let a = abs "λx"
+  wire r ~ a, a.bind -- a.body
+}
+  `;
+  const ast = core.parse(core.tokenize(source));
+  const graph = ast.find((s): s is core.GraphExplicit => s.kind === "graph-explicit" && s.name === "test")!;
+  const wires = graph.body.filter((s): s is core.WireStmt => s.kind === "wire");
+  assertEquals(wires.length, 2);
+  assertEquals(wires[0].portA.port, "principal");
+  assertEquals(wires[0].portB.port, "principal");
+  assertEquals(wires[1].portA.port, "bind");
+  assertEquals(wires[1].portB.port, "body");
 });

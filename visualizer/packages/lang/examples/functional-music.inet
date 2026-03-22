@@ -24,10 +24,7 @@ system "delta-nets" extend "Prelude" {
   agent era(principal)
 
   rule abs <> app -> annihilate
-  rule abs <> era -> erase
-  rule app <> era -> erase
-  rule rep-in <> era -> erase
-  rule rep-out <> era -> erase
+  rule [abs, app, rep-in, rep-out] <> era -> erase
   rule rep-in <> rep-out -> annihilate
   rule rep-in <> rep-in -> commute
   rule app <> rep-out -> aux-fan

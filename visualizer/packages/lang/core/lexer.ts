@@ -38,8 +38,11 @@ export const TT = {
   RPAREN: "RPAREN",
   LBRACE: "LBRACE",
   RBRACE: "RBRACE",
+  LBRACKET: "LBRACKET", // [
+  RBRACKET: "RBRACKET", // ]
   COMMA: "COMMA",
   DOT: "DOT",
+  TILDE: "TILDE", // ~
   BACKSLASH: "BACKSLASH",
   COLON: "COLON",
   QUESTION: "QUESTION", // ?
@@ -164,8 +167,11 @@ export function tokenize(source: string): Token[] {
       ")": TT.RPAREN,
       "{": TT.LBRACE,
       "}": TT.RBRACE,
+      "[": TT.LBRACKET,
+      "]": TT.RBRACKET,
       ",": TT.COMMA,
       ".": TT.DOT,
+      "~": TT.TILDE,
       "\\": TT.BACKSLASH,
       ":": TT.COLON,
       "?": TT.QUESTION,

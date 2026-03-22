@@ -82,8 +82,7 @@ system "Dependent" extend "λ→" {
   agent snd(principal, result)               # π₂
 
   # Σ-elimination: fst/snd meet pair
-  rule fst <> pair -> annihilate
-  rule snd <> pair -> annihilate
+  rule [fst, snd] <> pair -> annihilate
 }
 
 # ─── Axis 3: Type Operators (λ→ → λω̲) ───────────────────────────
@@ -118,8 +117,7 @@ system "TyOp" extend "λ→" {
 
 system "λP2" = compose "Poly" + "Dependent" {
   # Cross-rules: polymorphic eliminators meet dependent pairs
-  rule tyabs <> fst -> erase
-  rule tyabs <> snd -> erase
+  rule tyabs <> [fst, snd] -> erase
 }
 
 # ─── λPω = Dependent Type Operators ─────────────────────────────
@@ -128,8 +126,7 @@ system "λP2" = compose "Poly" + "Dependent" {
 system "λPω" = compose "Dependent" + "TyOp" {
   # The Π type and type operators share the type-level structure.
   # Cross-rule: type-level β interacts with dependent eliminators
-  rule type-abs <> fst -> erase
-  rule type-abs <> snd -> erase
+  rule type-abs <> [fst, snd] -> erase
 }
 
 # ─── λω = System Fω (Higher-Order Polymorphism) ─────────────────
@@ -148,10 +145,7 @@ system "λω" = compose "Poly" + "TyOp" {
 
 system "λC" = compose "Poly" + "Dependent" + "TyOp" {
   # Cross-rules from each pairwise composition
-  rule tyabs <> fst -> erase
-  rule tyabs <> snd -> erase
-  rule type-abs <> fst -> erase
-  rule type-abs <> snd -> erase
+  rule [tyabs, type-abs] <> [fst, snd] -> erase
   rule tyapp <> type-abs -> annihilate
 }
 
@@ -180,10 +174,9 @@ graph poly-identity {
   let r   = root
   let ta  = tyabs "Λα"
   let a   = abs "λx"
-  wire r.principal  -- ta.principal
-  wire ta.body      -- a.principal
-  wire a.bind       -- a.body          # identity: x ↦ x
-  wire ta.bind      -- a.type          # α is the type of x
+  wire r ~ ta, ta.body ~ a
+  wire a.bind -- a.body          # identity: x ↦ x
+  wire ta.bind -- a.type          # α is the type of x
 }
 
 # Type application: (Λα.λx.x)[Bool] →β λx:Bool.x
@@ -195,12 +188,12 @@ graph poly-beta {
   let tp   = tyapp
   let a    = abs "λx"
   let arg  = type-base "Bool"
-  wire ta.principal -- tp.principal    # active pair!
-  wire tp.result    -- r.principal
-  wire ta.body      -- a.principal     # body = λx.x
-  wire a.bind       -- a.body
-  wire tp.arg       -- arg.principal   # applying to Bool
-  wire ta.bind      -- a.type          # α (as type of x) will become Bool
+  wire ta ~ tp                     # active pair!
+  wire tp.result ~ r
+  wire ta.body ~ a                 # body = λx.x
+  wire a.bind -- a.body
+  wire tp.arg ~ arg                # applying to Bool
+  wire ta.bind -- a.type            # α (as type of x) will become Bool
 }
 
 # Universal type ∀α.α→α standing alone
@@ -208,9 +201,8 @@ graph poly-forall-type {
   let r   = root
   let fa  = forall "∀α"
   let arr = type-arrow "α→α"
-  wire r.principal  -- fa.principal
-  wire fa.body      -- arr.principal
-  wire fa.bind      -- arr.domain      # α is the domain
+  wire r ~ fa, fa.body ~ arr
+  wire fa.bind -- arr.domain      # α is the domain
   # codomain left free (second occurrence would need sharing)
 }
 
@@ -224,9 +216,9 @@ graph dep-pi-type {
   let p   = pi "Π(A:*)"
   let tb  = type-base "A"
   let arr = type-arrow "A→A"
-  wire r.principal  -- p.principal
-  wire p.domain     -- tb.principal
-  wire p.codomain   -- arr.principal
+  wire r ~ p
+  wire p.domain ~ tb
+  wire p.codomain ~ arr
 }
 
 # Dependent pair: (a, b) : Σ(x:A).B
@@ -238,11 +230,9 @@ graph dep-sigma-pair {
   let b   = var "b"
   let ta  = type-base "A"
   let tb  = type-base "B"
-  wire r.principal   -- p.principal
-  wire p.fst         -- a.principal
-  wire p.snd         -- b.principal
-  wire sg.fst-type   -- ta.principal
-  wire sg.snd-type   -- tb.principal
+  wire r ~ p
+  wire p.fst ~ a, p.snd ~ b
+  wire sg.fst-type ~ ta, sg.snd-type ~ tb
 }
 
 # First projection: fst (a, b) → a
@@ -253,10 +243,9 @@ graph dep-fst-elim {
   let p   = pair "(a,b)"
   let a   = var "a"
   let b   = var "b"
-  wire f.principal -- p.principal      # active pair!
-  wire f.result    -- r.principal      # result → root
-  wire p.fst       -- a.principal      # first component
-  wire p.snd       -- b.principal      # second component
+  wire f ~ p                       # active pair!
+  wire f.result ~ r                # result → root
+  wire p.fst ~ a, p.snd ~ b
 }
 
 # Second projection: snd (a, b) → b
@@ -266,10 +255,9 @@ graph dep-snd-elim {
   let p   = pair "(a,b)"
   let a   = var "a"
   let b   = var "b"
-  wire s.principal -- p.principal      # active pair!
-  wire s.result    -- r.principal
-  wire p.fst       -- a.principal
-  wire p.snd       -- b.principal
+  wire s ~ p                       # active pair!
+  wire s.result ~ r
+  wire p.fst ~ a, p.snd ~ b
 }
 
 # ─── Axis 3: Type Operators (TyOp / λω̲) ─────────────────────────
@@ -285,12 +273,12 @@ graph tyop-beta {
   let arr  = type-arrow "α→Nat"
   let nat  = type-base "Nat"
   let arg  = type-base "Bool"
-  wire ta.principal  -- tp.principal   # active pair!
-  wire tp.result     -- r.principal
-  wire ta.body       -- arr.principal  # body is α→Nat
-  wire ta.bind       -- arr.domain     # α is the domain
-  wire arr.codomain  -- nat.principal  # codomain is Nat
-  wire tp.arg        -- arg.principal  # applying to Bool
+  wire ta ~ tp                     # active pair!
+  wire tp.result ~ r
+  wire ta.body ~ arr               # body is α→Nat
+  wire ta.bind -- arr.domain        # α is the domain
+  wire arr.codomain ~ nat           # codomain is Nat
+  wire tp.arg ~ arg                 # applying to Bool
 }
 
 # Kind of a unary type operator: ★ → ★
@@ -299,9 +287,8 @@ graph tyop-kind {
   let ka  = kind-arrow "★→★"
   let k1  = kind-star "★"
   let k2  = kind-star "★"
-  wire r.principal   -- ka.principal
-  wire ka.domain     -- k1.principal
-  wire ka.codomain   -- k2.principal
+  wire r ~ ka
+  wire ka.domain ~ k1, ka.codomain ~ k2
 }
 
 # Type operator with kind annotation:
@@ -310,9 +297,8 @@ graph tyop-abs-kind {
   let r   = root
   let ta  = type-abs "λα:★"
   let arr = type-arrow "α→α"
-  wire r.principal  -- ta.principal
-  wire ta.body      -- arr.principal   # body is α→α
-  wire ta.bind      -- arr.domain      # α is the domain
+  wire r ~ ta, ta.body ~ arr       # body is α→α
+  wire ta.bind -- arr.domain        # α is the domain
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -327,10 +313,9 @@ graph lp2-cross-erase {
   let f   = fst
   let ta  = tyabs "Λα"
   let a   = abs "λx"
-  wire f.principal -- ta.principal     # cross-rule: fst <> tyabs → erase
-  wire f.result    -- r.principal
-  wire ta.body     -- a.principal
-  wire a.bind      -- a.body
+  wire f ~ ta                      # cross-rule: fst <> tyabs → erase
+  wire f.result ~ r
+  wire ta.body ~ a, a.bind -- a.body
 }
 
 # ─── λPω cross-rule: type-abs <> fst → erase ────────────────────
@@ -340,10 +325,9 @@ graph lpw-cross-erase {
   let f    = fst
   let ta   = type-abs "λα"
   let arr  = type-arrow "α→α"
-  wire f.principal  -- ta.principal    # cross-rule: type-abs <> fst → erase
-  wire f.result     -- r.principal
-  wire ta.body      -- arr.principal
-  wire ta.bind      -- arr.domain
+  wire f ~ ta                      # cross-rule: type-abs <> fst → erase
+  wire f.result ~ r
+  wire ta.body ~ arr, ta.bind -- arr.domain
 }
 
 # ─── λω cross-rule: tyapp <> type-abs → annihilate ───────────────
@@ -357,12 +341,11 @@ graph fw-cross-annihilate {
   let arr  = type-arrow "α→Nat"
   let nat  = type-base "Nat"
   let arg  = type-base "Bool"
-  wire tp.principal  -- ta.principal   # cross-rule: tyapp <> type-abs → annihilate
-  wire tp.result     -- r.principal
-  wire ta.body       -- arr.principal
-  wire ta.bind       -- arr.domain     # α is domain
-  wire arr.codomain  -- nat.principal
-  wire tp.arg        -- arg.principal  # applying to Bool
+  wire tp ~ ta                     # cross-rule: tyapp <> type-abs → annihilate
+  wire tp.result ~ r
+  wire ta.body ~ arr, ta.bind -- arr.domain  # α is domain
+  wire arr.codomain ~ nat
+  wire tp.arg ~ arg                # applying to Bool
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -379,13 +362,11 @@ graph coc-poly-dep-tyop {
   let ka   = kind-arrow "★→★"          # TyOp: kind of type operators
   let k1   = kind-star "★"
   let k2   = kind-star "★"
-  wire r.principal   -- ta.principal   # outer: Λα
-  wire ta.body       -- a.principal    # body: λx.x
-  wire a.bind        -- a.body         # identity
-  wire ta.bind       -- p.principal    # α bound as Π type
-  wire p.domain      -- ka.principal   # domain is a kind ★→★
-  wire ka.domain     -- k1.principal
-  wire ka.codomain   -- k2.principal
+  wire r ~ ta, ta.body ~ a            # outer: Λα, body: λx.x
+  wire a.bind -- a.body                # identity
+  wire ta.bind ~ p                     # α bound as Π type
+  wire p.domain ~ ka                   # domain is a kind ★→★
+  wire ka.domain ~ k1, ka.codomain ~ k2
 }
 
 # ─── Untyped baselines for comparison ─────────────────────────────
