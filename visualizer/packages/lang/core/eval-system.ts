@@ -30,6 +30,27 @@ export function evalBodyInto(
 ): { proofTrees: ProofTree[]; provedCtx: ProvedContext } {
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
+  // Pre-scan: collect constructor families from ALL prove blocks before processing
+  const constructorsByType = new Map<string, Set<string>>();
+  for (const item of body) {
+    if (item.kind === "prove") {
+      const firstParam = item.params[0];
+      if (firstParam?.type) {
+        const typeName = firstParam.type.kind === "ident"
+          ? firstParam.type.name
+          : firstParam.type.kind === "call"
+          ? firstParam.type.name
+          : null;
+        if (typeName) {
+          if (!constructorsByType.has(typeName)) {
+            constructorsByType.set(typeName, new Set());
+          }
+          const set = constructorsByType.get(typeName)!;
+          for (const c of item.cases) set.add(c.pattern);
+        }
+      }
+    }
+  }
 
   for (const item of body) {
     switch (item.kind) {
@@ -67,7 +88,7 @@ export function evalBodyInto(
           }
         }
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(item, provedCtx);
+        const typeErrors = typecheckProve(item, provedCtx, constructorsByType);
         if (typeErrors.length > 0) {
           throw new EvalError(typeErrors.join("\n"));
         }

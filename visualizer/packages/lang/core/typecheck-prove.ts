@@ -787,13 +787,51 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   return { kind: "call", name: expr.name, args: expr.args.map(stripTacticSugar) };
 }
 
+// ─── Exhaustiveness checking ───────────────────────────────────────
+// When the first param has a type annotation (e.g., n : Nat) and we
+// know the constructors for that type, check that all are covered.
+
+function checkExhaustiveness(
+  prove: AST.ProveDecl,
+  constructorsByType: Map<string, Set<string>>,
+): string[] {
+  const firstParam = prove.params[0];
+  if (!firstParam?.type) return [];
+  const typeName = firstParam.type.kind === "ident"
+    ? firstParam.type.name
+    : firstParam.type.kind === "call"
+    ? firstParam.type.name
+    : null;
+  if (!typeName) return [];
+
+  const knownConstructors = constructorsByType.get(typeName);
+  if (!knownConstructors || knownConstructors.size === 0) return [];
+
+  const casePatterns = new Set(prove.cases.map((c) => c.pattern));
+  const missing = [...knownConstructors].filter((c) => !casePatterns.has(c));
+
+  if (missing.length > 0) {
+    return [
+      `prove ${prove.name}: non-exhaustive pattern match on type ${typeName}\n` +
+        `  missing: ${missing.join(", ")}`,
+    ];
+  }
+  return [];
+}
+
 // ─── Main type checker ─────────────────────────────────────────────
 
 export function typecheckProve(
   prove: AST.ProveDecl,
   provedCtx: ProvedContext = new Map(),
+  constructorsByType?: Map<string, Set<string>>,
 ): string[] {
-  if (!prove.returnType) return []; // no annotation → skip checking
+  // Exhaustiveness check (even without return type annotation)
+  const exhaustErrors = constructorsByType
+    ? checkExhaustiveness(prove, constructorsByType)
+    : [];
+
+  if (!prove.returnType) return exhaustErrors; // no annotation → skip type checking
 
   const errors: string[] = [];
 
@@ -917,5 +955,5 @@ export function typecheckProve(
     }
   }
 
-  return errors;
+  return [...exhaustErrors, ...errors];
 }

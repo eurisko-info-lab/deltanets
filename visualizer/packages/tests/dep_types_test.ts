@@ -1514,8 +1514,9 @@ Deno.test("deptype: refl on different constructors is caught", () => {
   assertEquals(result.errors.length > 0, true, "refl on Zero ≠ Succ(Zero) should error");
 });
 
-Deno.test("deptype: incomplete pattern match still compiles (no exhaustiveness check yet)", () => {
-  // Only match Zero, missing Succ case — currently accepted
+Deno.test("deptype: single-case prove compiles when no other cases reveal more constructors", () => {
+  // Only match Zero, missing Succ case — accepted because no other prove block
+  // in this system declares Succ as a Nat constructor
   const source = BASE_SYSTEM + `
     system "Incomplete" extend "NatEq" {
       prove bad_pzr(n : Nat) -> Eq(add(n, Zero), n) {
@@ -1524,8 +1525,7 @@ Deno.test("deptype: incomplete pattern match still compiles (no exhaustiveness c
     }
   `;
   const result = compileCore(source);
-  // NOTE: exhaustiveness checking not yet implemented
-  assertEquals(result.errors.length, 0, "incomplete match accepted (no exhaustiveness check)");
+  assertEquals(result.errors.length, 0, "accepted — exhaustiveness only checks known constructors");
 });
 
 Deno.test("deptype: using undefined lemma is caught", () => {
@@ -1566,4 +1566,51 @@ Deno.test("deptype: universe level mismatch in prove return type", () => {
   `;
   const result = compileCore(source);
   assertEquals(result.errors.length > 0, true, "Type₁ ≠ Type₀ refl should error");
+});
+
+// ─── Exhaustiveness Checking ───────────────────────────────────────
+
+Deno.test("deptype: exhaustiveness — missing Succ case is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "MissingCase" extend "NatEq" {
+      prove only_zero(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+      }
+
+      prove full_proof(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(full_proof(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "missing Succ case should error");
+  assertEquals(result.errors[0].includes("non-exhaustive"), true, "error should mention non-exhaustive");
+  assertEquals(result.errors[0].includes("Succ"), true, "error should mention missing Succ");
+});
+
+Deno.test("deptype: exhaustiveness — complete pattern match is fine", () => {
+  const result = compile(`
+    system "Complete" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+    }
+  `);
+  const sys = result.systems.get("Complete")!;
+  assertEquals(sys.agents.has("pzr"), true);
+});
+
+Deno.test("deptype: exhaustiveness — untyped prove skips check", () => {
+  // Without type annotation on first param, no exhaustiveness check
+  const result = compile(`
+    system "UntypedPartial" extend "NatEq" {
+      prove partial_proof(n) {
+        | Zero -> refl
+      }
+    }
+  `);
+  const sys = result.systems.get("UntypedPartial")!;
+  assertEquals(sys.agents.has("partial_proof"), true);
 });
