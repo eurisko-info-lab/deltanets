@@ -4,61 +4,19 @@
 
 import { assertEquals } from "$std/assert/mod.ts";
 import { compileCore } from "@deltanets/lang";
-import type { AgentPortDefs, Graph, InteractionRule, Node } from "@deltanets/core";
+import type { AgentPortDefs, Graph, InteractionRule } from "@deltanets/core";
 import { getRedexes } from "@deltanets/core";
+import { NAT_SYSTEM, collectRules, collectAgentPorts, readNat } from "./helpers.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-const NAT_SOURCE = `
-include "prelude"
-
-system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
-  agent add(principal, result, accum)
-
-  rule add <> Zero -> {
-    relink left.result left.accum
-  }
-
-  rule add <> Succ -> {
-    let s = Succ
-    let a = add
-    relink left.result s.principal
-    wire s.pred -- a.result
-    relink left.accum a.accum
-    relink right.pred a.principal
-  }
-}
-`;
+const NAT_SOURCE = NAT_SYSTEM;
 
 function compileNat(graphSource: string) {
   const source = NAT_SOURCE + "\n" + graphSource;
   const result = compileCore(source);
   assertEquals(result.errors.length, 0, `compile errors: ${result.errors}`);
   return result;
-}
-
-function collectRules(core: ReturnType<typeof compileCore>): InteractionRule[] {
-  const rules: InteractionRule[] = [];
-  for (const sys of core.systems.values()) {
-    for (const r of sys.rules) {
-      rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
-    }
-  }
-  return rules;
-}
-
-function collectAgentPorts(
-  core: ReturnType<typeof compileCore>,
-): AgentPortDefs {
-  const defs: AgentPortDefs = new Map();
-  for (const sys of core.systems.values()) {
-    for (const [name, agent] of sys.agents) {
-      if (!defs.has(name)) defs.set(name, agent.portIndex);
-    }
-  }
-  return defs;
 }
 
 /** Reduce all redexes until no more remain, return the final graph. */
@@ -74,22 +32,6 @@ function reduceAll(
     redexes[0].reduce();
   }
   return graph;
-}
-
-/** Read a Nat value from the graph by following a root → Succ chain. */
-function readNat(graph: Graph): number {
-  const root = graph.find((n) => n.type === "root");
-  if (!root) throw new Error("no root node");
-  let current: Node = root.ports[0].node;
-  let count = 0;
-  while (current.type === "Succ") {
-    count++;
-    current = current.ports[1].node; // pred port
-  }
-  if (current.type !== "Zero") {
-    throw new Error(`expected Zero at end of chain, got ${current.type}`);
-  }
-  return count;
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────

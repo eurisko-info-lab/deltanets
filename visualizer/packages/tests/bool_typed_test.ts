@@ -4,8 +4,7 @@
 
 import { assertEquals } from "$std/assert/mod.ts";
 import { compileCore } from "@deltanets/lang";
-import type { AgentPortDefs, Graph, InteractionRule } from "@deltanets/core";
-import { getRedexes } from "@deltanets/core";
+import { collectRules, collectAgentPorts, reduceAll, readRootType } from "./helpers.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -44,50 +43,6 @@ function compile(extraSource: string) {
   const result = compileCore(source);
   assertEquals(result.errors.length, 0, `compile errors: ${result.errors}`);
   return result;
-}
-
-function collectRules(core: ReturnType<typeof compileCore>): InteractionRule[] {
-  const rules: InteractionRule[] = [];
-  for (const sys of core.systems.values()) {
-    for (const r of sys.rules) {
-      rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
-    }
-  }
-  return rules;
-}
-
-function collectAgentPorts(
-  core: ReturnType<typeof compileCore>,
-): AgentPortDefs {
-  const defs: AgentPortDefs = new Map();
-  for (const sys of core.systems.values()) {
-    for (const [name, agent] of sys.agents) {
-      if (!defs.has(name)) defs.set(name, agent.portIndex);
-    }
-  }
-  return defs;
-}
-
-function reduceAll(
-  graph: Graph,
-  rules: InteractionRule[],
-  agentPorts: AgentPortDefs,
-  maxSteps = 100,
-): number {
-  let steps = 0;
-  for (let i = 0; i < maxSteps; i++) {
-    const redexes = getRedexes(graph, "full", false, rules, agentPorts);
-    if (redexes.length === 0) break;
-    redexes[0].reduce();
-    steps++;
-  }
-  return steps;
-}
-
-function readRootType(graph: Graph): string {
-  const root = graph.find((n) => n.type === "root");
-  if (!root) throw new Error("no root node");
-  return root.ports[0].node.type;
 }
 
 // ─── Typed Bool Prove System ───────────────────────────────────────
