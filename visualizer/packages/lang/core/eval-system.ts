@@ -459,8 +459,24 @@ function proveContainsRewrite(prove: AST.ProveDecl): boolean {
 function stripProveTactics(prove: AST.ProveDecl): AST.ProveDecl {
   return {
     ...prove,
-    cases: prove.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })),
+    cases: prove.cases.map((c) => ({ ...c, body: normalizeProofExpr(stripExprTactics(c.body)) })),
   };
+}
+
+/** Normalize proof-level projections: fst(pair(a,b))→a, snd(pair(a,b))→b. */
+function normalizeProofExpr(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind !== "call") return expr;
+  const args = expr.args.map(normalizeProofExpr);
+  const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
+  if (e.name === "fst" && e.args.length === 1 &&
+      e.args[0].kind === "call" && e.args[0].name === "pair" && e.args[0].args.length === 2) {
+    return e.args[0].args[0];
+  }
+  if (e.name === "snd" && e.args.length === 1 &&
+      e.args[0].kind === "call" && e.args[0].name === "pair" && e.args[0].args.length === 2) {
+    return e.args[0].args[1];
+  }
+  return e;
 }
 
 function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {

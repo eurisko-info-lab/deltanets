@@ -1614,3 +1614,44 @@ Deno.test("deptype: exhaustiveness — untyped prove skips check", () => {
   const sys = result.systems.get("UntypedPartial")!;
   assertEquals(sys.agents.has("partial_proof"), true);
 });
+
+// ─── Sigma Elimination (fst/snd in proof position) ─────────────────
+
+Deno.test("deptype: snd extracts proof from pair", () => {
+  // snd(pair(Zero, refl)) : Eq(Zero, Zero) — use snd to extract the proof
+  const result = compile(`
+    system "SndTest" extend "NatEq" {
+      prove snd_test(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> snd(pair(Zero, refl))
+        | Succ(k) -> cong_succ(snd_test(k))
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0);
+});
+
+Deno.test("deptype: fst on non-Sigma type errors", () => {
+  const source = BASE_SYSTEM + `
+    system "FstBad" extend "NatEq" {
+      prove fst_bad(n : Nat) -> Eq(n, n) {
+        | Zero -> fst(refl)
+        | Succ(k) -> cong_succ(fst_bad(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "fst on Eq should error");
+});
+
+Deno.test("deptype: snd on non-Sigma type errors", () => {
+  const source = BASE_SYSTEM + `
+    system "SndBad" extend "NatEq" {
+      prove snd_bad(n : Nat) -> Eq(n, n) {
+        | Zero -> snd(refl)
+        | Succ(k) -> cong_succ(snd_bad(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "snd on Eq should error");
+});

@@ -394,6 +394,36 @@ function inferType(
     return { ok: true, type: app("Sigma", args[0], proofResult.type) };
   }
 
+  // fst(p) : A  when p : Sigma(A, x, P) or Sigma(witness, proofType) — ∃-elim (first)
+  if (name === "fst" && args.length === 1) {
+    const inner = inferType(args[0], ctx);
+    if (!inner.ok) return inner;
+    const n = normalize(inner.type);
+    const sigma3 = extractSigma(n);
+    if (sigma3) return { ok: true, type: sigma3.domain };
+    // 2-arg Sigma from pair inference: Sigma(witness, proofType) → witness
+    if (n.kind === "call" && n.name === "Sigma" && n.args.length === 2) {
+      return { ok: true, type: n.args[0] };
+    }
+    return { ok: false, error: `fst argument must have Sigma type, got ${exprToString(inner.type)}` };
+  }
+
+  // snd(p) : P[x := fst(p)]  when p : Sigma(A, x, P) — ∃-elim (second)
+  if (name === "snd" && args.length === 1) {
+    const inner = inferType(args[0], ctx);
+    if (!inner.ok) return inner;
+    const n = normalize(inner.type);
+    const sigma3 = extractSigma(n);
+    if (sigma3) {
+      return { ok: true, type: normalize(substitute(sigma3.predicate, sigma3.boundVar, app("fst", args[0]))) };
+    }
+    // 2-arg Sigma from pair inference: Sigma(witness, proofType) → proofType
+    if (n.kind === "call" && n.name === "Sigma" && n.args.length === 2) {
+      return { ok: true, type: n.args[1] };
+    }
+    return { ok: false, error: `snd argument must have Sigma type, got ${exprToString(inner.type)}` };
+  }
+
   // subst(p, e) : T[a := b]  where p : Eq(a, b) and e : T
   // Transport / J elimination: rewrites the type of e through equality p.
   if (name === "subst" && args.length === 2) {
@@ -701,6 +731,10 @@ function buildNode(
       conclusion,
       children: [buildNode(args[1], ctx, proofExpected)],
     };
+  }
+  // fst(p), snd(p) — Sigma elimination
+  if ((name === "fst" || name === "snd") && args.length === 1) {
+    return { rule: name, term, conclusion, children: [buildNode(args[0], ctx)] };
   }
   // subst(p, e) — transport / J elimination
   if (name === "subst" && args.length === 2) {
