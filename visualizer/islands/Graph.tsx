@@ -79,15 +79,17 @@ export function Graph(
       }
 
       const scaleDelta = 1 - newScale / scale.value;
-      let rect = graph.getBoundingClientRect();
-      let x = (e.clientX - rect.x) / newScale;
-      let y = (e.clientY - rect.y) / newScale;
+      const rect = graph.getBoundingClientRect();
+      const x = (e.clientX - rect.x) / newScale;
+      const y = (e.clientY - rect.y) / newScale;
 
       batch(() => {
         center.value = false;
         scale.value = newScale;
-        translate.value.x = translate.value.x + x * scaleDelta;
-        translate.value.y = translate.value.y + y * scaleDelta;
+        translate.value = {
+          x: translate.value.x + x * scaleDelta,
+          y: translate.value.y + y * scaleDelta,
+        };
       });
     };
     graph.addEventListener("wheel", wheel);

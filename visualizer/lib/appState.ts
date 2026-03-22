@@ -536,13 +536,19 @@ export const centerGraph = (node2D: Node2D) => {
   const graphEl = document.getElementById("graph");
   if (!graphEl) return;
   const rect = graphEl.getBoundingClientRect();
-  const s = Math.min(
-    rect.width / node2D.getWidth(),
-    rect.height / node2D.getHeight(),
-  );
+  const gw = node2D.getWidth();
+  const gh = node2D.getHeight();
+  if (gw <= 0 || gh <= 0) return;
+  const s = Math.min(rect.width / gw, rect.height / gh);
+  const finalScale = Math.min(s, MAX_AUTO_SCALE);
+  // Center horizontally; keep top-aligned vertically
+  const marginX = (rect.width / finalScale - gw) / 2;
   batch(() => {
-    scale.value = Math.min(s, MAX_AUTO_SCALE);
-    translate.value = { x: -node2D.bounds.min.x, y: -node2D.bounds.min.y };
+    scale.value = finalScale;
+    translate.value = {
+      x: -node2D.bounds.min.x + marginX,
+      y: -node2D.bounds.min.y,
+    };
     isFirstLoad.value = false;
   });
 };
