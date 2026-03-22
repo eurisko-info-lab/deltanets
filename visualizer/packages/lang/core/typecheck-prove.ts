@@ -3,21 +3,6 @@
 //
 // Verifies that each case arm in a typed `prove` block produces
 // a proof term whose type matches the declared proposition.
-//
-// Type inference rules (hard-coded for the Eq/Nat proof system):
-//   refl            : Eq(a, a)       for any a
-//   cong_X(p, ...)  : Eq(X(...,a), X(...,b)) when p : Eq(a, b)  (generalized)
-//   sym(p)          : Eq(b, a)       when p : Eq(a, b)
-//   trans(p, q)     : Eq(a, c)       when p : Eq(a, b), q : Eq(b, c)
-//   pair(w, p)      : Sigma(w, T)    when p : T  (∃-introduction)
-//   subst(p, e)     : T[a := b]      when p : Eq(a, b), e : T  (transport/J)
-//   recursive(args) : substitute args into declared proposition
-//
-// Normalization rules (computes with types):
-//   add(Zero, y)    → y
-//   add(Succ(k), y) → Succ(add(k, y))
-//   fst(pair(a, b)) → a
-//   snd(pair(a, b)) → b
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
@@ -127,10 +112,56 @@ function substituteAll(
 
 // ─── Normalization ─────────────────────────────────────────────────
 // Reduces type expressions using computational rules.
+// Rules are table-driven: each entry matches on the function name and
+// first-argument shape, producing a result from the normalized args.
+
+type NormRule = {
+  arity: number;
+  /** Match when arg[0] is an ident with this name → return result */
+  base?: Record<string, (args: AST.ProveExpr[]) => AST.ProveExpr>;
+  /** Match when arg[0] is a call with this name → return result (given inner args + outer rest) */
+  step?: Record<string, (inner: AST.ProveExpr[], rest: AST.ProveExpr[]) => AST.ProveExpr>;
+};
+
+const NORM_RULES: Record<string, NormRule> = {
+  // Nat: add(Zero, y) → y, add(Succ(k), y) → Succ(add(k, y))
+  add: {
+    arity: 2,
+    base: { Zero: (a) => a[1] },
+    step: { Succ: (i, r) => app("Succ", app("add", i[0], r[0])) },
+  },
+  // Bool
+  not: {
+    arity: 1,
+    base: { True: () => ident("False"), False: () => ident("True") },
+  },
+  and: {
+    arity: 2,
+    base: { True: (a) => a[1], False: () => ident("False") },
+  },
+  or: {
+    arity: 2,
+    base: { True: () => ident("True"), False: (a) => a[1] },
+  },
+  // List: append(Nil, ys) → ys, append(Cons(h,t), ys) → Cons(h, append(t, ys))
+  append: {
+    arity: 2,
+    base: { Nil: (a) => a[1] },
+    step: { Cons: (i, r) => app("Cons", i[0], app("append", i[1], r[0])) },
+  },
+  // length(Nil) → Zero, length(Cons(h,t)) → Succ(length(t))
+  length: {
+    arity: 1,
+    base: { Nil: () => ident("Zero") },
+    step: { Cons: (i) => app("Succ", app("length", i[1])) },
+  },
+  // Sigma projections: fst(pair(a,b)) → a, snd(pair(a,b)) → b
+  fst: { arity: 1, step: { pair: (i) => i[0] } },
+  snd: { arity: 1, step: { pair: (i) => i[1] } },
+};
 
 function normalize(expr: AST.ProveExpr): AST.ProveExpr {
-  // ── Universe level normalization ──
-  // Type → Type(0), Type0 → Type(0), Type1 → Type(1), etc.
+  // Universe level normalization: Type → Type(0), Type1 → Type(1), etc.
   if (expr.kind === "ident") {
     if (expr.name === "Type") return app("Type", ident("0"));
     const m = expr.name.match(/^Type(\d+)$/);
@@ -139,108 +170,22 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   }
   if (expr.kind === "hole") return expr;
 
-  // Normalize children first
   const args = expr.args.map(normalize);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
 
-  // add(Zero, y) → y
-  if (
-    e.name === "add" && e.args.length === 2 &&
-    e.args[0].kind === "ident" && e.args[0].name === "Zero"
-  ) {
-    return e.args[1];
+  // Table-driven reduction
+  const rule = NORM_RULES[e.name];
+  if (rule && e.args.length === rule.arity) {
+    const a0 = e.args[0];
+    if (a0.kind === "ident" && rule.base?.[a0.name]) {
+      return normalize(rule.base[a0.name](e.args));
+    }
+    if (a0.kind === "call" && rule.step?.[a0.name]) {
+      return normalize(rule.step[a0.name](a0.args, e.args.slice(1)));
+    }
   }
 
-  // add(Succ(k), y) → Succ(add(k, y))
-  if (
-    e.name === "add" && e.args.length === 2 &&
-    e.args[0].kind === "call" && e.args[0].name === "Succ" &&
-    e.args[0].args.length === 1
-  ) {
-    const k = e.args[0].args[0];
-    return normalize(app("Succ", app("add", k, e.args[1])));
-  }
-
-  // ── Bool ──
-
-  // not(True) → False, not(False) → True
-  if (e.name === "not" && e.args.length === 1 && e.args[0].kind === "ident") {
-    if (e.args[0].name === "True") return ident("False");
-    if (e.args[0].name === "False") return ident("True");
-  }
-
-  // and(True, x) → x, and(False, x) → False
-  if (e.name === "and" && e.args.length === 2 && e.args[0].kind === "ident") {
-    if (e.args[0].name === "True") return e.args[1];
-    if (e.args[0].name === "False") return ident("False");
-  }
-
-  // or(True, x) → True, or(False, x) → x
-  if (e.name === "or" && e.args.length === 2 && e.args[0].kind === "ident") {
-    if (e.args[0].name === "True") return ident("True");
-    if (e.args[0].name === "False") return e.args[1];
-  }
-
-  // ── List ──
-
-  // append(Nil, ys) → ys
-  if (
-    e.name === "append" && e.args.length === 2 &&
-    e.args[0].kind === "ident" && e.args[0].name === "Nil"
-  ) {
-    return e.args[1];
-  }
-
-  // append(Cons(h, t), ys) → Cons(h, append(t, ys))
-  if (
-    e.name === "append" && e.args.length === 2 &&
-    e.args[0].kind === "call" && e.args[0].name === "Cons" &&
-    e.args[0].args.length === 2
-  ) {
-    const [h, t] = e.args[0].args;
-    return normalize(app("Cons", h, app("append", t, e.args[1])));
-  }
-
-  // length(Nil) → Zero
-  if (
-    e.name === "length" && e.args.length === 1 &&
-    e.args[0].kind === "ident" && e.args[0].name === "Nil"
-  ) {
-    return ident("Zero");
-  }
-
-  // length(Cons(h, t)) → Succ(length(t))
-  if (
-    e.name === "length" && e.args.length === 1 &&
-    e.args[0].kind === "call" && e.args[0].name === "Cons" &&
-    e.args[0].args.length === 2
-  ) {
-    return normalize(app("Succ", app("length", e.args[0].args[1])));
-  }
-
-  // ── Sigma (dependent pairs) ──
-
-  // fst(pair(a, b)) → a
-  if (
-    e.name === "fst" && e.args.length === 1 &&
-    e.args[0].kind === "call" && e.args[0].name === "pair" &&
-    e.args[0].args.length === 2
-  ) {
-    return e.args[0].args[0];
-  }
-
-  // snd(pair(a, b)) → b
-  if (
-    e.name === "snd" && e.args.length === 1 &&
-    e.args[0].kind === "call" && e.args[0].name === "pair" &&
-    e.args[0].args.length === 2
-  ) {
-    return e.args[0].args[1];
-  }
-
-  // ── W-types (well-founded trees) ──
-
-  // wrec(sup(a₁, …, aₙ), step) → step(a₁, …, aₙ)
+  // wrec(sup(a₁,…,aₙ), step) → step(a₁,…,aₙ)
   if (
     e.name === "wrec" && e.args.length === 2 &&
     e.args[0].kind === "call" && (e.args[0].name === "sup" || e.args[0].name === "Sup") &&
@@ -543,17 +488,7 @@ function tryCandidateType(
   goal: AST.ProveExpr,
 ): boolean {
   const result = inferType(candidate, ctx);
-  if (!result.ok) return false;
-  const goalEq = extractEq(normalize(goal));
-  const infEq = extractEq(normalize(result.type));
-  if (!goalEq || !infEq) return false;
-  // refl produces Eq(_refl_a, _refl_a) — check that goal sides are equal
-  if (infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
-      infEq.right.kind === "ident" && infEq.right.name === "_refl_a") {
-    return exprEqual(normalize(goalEq.left), normalize(goalEq.right));
-  }
-  return exprEqual(normalize(infEq.left), normalize(goalEq.left)) &&
-         exprEqual(normalize(infEq.right), normalize(goalEq.right));
+  return result.ok && eqTypeMatches(normalize(result.type), normalize(goal));
 }
 
 function searchCandidates(
@@ -565,31 +500,25 @@ function searchCandidates(
 
   const found: string[] = [];
   const seen = new Set<string>();
-  const add = (expr: AST.ProveExpr) => {
+  const tryAdd = (expr: AST.ProveExpr) => {
+    if (!tryCandidateType(expr, ctx, goal)) return;
     const s = exprToString(expr);
     if (!seen.has(s)) { seen.add(s); found.push(s); }
   };
 
-  // 1. refl — if both sides are equal
-  if (tryCandidateType(ident("refl"), ctx, goal)) add(ident("refl"));
+  // 1. refl
+  tryAdd(ident("refl"));
 
-  // Collect ALL possible IH expressions (not filtered by goal match yet)
-  const allIHs: AST.ProveExpr[] = [];
-  if (ctx.prove.returnType) {
-    for (const [binding] of ctx.caseBindings) {
-      const auxArgs = ctx.prove.params.slice(1).map((p) => ident(p.name));
-      allIHs.push(app(ctx.prove.name, ident(binding), ...auxArgs));
-    }
-  }
+  // 2. IH calls
+  const auxArgs = ctx.prove.params.slice(1).map((p) => ident(p.name));
+  const allIHs = ctx.prove.returnType
+    ? [...ctx.caseBindings.keys()].map((b) => app(ctx.prove.name, ident(b), ...auxArgs))
+    : [];
+  allIHs.forEach(tryAdd);
 
-  // 2. IH — check which ones directly match the goal
-  for (const ih of allIHs) {
-    if (tryCandidateType(ih, ctx, goal)) add(ih);
-  }
-
-  // 3. Cross-lemma calls — collect all, check which match
+  // 3. Cross-lemma calls
   const availableVars = [
-    ...Array.from(ctx.caseBindings.keys()).map(ident),
+    ...[...ctx.caseBindings.keys()].map(ident),
     ...ctx.prove.params.slice(1).map((p) => ident(p.name)),
   ];
   const allLemmaCalls: AST.ProveExpr[] = [];
@@ -597,34 +526,25 @@ function searchCandidates(
     if (lemma.params.length <= availableVars.length) {
       const call = app(lemmaName, ...availableVars.slice(0, lemma.params.length));
       allLemmaCalls.push(call);
-      if (tryCandidateType(call, ctx, goal)) add(call);
+      tryAdd(call);
     }
   }
 
-  // 4. Depth-2: sym wrappers on all IH and lemma calls
-  const depth1Exprs = [...allIHs, ...allLemmaCalls];
-  for (const inner of depth1Exprs) {
-    const symExpr = app("sym", inner);
-    if (tryCandidateType(symExpr, ctx, goal)) add(symExpr);
-  }
+  // 4. sym wrappers
+  for (const inner of [...allIHs, ...allLemmaCalls]) tryAdd(app("sym", inner));
 
   // 5. cong_X wrapping — if goal is Eq(X(...,a), X(...,b))
   if (goalEq.left.kind === "call" && goalEq.right.kind === "call" &&
       goalEq.left.name === goalEq.right.name &&
       goalEq.left.args.length === goalEq.right.args.length) {
-    const cons = goalEq.left.name;
-    const suffix = cons.charAt(0).toLowerCase() + cons.slice(1);
+    const suffix = goalEq.left.name.charAt(0).toLowerCase() + goalEq.left.name.slice(1);
     const congName = `cong_${suffix}`;
     const constants = goalEq.left.args.slice(0, -1);
-    // Try wrapping all candidates (refl, IH, lemma, sym(...))
-    const innerCandidates = [ident("refl"), ...allIHs, ...allLemmaCalls];
-    for (const inner of innerCandidates) {
-      const congExpr = app(congName, inner, ...constants);
-      if (tryCandidateType(congExpr, ctx, goal)) add(congExpr);
+    for (const inner of [ident("refl"), ...allIHs, ...allLemmaCalls]) {
+      tryAdd(app(congName, inner, ...constants));
     }
-    for (const inner of depth1Exprs) {
-      const congExpr = app(congName, app("sym", inner), ...constants);
-      if (tryCandidateType(congExpr, ctx, goal)) add(congExpr);
+    for (const inner of [...allIHs, ...allLemmaCalls]) {
+      tryAdd(app(congName, app("sym", inner), ...constants));
     }
   }
 
@@ -773,6 +693,25 @@ function nodeHasHoles(node: ProofNode): boolean {
   return node.children.some(nodeHasHoles);
 }
 
+/** Build context and expected type for a case arm. */
+function caseCtx(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): { ctx: ProveCtx; expectedType: AST.ProveExpr } {
+  const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
+    ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
+    : ident(caseArm.pattern);
+  return {
+    ctx: {
+      prove,
+      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
+      provedCtx,
+    },
+    expectedType: normalize(substitute(prove.returnType!, prove.params[0].name, consExpr)),
+  };
+}
+
 /** Build a proof derivation tree for a typed prove block. */
 export function buildProofTree(
   prove: AST.ProveDecl,
@@ -780,35 +719,20 @@ export function buildProofTree(
 ): ProofTree | null {
   if (!prove.returnType) return null;
 
-  const cases: ProofTree["cases"] = [];
-  for (const caseArm of prove.cases) {
-    const ctx: ProveCtx = {
-      prove,
-      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
-      provedCtx,
-    };
-
-    // Compute expected type for this case arm
-    const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
-      ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
-      : ident(caseArm.pattern);
-    const principalName = prove.params[0].name;
-    const expectedType = normalize(substitute(prove.returnType, principalName, consExpr));
-
-    cases.push({
+  const cases: ProofTree["cases"] = prove.cases.map((caseArm) => {
+    const { ctx, expectedType } = caseCtx(prove, caseArm, provedCtx);
+    return {
       pattern: caseArm.pattern,
       bindings: caseArm.bindings,
       tree: buildNode(caseArm.body, ctx, expectedType),
-    });
-  }
-
-  const hasHoles = cases.some((c) => nodeHasHoles(c.tree));
+    };
+  });
 
   return {
     name: prove.name,
     proposition: exprToString(prove.returnType),
     cases,
-    hasHoles,
+    hasHoles: cases.some((c) => nodeHasHoles(c.tree)),
   };
 }
 
@@ -863,132 +787,73 @@ export function typecheckProve(
   provedCtx: ProvedContext = new Map(),
   constructorsByType?: Map<string, Set<string>>,
 ): string[] {
-  // Exhaustiveness check (even without return type annotation)
   const exhaustErrors = constructorsByType
     ? checkExhaustiveness(prove, constructorsByType)
     : [];
-
-  if (!prove.returnType) return exhaustErrors; // no annotation → skip type checking
+  if (!prove.returnType) return exhaustErrors;
 
   const errors: string[] = [];
 
   for (const caseArm of prove.cases) {
-    // Build the constructor expression for this case
-    const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
-      ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
-      : ident(caseArm.pattern);
-
-    // Substitute the principal parameter with the constructor
-    const principalName = prove.params[0].name;
-    const requiredType = normalize(
-      substitute(prove.returnType, principalName, consExpr),
-    );
-
-    // Infer the type of the proof term
-    const ctx: ProveCtx = {
-      prove,
-      caseBindings: new Map(
-        caseArm.bindings.map((b) => [b, ident(b)]),
-      ),
-      provedCtx,
-    };
-
-    // Strip exact/apply sugar before checking
-    let body = stripTacticSugar(caseArm.body);
-
-    // Pre-compute Eq extraction for rewrite and matching
+    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx);
+    const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
+    const body = stripTacticSugar(caseArm.body);
     const reqEq = extractEq(requiredType);
 
     // Handle rewrite(proof) — contextual goal-rewriting check
     if (body.kind === "call" && body.name === "rewrite" && body.args.length === 1) {
       const proofResult = inferType(body.args[0], ctx);
       if (!proofResult.ok) {
-        if (proofResult.error !== "hole") {
-          errors.push(`prove ${prove.name}, case ${caseArm.pattern}: ${proofResult.error}`);
-        }
+        if (proofResult.error !== "hole") errors.push(`${prefix}: ${proofResult.error}`);
         continue;
       }
       const proofEq = extractEq(normalize(proofResult.type));
       if (!proofEq || !reqEq) {
-        errors.push(
-          `prove ${prove.name}, case ${caseArm.pattern}: rewrite requires Eq types on both proof and goal`,
-        );
+        errors.push(`${prefix}: rewrite requires Eq types on both proof and goal`);
         continue;
       }
-      const a = normalize(proofEq.left);
-      const b = normalize(proofEq.right);
-      const lhs = normalize(reqEq.left);
-      const rhs = normalize(reqEq.right);
-      // Left-to-right: lhs[a→b] = rhs?
-      const ltr = normalize(substituteExprPattern(lhs, a, b));
-      if (exprEqual(ltr, rhs)) continue;
-      // Or reverse: lhs[b→a] = rhs?
-      const rtl = normalize(substituteExprPattern(lhs, b, a));
-      if (exprEqual(rtl, rhs)) continue;
+      const a = normalize(proofEq.left), b = normalize(proofEq.right);
+      const lhs = normalize(reqEq.left), rhs = normalize(reqEq.right);
+      if (exprEqual(normalize(substituteExprPattern(lhs, a, b)), rhs)) continue;
+      if (exprEqual(normalize(substituteExprPattern(lhs, b, a)), rhs)) continue;
       errors.push(
-        `prove ${prove.name}, case ${caseArm.pattern}: rewrite failed\n` +
-          `  proof: ${exprToString(normalize(proofResult.type))}\n` +
-          `  goal: ${exprToString(requiredType)}`,
+        `${prefix}: rewrite failed\n  proof: ${exprToString(normalize(proofResult.type))}\n  goal: ${exprToString(requiredType)}`,
       );
       continue;
     }
 
     const inferred = inferType(body, ctx);
-
     if (!inferred.ok) {
-      // Holes are not errors — they're open goals
-      if (inferred.error !== "hole") {
-        errors.push(
-          `prove ${prove.name}, case ${caseArm.pattern}: ${inferred.error}`,
-        );
-      }
+      if (inferred.error !== "hole") errors.push(`${prefix}: ${inferred.error}`);
       continue;
     }
 
-    // Special case: refl matches any Eq(a, a) — check that required has equal sides
     const infEq = extractEq(inferred.type);
-
     if (reqEq && infEq) {
       if (!eqTypeMatches(inferred.type, requiredType)) {
-        errors.push(
-          `prove ${prove.name}, case ${caseArm.pattern}: type mismatch\n` +
-            `  expected: ${exprToString(requiredType)}\n` +
-            `  inferred: ${exprToString(normalize(inferred.type))}`,
-        );
+        errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
       }
       continue;
-    } else if (reqEq || infEq) {
-      errors.push(
-        `prove ${prove.name}, case ${caseArm.pattern}: type structure mismatch\n` +
-          `  expected: ${exprToString(requiredType)}\n` +
-          `  inferred: ${exprToString(inferred.type)}`,
-      );
+    }
+    if (reqEq || infEq) {
+      errors.push(`${prefix}: type structure mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(inferred.type)}`);
       continue;
     }
 
-    // Sigma types: required = Sigma(A, x, P), inferred = Sigma(witness, proofType)
+    // Sigma types
     const reqSigma = extractSigma(requiredType);
     if (reqSigma && inferred.type.kind === "call" && inferred.type.name === "Sigma" &&
         inferred.type.args.length === 2) {
       const witness = inferred.type.args[0];
       const infProofType = inferred.type.args[1];
-      // Expected predicate with bound var replaced by the witness
       const expectedPred = normalize(substitute(reqSigma.predicate, reqSigma.boundVar, witness));
       if (!eqTypeMatches(infProofType, expectedPred) && !exprEqual(normalize(infProofType), expectedPred)) {
-        errors.push(
-          `prove ${prove.name}, case ${caseArm.pattern}: Sigma predicate mismatch\n` +
-            `  expected: ${exprToString(expectedPred)}\n` +
-            `  inferred: ${exprToString(normalize(infProofType))}`,
-        );
+        errors.push(`${prefix}: Sigma predicate mismatch\n  expected: ${exprToString(expectedPred)}\n  inferred: ${exprToString(normalize(infProofType))}`);
       }
       continue;
     }
     if (reqSigma || (inferred.type.kind === "call" && inferred.type.name === "Sigma")) {
-      errors.push(
-        `prove ${prove.name}, case ${caseArm.pattern}: type structure mismatch\n` +
-          `  expected: ${exprToString(requiredType)}\n` +
-          `  inferred: ${exprToString(normalize(inferred.type))}`,
-      );
+      errors.push(`${prefix}: type structure mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
     }
   }
 
@@ -1024,22 +889,9 @@ function resolveAssumptionExpr(
   provedCtx: ProvedContext,
 ): AST.ProveExpr {
   if (expr.kind === "ident" && expr.name === "assumption") {
-    const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
-      ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
-      : ident(caseArm.pattern);
-    const principalName = prove.params[0].name;
-    const goal = normalize(substitute(prove.returnType!, principalName, consExpr));
-    const ctx: ProveCtx = {
-      prove,
-      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
-      provedCtx,
-    };
+    const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
     const candidates = searchCandidates(ctx, goal);
-    if (candidates.length > 0) {
-      // Parse the first candidate string back to a ProveExpr
-      return parseProofString(candidates[0]);
-    }
-    // Leave as-is; inferType will report error
+    if (candidates.length > 0) return parseProofString(candidates[0]);
     return expr;
   }
   if (expr.kind === "call") {
