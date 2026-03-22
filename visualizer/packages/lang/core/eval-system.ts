@@ -6,7 +6,7 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, typecheckProve } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, typecheckProve } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
@@ -87,6 +87,8 @@ export function evalBodyInto(
         if (item.induction && item.cases.length === 0) {
           prove = expandInduction(item, agents, constructorsByType);
         }
+        // Resolve assumption tactic to concrete proof terms
+        prove = resolveAssumptions(prove, provedCtx);
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         // Only generate agent + rules for complete proofs (no ? holes or rewrites)

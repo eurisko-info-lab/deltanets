@@ -328,6 +328,9 @@ function inferType(
   }
 
   if (expr.kind === "ident") {
+    if (expr.name === "assumption") {
+      return { ok: false, error: "assumption: no matching hypothesis found in context" };
+    }
     return { ok: false, error: `unexpected identifier '${expr.name}' in proof position` };
   }
 
@@ -990,4 +993,85 @@ export function typecheckProve(
   }
 
   return [...exhaustErrors, ...errors];
+}
+
+// ─── Assumption resolution ─────────────────────────────────────────
+// Resolves `assumption` in prove case bodies to the first matching proof term.
+// Must be called BEFORE type-checking and desugaring.
+
+export function resolveAssumptions(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext,
+): AST.ProveDecl {
+  if (!prove.returnType) return prove;
+
+  let changed = false;
+  const newCases = prove.cases.map((caseArm) => {
+    const resolved = resolveAssumptionExpr(caseArm.body, prove, caseArm, provedCtx);
+    if (resolved !== caseArm.body) {
+      changed = true;
+      return { ...caseArm, body: resolved };
+    }
+    return caseArm;
+  });
+  return changed ? { ...prove, cases: newCases } : prove;
+}
+
+function resolveAssumptionExpr(
+  expr: AST.ProveExpr,
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr {
+  if (expr.kind === "ident" && expr.name === "assumption") {
+    const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
+      ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
+      : ident(caseArm.pattern);
+    const principalName = prove.params[0].name;
+    const goal = normalize(substitute(prove.returnType!, principalName, consExpr));
+    const ctx: ProveCtx = {
+      prove,
+      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
+      provedCtx,
+    };
+    const candidates = searchCandidates(ctx, goal);
+    if (candidates.length > 0) {
+      // Parse the first candidate string back to a ProveExpr
+      return parseProofString(candidates[0]);
+    }
+    // Leave as-is; inferType will report error
+    return expr;
+  }
+  if (expr.kind === "call") {
+    let changed = false;
+    const newArgs = expr.args.map((a) => {
+      const r = resolveAssumptionExpr(a, prove, caseArm, provedCtx);
+      if (r !== a) changed = true;
+      return r;
+    });
+    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
+  }
+  return expr;
+}
+
+/** Parse a simple proof-term string like "cong_succ(pzr(k))" into a ProveExpr. */
+function parseProofString(s: string): AST.ProveExpr {
+  let pos = 0;
+  function parseExpr(): AST.ProveExpr {
+    let name = "";
+    while (pos < s.length && /[a-zA-Z0-9_]/.test(s[pos])) name += s[pos++];
+    if (!name) return { kind: "hole" };
+    if (pos < s.length && s[pos] === "(") {
+      pos++; // skip (
+      const args: AST.ProveExpr[] = [];
+      while (pos < s.length && s[pos] !== ")") {
+        if (args.length > 0 && s[pos] === ",") { pos++; while (s[pos] === " ") pos++; }
+        args.push(parseExpr());
+      }
+      if (pos < s.length) pos++; // skip )
+      return { kind: "call", name, args };
+    }
+    return { kind: "ident", name };
+  }
+  return parseExpr();
 }

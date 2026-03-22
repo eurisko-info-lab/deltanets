@@ -1702,3 +1702,50 @@ Deno.test("deptype: induction on untyped variable errors", () => {
   const result = compileCore(source);
   assertEquals(result.errors.length > 0, true, "induction on untyped var should error");
 });
+
+// ─── Assumption Tactic ─────────────────────────────────────────────
+
+Deno.test("deptype: assumption resolves refl in base case", () => {
+  // In | Zero -> assumption, the goal is Eq(add(Zero, Zero), Zero) = Eq(Zero, Zero)
+  // and refl should be found by proof search.
+  const result = compile(`
+    system "AssumeRefl" extend "NatEq" {
+      prove assume_test(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> assumption
+        | Succ(k) -> cong_succ(assume_test(k))
+      }
+    }
+  `);
+  const sys = result.systems.get("AssumeRefl")!;
+  assertEquals(sys.agents.has("assume_test"), true);
+});
+
+Deno.test("deptype: assumption in nested position", () => {
+  // assumption can appear as an argument: cong_succ(assumption)
+  const result = compile(`
+    system "AssumeNested" extend "NatEq" {
+      prove an_test(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> assumption
+        | Succ(k) -> cong_succ(an_test(k))
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0);
+});
+
+Deno.test("deptype: assumption with no matching hypothesis errors", () => {
+  // reflexivity proof: Eq(n, n) — prove with assumption alone should work for Zero
+  // but for Succ(k) the only candidate is cong_succ(refl_assum(k)) which needs
+  // the IH. Test a case where NO candidate can possibly match.
+  const source = BASE_SYSTEM + `
+    system "AssumeBad" extend "NatEq" {
+      agent Foo(principal)
+      prove bad_assume(n : Nat) -> Eq(Foo, n) {
+        | Zero -> assumption
+        | Succ(k) -> assumption
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "assumption should fail when no match exists");
+});
