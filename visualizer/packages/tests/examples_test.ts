@@ -1,15 +1,17 @@
 // Test that all .inet and .iview example files compile without errors.
 
 import { assert } from "$std/assert/mod.ts";
-import { compileCore, compileView } from "./index.ts";
+import { compileCore, compileView } from "@deltanets/lang";
 
-async function checkFile(
-  path: string,
+const EXAMPLES_DIR = new URL("../lang/examples/", import.meta.url);
+
+function checkFile(
+  file: string,
   compiler: (s: string) => { errors: string[] },
 ) {
-  const source = await Deno.readTextFile(new URL(path, import.meta.url));
+  const source = Deno.readTextFileSync(new URL(file, EXAMPLES_DIR));
   const result = compiler(source);
-  assert(result.errors.length === 0, `${path}: ${result.errors.join(", ")}`);
+  assert(result.errors.length === 0, `${file}: ${result.errors.join(", ")}`);
 }
 
 // Core examples
@@ -24,8 +26,8 @@ for (
     "lanes.inet",
   ]
 ) {
-  Deno.test(`example: ${file} compiles`, async () => {
-    await checkFile(`./examples/${file}`, compileCore);
+  Deno.test(`example: ${file} compiles`, () => {
+    checkFile(file, compileCore);
   });
 }
 
@@ -37,7 +39,7 @@ for (
     "lambda-cube.iview",
   ]
 ) {
-  Deno.test(`example: ${file} compiles`, async () => {
-    await checkFile(`./examples/${file}`, compileView);
+  Deno.test(`example: ${file} compiles`, () => {
+    checkFile(file, compileView);
   });
 }

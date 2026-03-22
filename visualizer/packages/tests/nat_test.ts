@@ -4,8 +4,8 @@
 
 import { assertEquals } from "$std/assert/mod.ts";
 import { compileCore } from "@deltanets/lang";
-import type { AgentPortDefs, Graph, InteractionRule, Node } from "./types.ts";
-import { getRedexes } from "./systems/deltanets/redexes.ts";
+import type { AgentPortDefs, Graph, InteractionRule, Node } from "@deltanets/core";
+import { getRedexes } from "@deltanets/core";
 
 // ─── Helpers ───────────────────────────────────────────────────────
 

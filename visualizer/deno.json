@@ -3,7 +3,8 @@
     "./packages/core",
     "./packages/lang",
     "./packages/render",
-    "./packages/methods"
+    "./packages/methods",
+    "./packages/tests"
   ],
   "tasks": {
     "check": "deno fmt --check && deno lint && deno check **/*.ts && deno check **/*.tsx",
@@ -11,9 +12,10 @@
     "check:lang": "deno check packages/lang/**/*.ts",
     "check:render": "deno check packages/render/**/*.ts",
     "check:methods": "deno check packages/methods/**/*.ts",
-    "test": "deno test --allow-read",
+    "test": "deno test --allow-read packages/",
     "test:core": "deno test packages/core/",
-    "test:lang": "deno test --allow-read packages/lang/",
+    "test:lang": "deno test --allow-read packages/tests/lang_test.ts packages/tests/examples_test.ts",
+    "test:integration": "deno test --allow-read packages/tests/",
     "cli": "echo \"import '\\$fresh/src/dev/cli.ts'\" | deno run --unstable -A -",
     "manifest": "deno task cli manifest $(pwd)",
     "start": "deno run -A --watch=static/,routes/ dev.ts",

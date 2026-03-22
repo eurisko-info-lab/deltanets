@@ -1,7 +1,7 @@
 // Tests for the core and view language compilers.
 
 import { assert, assertEquals } from "$std/assert/mod.ts";
-import { compileCore, compileView } from "./index.ts";
+import { compileCore, compileView } from "@deltanets/lang";
 
 // ─── Core Language ─────────────────────────────────────────────────
 

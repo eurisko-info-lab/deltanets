@@ -12,4 +12,5 @@ export {
   readbackGraph,
   readbackGraphToString,
 } from "./systems/deltanets/index.ts";
+export { getRedex, getRedexes } from "./systems/deltanets/redexes.ts";
 export { lambdacalc } from "./systems/lambdacalc.ts";
