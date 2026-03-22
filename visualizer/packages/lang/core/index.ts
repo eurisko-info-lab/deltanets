@@ -21,6 +21,7 @@ export type {
   RuleDef,
   SystemDef,
 } from "./evaluator.ts";
+export type { ProofNode, ProofTree } from "./typecheck-prove.ts";
 export type * from "./types.ts";
 
 export function compile(
@@ -39,6 +40,7 @@ export function compile(
         systems: new Map(),
         graphs: new Map(),
         laneViews: new Map(),
+        proofTrees: new Map(),
         definitions: new Map(),
         errors: [e.message],
       };
@@ -47,6 +49,7 @@ export function compile(
       systems: new Map(),
       graphs: new Map(),
       laneViews: new Map(),
+      proofTrees: new Map(),
       definitions: new Map(),
       errors: [`Internal error: ${(e as Error).message}`],
     };

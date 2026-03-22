@@ -3,7 +3,7 @@
 // to their untyped counterparts, and that type errors are caught.
 
 import { assertEquals, assertThrows } from "$std/assert/mod.ts";
-import { compileCore } from "@deltanets/lang";
+import { compileCore, type ProofTree } from "@deltanets/lang";
 import type { AgentPortDefs, Graph, InteractionRule } from "./types.ts";
 import { getRedexes } from "./systems/deltanets/redexes.ts";
 
@@ -577,4 +577,107 @@ Deno.test("deptype: generalized cong works for new constructors", () => {
   `);
   const sys = result.systems.get("WrapEq")!;
   assertEquals(sys.agents.has("wrap_pzr"), true);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Proof tree generation tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("proof tree: plus_zero_right has correct structure", () => {
+  const result = compile(`
+    system "PT" extend "NatEq" {
+      prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("plus_zero_right");
+  assertEquals(tree != null, true, "proof tree should exist");
+  assertEquals(tree!.name, "plus_zero_right");
+  assertEquals(tree!.proposition, "Eq(add(n, Zero), n)");
+  assertEquals(tree!.cases.length, 2);
+
+  // Case Zero: refl
+  const zero = tree!.cases[0];
+  assertEquals(zero.pattern, "Zero");
+  assertEquals(zero.bindings.length, 0);
+  assertEquals(zero.tree.rule, "refl");
+  assertEquals(zero.tree.children.length, 0);
+
+  // Case Succ(k): cong_succ(plus_zero_right(k))
+  const succ = tree!.cases[1];
+  assertEquals(succ.pattern, "Succ");
+  assertEquals(succ.bindings, ["k"]);
+  assertEquals(succ.tree.rule, "cong_succ");
+  assertEquals(succ.tree.children.length, 1);
+  assertEquals(succ.tree.children[0].rule, "IH");
+  assertEquals(succ.tree.children[0].children.length, 0);
+});
+
+Deno.test("proof tree: trans produces two children", () => {
+  const result = compile(`
+    system "TransTree" extend "NatEq" {
+      agent dup_nat(principal, copy1, copy2)
+      rule dup_nat <> Zero -> {
+        let z1 = Zero  let z2 = Zero
+        relink left.copy1 z1.principal
+        relink left.copy2 z2.principal
+      }
+      rule dup_nat <> Succ -> {
+        let s1 = Succ  let s2 = Succ  let d = dup_nat
+        relink left.copy1 s1.principal
+        relink left.copy2 s2.principal
+        wire s1.pred -- d.copy1
+        wire s2.pred -- d.copy2
+        relink right.pred d.principal
+      }
+
+      prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+
+      prove plus_succ_right(a : Nat, b : Nat) -> Eq(add(a, Succ(b)), Succ(add(a, b))) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_succ_right(k, b))
+      }
+
+      prove plus_comm(a : Nat, b : Nat) -> Eq(add(a, b), add(b, a)) {
+        | Zero -> sym(plus_zero_right(b))
+        | Succ(k) -> trans(cong_succ(plus_comm(k, b)), sym(plus_succ_right(b, k)))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("plus_comm");
+  assertEquals(tree != null, true);
+
+  // Case Succ(k): trans(cong_succ(plus_comm(k, b)), sym(plus_succ_right(b, k)))
+  const succ = tree!.cases[1];
+  assertEquals(succ.tree.rule, "trans");
+  assertEquals(succ.tree.children.length, 2);
+
+  // First child: cong_succ(plus_comm(k, b))
+  const left = succ.tree.children[0];
+  assertEquals(left.rule, "cong_succ");
+  assertEquals(left.children.length, 1);
+  assertEquals(left.children[0].rule, "IH");
+
+  // Second child: sym(plus_succ_right(b, k))
+  const right = succ.tree.children[1];
+  assertEquals(right.rule, "sym");
+  assertEquals(right.children.length, 1);
+  assertEquals(right.children[0].rule, "plus_succ_right");  // cross-lemma
+});
+
+Deno.test("proof tree: untyped prove yields no tree", () => {
+  const result = compile(`
+    system "Untyped" extend "NatEq" {
+      prove plus_zero_right(n : Nat) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+    }
+  `);
+  assertEquals(result.proofTrees.has("plus_zero_right"), false);
 });

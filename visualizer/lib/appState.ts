@@ -20,6 +20,7 @@ import {
   Node2D,
   Pos,
   renderLaneView,
+  renderProofTree,
 } from "@deltanets/render";
 import { METHODS } from "@deltanets/methods";
 import { agentStyles, typeReductionMode } from "@deltanets/methods";
@@ -28,9 +29,11 @@ import {
   extractGraph,
   isINetSource,
   LANE_VIEW_PREFIX,
+  PROOF_TREE_PREFIX,
   resolveAgentStyles,
 } from "@deltanets/lang";
 import type { CoreResult } from "@deltanets/lang";
+import type { ProofTree } from "@deltanets/lang";
 import { MAX_AUTO_SCALE, MIN_PANE_SIZE, STORAGE_KEYS } from "./config.ts";
 
 // Re-export for consumers that imported from here.
@@ -170,6 +173,18 @@ const applyLaneView = (laneView: Parameters<typeof renderLaneView>[0]) => {
   scene.value = renderLaneView(laneView);
 };
 
+/** Render a proof derivation tree directly to the scene. Call inside batch. */
+const applyProofTree = (proofTree: ProofTree) => {
+  isLaneView.value = true; // reuse lane-view mode (non-interactive scene)
+  currentLaneView.value = null;
+  ast.value = null;
+  typeResult.value = null;
+  typeCheckSteps.value = [];
+  typeCheckMode.value = false;
+  typeCheckStepIdx.value = -1;
+  scene.value = renderProofTree(proofTree as Parameters<typeof renderProofTree>[0]);
+};
+
 /** Format mixed error values into display strings. */
 const formatErrors = (errs: unknown[]): string[] =>
   errs.map((e) =>
@@ -260,6 +275,18 @@ export const updateAst = (source: string) => {
         });
         return;
       }
+      if (extracted && extracted.kind === "proof-tree") {
+        batch(() => {
+          inetMode.value = true;
+          inetCore.value = result.core;
+          inetGraphNames.value = result.graphNames;
+          inetSelectedGraph.value = graphName;
+          exprError.value = false;
+          parseErrors.value = [];
+          applyProofTree(extracted.proofTree);
+        });
+        return;
+      }
     }
     if (result.errors.length > 0) {
       console.warn("INet Parsing Error(s):", result.errors);
@@ -329,6 +356,14 @@ export const selectINetGraph = (graphName: string) => {
       batch(() => {
         inetSelectedGraph.value = graphName;
         applyLaneView(extracted.laneView);
+        isFirstLoad.value = true;
+      })
+    );
+  } else if (extracted && extracted.kind === "proof-tree") {
+    withCenterReset(() =>
+      batch(() => {
+        inetSelectedGraph.value = graphName;
+        applyProofTree(extracted.proofTree);
         isFirstLoad.value = true;
       })
     );

@@ -10,6 +10,7 @@ export type {
   IncludeResolver,
   LaneViewDef,
   ModeDef,
+  ProofTree,
   RuleDef,
   SystemDef,
 } from "./core/index.ts";
@@ -21,6 +22,7 @@ export {
   extractGraph,
   isINetSource,
   LANE_VIEW_PREFIX,
+  PROOF_TREE_PREFIX,
   resolveAgentStyles,
 } from "./bridge.ts";
 export { DEFAULT_IVIEW } from "./defaults.ts";

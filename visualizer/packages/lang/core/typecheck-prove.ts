@@ -24,6 +24,23 @@ export type ProvedContext = Map<
   { params: AST.ProveParam[]; returnType: AST.ProveExpr }
 >;
 
+// ─── Proof tree types ──────────────────────────────────────────────
+
+/** A node in a natural-deduction proof derivation tree. */
+export type ProofNode = {
+  rule: string;        // inference rule: "refl", "cong_succ", "sym", "trans", "recursive", lemma name
+  term: string;        // the proof term at this node
+  conclusion: string;  // the derived type (Eq(..., ...))
+  children: ProofNode[];
+};
+
+/** Proof derivation tree for one prove block. */
+export type ProofTree = {
+  name: string;          // prove block name
+  proposition: string;   // declared proposition
+  cases: { pattern: string; bindings: string[]; tree: ProofNode }[];
+};
+
 // ─── ProveExpr helpers ─────────────────────────────────────────────
 
 function ident(name: string): AST.ProveExpr {
@@ -287,6 +304,76 @@ function extractEq(
     return { left: type.args[0], right: type.args[1] };
   }
   return null;
+}
+
+// ─── Proof tree builder ────────────────────────────────────────────
+// Builds a ProofNode tree by walking the proof expression, mirroring inferType.
+
+function buildNode(expr: AST.ProveExpr, ctx: ProveCtx): ProofNode {
+  const result = inferType(expr, ctx);
+  const conclusion = result.ok
+    ? exprToString(normalize(result.type))
+    : `✘ ${result.error}`;
+  const term = exprToString(expr);
+
+  if (expr.kind === "ident" && expr.name === "refl") {
+    return { rule: "refl", term, conclusion, children: [] };
+  }
+  if (expr.kind === "ident") {
+    return { rule: "?", term, conclusion, children: [] };
+  }
+
+  const { name, args } = expr;
+
+  if (name.startsWith("cong_") && args.length >= 1) {
+    return { rule: name, term, conclusion, children: [buildNode(args[0], ctx)] };
+  }
+  if (name === "sym" && args.length === 1) {
+    return { rule: "sym", term, conclusion, children: [buildNode(args[0], ctx)] };
+  }
+  if (name === "trans" && args.length === 2) {
+    return {
+      rule: "trans",
+      term,
+      conclusion,
+      children: [buildNode(args[0], ctx), buildNode(args[1], ctx)],
+    };
+  }
+  if (name === ctx.prove.name) {
+    return { rule: "IH", term, conclusion, children: [] };
+  }
+  if (ctx.provedCtx.has(name)) {
+    return { rule: name, term, conclusion, children: [] };
+  }
+  return { rule: "?", term, conclusion, children: [] };
+}
+
+/** Build a proof derivation tree for a typed prove block. */
+export function buildProofTree(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext = new Map(),
+): ProofTree | null {
+  if (!prove.returnType) return null;
+
+  const cases: ProofTree["cases"] = [];
+  for (const caseArm of prove.cases) {
+    const ctx: ProveCtx = {
+      prove,
+      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
+      provedCtx,
+    };
+    cases.push({
+      pattern: caseArm.pattern,
+      bindings: caseArm.bindings,
+      tree: buildNode(caseArm.body, ctx),
+    });
+  }
+
+  return {
+    name: prove.name,
+    proposition: exprToString(prove.returnType),
+    cases,
+  };
 }
 
 // ─── Main type checker ─────────────────────────────────────────────

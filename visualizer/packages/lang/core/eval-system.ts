@@ -6,27 +6,29 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { type ProvedContext, typecheckProve } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, typecheckProve } from "./typecheck-prove.ts";
 
-export function evalSystem(decl: AST.SystemDecl): SystemDef {
+export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  evalBodyInto(decl.body, agents, rules, modes);
+  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { name: decl.name, agents, rules, modes };
+  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
 }
 
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
 // existing collections, used by extend and compose.
+// Returns any proof trees generated from typed prove blocks.
 export function evalBodyInto(
   body: AST.SystemBody[],
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
   modes: Map<string, ModeDef>,
-): void {
+): ProofTree[] {
   const provedCtx: ProvedContext = new Map();
+  const proofTrees: ProofTree[] = [];
 
   for (const item of body) {
     switch (item.kind) {
@@ -62,6 +64,9 @@ export function evalBodyInto(
         if (typeErrors.length > 0) {
           throw new EvalError(typeErrors.join("\n"));
         }
+        // Build proof derivation tree
+        const tree = buildProofTree(item, provedCtx);
+        if (tree) proofTrees.push(tree);
         // Register this prove's type for cross-lemma resolution
         if (item.returnType) {
           provedCtx.set(item.name, {
@@ -73,6 +78,7 @@ export function evalBodyInto(
       }
     }
   }
+  return proofTrees;
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -80,7 +86,7 @@ export function evalBodyInto(
 export function evalExtend(
   decl: AST.ExtendDecl,
   systems: Map<string, SystemDef>,
-): SystemDef {
+): { sys: SystemDef; proofTrees: ProofTree[] } {
   const base = systems.get(decl.base);
   if (!base) throw new EvalError(`Cannot extend unknown system '${decl.base}'`);
 
@@ -90,9 +96,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations
-  evalBodyInto(decl.body, agents, rules, modes);
+  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { name: decl.name, agents, rules, modes };
+  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -100,7 +106,7 @@ export function evalExtend(
 export function evalCompose(
   decl: AST.ComposeDecl,
   systems: Map<string, SystemDef>,
-): SystemDef {
+): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
@@ -134,9 +140,9 @@ export function evalCompose(
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  evalBodyInto(decl.body, agents, rules, modes);
+  const proofTrees = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { name: decl.name, agents, rules, modes };
+  return { sys: { name: decl.name, agents, rules, modes }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────

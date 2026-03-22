@@ -33,7 +33,7 @@ import { hasTypeAnnotations } from "@deltanets/core";
 import { DarkThemeIcon, GitHubIcon, LightThemeIcon } from "./Icons.tsx";
 import { METHODS } from "@deltanets/methods";
 import { typeReductionMode } from "@deltanets/methods";
-import { LANE_VIEW_PREFIX } from "@deltanets/lang";
+import { LANE_VIEW_PREFIX, PROOF_TREE_PREFIX } from "@deltanets/lang";
 import type { Example } from "../routes/index.tsx";
 
 import IconArrowBarToLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-bar-to-left.tsx";
@@ -140,6 +140,8 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
             <option key={name} value={name}>
               {name.startsWith(LANE_VIEW_PREFIX)
                 ? `[lanes] ${name.slice(LANE_VIEW_PREFIX.length)}`
+                : name.startsWith(PROOF_TREE_PREFIX)
+                ? `[proof] ${name.slice(PROOF_TREE_PREFIX.length)}`
                 : name}
             </option>
           ))}

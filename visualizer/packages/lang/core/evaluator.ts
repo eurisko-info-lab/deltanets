@@ -64,10 +64,13 @@ export type LaneViewDef = {
   links: { from: string; to: string; label?: string }[];
 };
 
+import type { ProofTree } from "./typecheck-prove.ts";
+
 export type CoreResult = {
   systems: Map<string, SystemDef>;
   graphs: Map<string, GraphDef>;
   laneViews: Map<string, LaneViewDef>;
+  proofTrees: Map<string, ProofTree>;
   definitions: Map<string, AST.LamExpr>;
   errors: string[];
 };
@@ -134,6 +137,7 @@ export function evaluate(
   const systems = new Map<string, SystemDef>();
   const graphs = new Map<string, GraphDef>();
   const laneViews = new Map<string, LaneViewDef>();
+  const proofTrees = new Map<string, import("./typecheck-prove.ts").ProofTree>();
   const definitions = new Map<string, AST.LamExpr>();
   const errors: string[] = [...includeErrors];
 
@@ -146,18 +150,21 @@ export function evaluate(
     try {
       switch (stmt.kind) {
         case "system": {
-          const sys = evalSystem(stmt);
+          const { sys, proofTrees: trees } = evalSystem(stmt);
           systems.set(sys.name, sys);
+          for (const t of trees) proofTrees.set(t.name, t);
           break;
         }
         case "extend": {
-          const sys = evalExtend(stmt, systems);
+          const { sys, proofTrees: trees } = evalExtend(stmt, systems);
           systems.set(sys.name, sys);
+          for (const t of trees) proofTrees.set(t.name, t);
           break;
         }
         case "compose": {
-          const sys = evalCompose(stmt, systems);
+          const { sys, proofTrees: trees } = evalCompose(stmt, systems);
           systems.set(sys.name, sys);
+          for (const t of trees) proofTrees.set(t.name, t);
           break;
         }
         case "agent": {
@@ -188,7 +195,8 @@ export function evaluate(
               if (!allAgents.has(name)) allAgents.set(name, agent);
             }
           }
-          evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
+          const trees = evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
+          for (const t of trees) proofTrees.set(t.name, t);
           // Copy back newly created agents
           for (const [name, agent] of allAgents) {
             if (!ambientAgents.has(name)) ambientAgents.set(name, agent);
@@ -233,7 +241,7 @@ export function evaluate(
     });
   }
 
-  return { systems, graphs, laneViews, definitions, errors };
+  return { systems, graphs, laneViews, proofTrees, definitions, errors };
 }
 
 // ─── Lane view evaluation ──────────────────────────────────────────

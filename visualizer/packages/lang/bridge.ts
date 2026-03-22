@@ -8,6 +8,7 @@
 import { compile as compileCore } from "./core/index.ts";
 import { compile as compileView } from "./view/index.ts";
 import type { CoreResult, IncludeResolver, LaneViewDef } from "./core/index.ts";
+import type { ProofTree } from "./core/index.ts";
 import type { ViewResult } from "./view/index.ts";
 import type { AstNode } from "@deltanets/core";
 import type { Graph } from "@deltanets/core";
@@ -34,6 +35,9 @@ export type BridgeResult = {
 /** Prefix used to tag lane view names in the graph selector. */
 export const LANE_VIEW_PREFIX = "lanes:";
 
+/** Prefix used to tag proof tree names in the graph selector. */
+export const PROOF_TREE_PREFIX = "proof:";
+
 /** Compile .inet source and extract graph names. */
 export function compileINet(
   source: string,
@@ -43,6 +47,7 @@ export function compileINet(
   const graphNames = [
     ...core.graphs.keys(),
     ...[...core.laneViews.keys()].map((n) => LANE_VIEW_PREFIX + n),
+    ...[...core.proofTrees.keys()].map((n) => PROOF_TREE_PREFIX + n),
   ];
   return { core, graphNames, errors: core.errors };
 }
@@ -52,7 +57,8 @@ export function compileINet(
 export type ExtractedGraph =
   | { kind: "ast"; ast: AstNode }
   | { kind: "graph"; graph: Graph }
-  | { kind: "lane-view"; laneView: LaneViewDef };
+  | { kind: "lane-view"; laneView: LaneViewDef }
+  | { kind: "proof-tree"; proofTree: ProofTree };
 
 /**
  * Extract a renderable graph from a CoreResult by name.
@@ -67,6 +73,13 @@ export function extractGraph(
     const viewName = name.slice(LANE_VIEW_PREFIX.length);
     const laneView = core.laneViews.get(viewName);
     return laneView ? { kind: "lane-view", laneView } : null;
+  }
+
+  // Check for proof tree (prefixed name)
+  if (name.startsWith(PROOF_TREE_PREFIX)) {
+    const treeName = name.slice(PROOF_TREE_PREFIX.length);
+    const proofTree = core.proofTrees.get(treeName);
+    return proofTree ? { kind: "proof-tree", proofTree } : null;
   }
 
   const graphDef = core.graphs.get(name);
