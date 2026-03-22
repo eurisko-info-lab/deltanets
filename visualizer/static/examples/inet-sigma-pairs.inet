@@ -1,0 +1,97 @@
+# Sigma Types & Dependent Pairs
+#
+# Sigma types (∃-types) let you express existential statements:
+#   "there exists an x such that P(x) holds"
+#
+# A proof of Σ(x:A). P(x) is a pair (witness, proof):
+#   pair(w, p) : Sigma(A, x, P)  when w : A and p : P[x := w]
+#
+# Elimination:
+#   fst(p) extracts the witness
+#   snd(p) extracts the proof
+#
+# Normalization:
+#   fst(pair(a, b)) → a
+#   snd(pair(a, b)) → b
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent sym(principal, result)
+  agent trans(principal, result, second)
+
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Sigma-type proofs
+# ═══════════════════════════════════════════════════════════════════
+
+system "SigmaExamples" extend "NatEq" {
+  # pair(witness, proof) — construct a dependent pair
+  agent pair(principal, fst, snd)
+
+  # Existential: ∃m. add(n, m) = n
+  # Witness: Zero.  Proof: plus_zero_right.
+  prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+
+  # Use snd to extract the proof from a pair
+  # snd(pair(Zero, refl)) : Eq(Zero, Zero)
+  prove snd_extract(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> snd(pair(Zero, refl))
+    | Succ(k) -> cong_succ(snd_extract(k))
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Example Graphs
+# ═══════════════════════════════════════════════════════════════════
+
+# snd_extract(0) → refl  [1 step]
+graph snd-zero {
+  let r   = root
+  let se  = snd_extract
+  let z   = Zero
+  wire r.principal  -- se.result
+  wire se.principal -- z.principal
+}
+
+# snd_extract(1) → refl  [3 steps]
+graph snd-one {
+  let r   = root
+  let se  = snd_extract
+  let s   = Succ
+  let z   = Zero
+  wire r.principal  -- se.result
+  wire se.principal -- s.principal
+  wire s.pred       -- z.principal
+}

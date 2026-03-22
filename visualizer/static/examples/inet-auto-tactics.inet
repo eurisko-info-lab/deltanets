@@ -1,0 +1,109 @@
+# Induction & Assumption Tactics
+#
+# New proof automation features:
+#
+# 1. `induction(var)` — auto-generates case arms with ? holes
+#    for each constructor of the variable's type:
+#
+#      prove thm(n : Nat) -> Prop {
+#        induction(n)
+#      }
+#    expands to:
+#      prove thm(n : Nat) -> Prop {
+#        | Zero -> ?
+#        | Succ(pred) -> ?
+#      }
+#
+# 2. `assumption` — automatically searches the context for a
+#    proof term matching the current goal. Uses proof search
+#    (refl, IH, cross-lemma, sym, cong) up to depth 2.
+#
+# These tactics compose: start with induction to scaffold,
+# then fill simple cases with assumption.
+
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  agent Zero(principal)
+  agent Succ(principal, pred)
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent sym(principal, result)
+  agent trans(principal, result, second)
+
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Tactic-assisted proofs
+# ═══════════════════════════════════════════════════════════════════
+
+system "TacticProofs" extend "NatEq" {
+  # Step 1: A manual proof for reference
+  prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+
+  # Step 2: Same proof using `assumption` in the base case
+  # The Zero case goal is Eq(Zero, Zero) — assumption finds `refl`.
+  prove plus_zero_auto(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> assumption
+    | Succ(k) -> cong_succ(plus_zero_auto(k))
+  }
+
+  # Step 3: Use induction to scaffold — then fill in manually
+  # Start here and watch the proof tree show ? goals!
+  # Try replacing ? with `refl` and `cong_succ(reflexivity(k))`.
+  prove reflexivity(n : Nat) -> Eq(n, n) {
+    induction(n)
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# Graphs — reduce the auto-generated proofs
+# ═══════════════════════════════════════════════════════════════════
+
+# plus_zero_auto(0) → refl  [1 step]
+graph auto-zero {
+  let r   = root
+  let pza = plus_zero_auto
+  let z   = Zero
+  wire r.principal  -- pza.result
+  wire pza.principal -- z.principal
+}
+
+# plus_zero_auto(2) → refl  [5 steps]
+graph auto-two {
+  let r   = root
+  let pza = plus_zero_auto
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  wire r.principal  -- pza.result
+  wire pza.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z.principal
+}
