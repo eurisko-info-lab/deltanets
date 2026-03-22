@@ -424,6 +424,23 @@ function inferType(
     return { ok: true, type: normalize(substituteAll(ctx.prove.returnType, bindings)) };
   }
 
+  // ── Tactic combinators ──
+
+  // exact(e) — transparent wrapper
+  if (name === "exact" && args.length === 1) {
+    return inferType(args[0], ctx);
+  }
+
+  // apply(f, a1, a2, ...) → infer f(a1, a2, ...)
+  if (name === "apply" && args.length >= 1 && args[0].kind === "ident") {
+    return inferType(app(args[0].name, ...args.slice(1)), ctx);
+  }
+
+  // rewrite(proof) — returns proof's type; typecheckProve validates contextually
+  if (name === "rewrite" && args.length === 1) {
+    return inferType(args[0], ctx);
+  }
+
   // Cross-lemma call: look up previously proved proposition
   const proved = ctx.provedCtx.get(name);
   if (proved) {
@@ -694,6 +711,17 @@ function buildNode(
       children: [buildNode(args[0], ctx), buildNode(args[1], ctx)],
     };
   }
+  // ── Tactic combinators ──
+  if (name === "exact" && args.length === 1) {
+    return { rule: "exact", term, conclusion, children: [buildNode(args[0], ctx, expected)] };
+  }
+  if (name === "apply" && args.length >= 1 && args[0].kind === "ident") {
+    const desugared = app(args[0].name, ...args.slice(1));
+    return buildNode(desugared, ctx, expected);
+  }
+  if (name === "rewrite" && args.length === 1) {
+    return { rule: "rewrite", term, conclusion, children: [buildNode(args[0], ctx)] };
+  }
   if (name === ctx.prove.name) {
     return { rule: "IH", term, conclusion, children: [] };
   }
@@ -747,6 +775,18 @@ export function buildProofTree(
   };
 }
 
+// ─── Tactic sugar stripping ────────────────────────────────────────
+// Recursively rewrites exact(e) → e, apply(f, a, b) → f(a, b).
+
+function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind !== "call") return expr;
+  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
+    return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
+  }
+  return { kind: "call", name: expr.name, args: expr.args.map(stripTacticSugar) };
+}
+
 // ─── Main type checker ─────────────────────────────────────────────
 
 export function typecheckProve(
@@ -777,7 +817,48 @@ export function typecheckProve(
       ),
       provedCtx,
     };
-    const inferred = inferType(caseArm.body, ctx);
+
+    // Strip exact/apply sugar before checking
+    let body = stripTacticSugar(caseArm.body);
+
+    // Pre-compute Eq extraction for rewrite and matching
+    const reqEq = extractEq(requiredType);
+
+    // Handle rewrite(proof) — contextual goal-rewriting check
+    if (body.kind === "call" && body.name === "rewrite" && body.args.length === 1) {
+      const proofResult = inferType(body.args[0], ctx);
+      if (!proofResult.ok) {
+        if (proofResult.error !== "hole") {
+          errors.push(`prove ${prove.name}, case ${caseArm.pattern}: ${proofResult.error}`);
+        }
+        continue;
+      }
+      const proofEq = extractEq(normalize(proofResult.type));
+      if (!proofEq || !reqEq) {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: rewrite requires Eq types on both proof and goal`,
+        );
+        continue;
+      }
+      const a = normalize(proofEq.left);
+      const b = normalize(proofEq.right);
+      const lhs = normalize(reqEq.left);
+      const rhs = normalize(reqEq.right);
+      // Left-to-right: lhs[a→b] = rhs?
+      const ltr = normalize(substituteExprPattern(lhs, a, b));
+      if (exprEqual(ltr, rhs)) continue;
+      // Or reverse: lhs[b→a] = rhs?
+      const rtl = normalize(substituteExprPattern(lhs, b, a));
+      if (exprEqual(rtl, rhs)) continue;
+      errors.push(
+        `prove ${prove.name}, case ${caseArm.pattern}: rewrite failed\n` +
+          `  proof: ${exprToString(normalize(proofResult.type))}\n` +
+          `  goal: ${exprToString(requiredType)}`,
+      );
+      continue;
+    }
+
+    const inferred = inferType(body, ctx);
 
     if (!inferred.ok) {
       // Holes are not errors — they're open goals
@@ -790,7 +871,6 @@ export function typecheckProve(
     }
 
     // Special case: refl matches any Eq(a, a) — check that required has equal sides
-    const reqEq = extractEq(requiredType);
     const infEq = extractEq(inferred.type);
 
     if (reqEq && infEq) {

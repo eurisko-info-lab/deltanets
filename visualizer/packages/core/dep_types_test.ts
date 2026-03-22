@@ -1366,3 +1366,84 @@ Deno.test("export: JSON includes suggestions for holes", () => {
   assertEquals(Array.isArray(parsed.cases[0].tree.suggestions), true);
   assertEquals(parsed.cases[0].tree.suggestions.includes("refl"), true);
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Tactic combinators tests
+// ═══════════════════════════════════════════════════════════════════
+
+Deno.test("tactic: exact(refl) is transparent wrapper", () => {
+  const result = compile(`
+    system "Tactic1" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> exact(refl)
+        | Succ(k) -> exact(cong_succ(pzr(k)))
+      }
+    }
+  `);
+  const sys = result.systems.get("Tactic1")!;
+  assertEquals(sys.agents.has("pzr"), true);
+  const tree = result.proofTrees.get("pzr")!;
+  assertEquals(tree.hasHoles, false);
+  assertEquals(tree.cases[0].tree.rule, "exact");
+});
+
+Deno.test("tactic: apply(f, args) desugars to f(args)", () => {
+  const result = compile(`
+    system "Tactic2" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> apply(cong_succ, pzr(k))
+      }
+    }
+  `);
+  const sys = result.systems.get("Tactic2")!;
+  assertEquals(sys.agents.has("pzr"), true);
+  const tree = result.proofTrees.get("pzr")!;
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("tactic: rewrite validates goal contextually", () => {
+  const result = compile(`
+    system "Tactic3" extend "NatEq" {
+      prove rw_pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> rewrite(rw_pzr(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("rw_pzr")!;
+  assertEquals(tree.hasHoles, false);
+  assertEquals(tree.cases[1].tree.rule, "rewrite");
+});
+
+Deno.test("tactic: rewrite with wrong proof is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "TacticBad" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+      prove bad_rewrite(n : Nat) -> Eq(Succ(n), Zero) {
+        | Zero -> rewrite(pzr(Zero))
+        | Succ(k) -> rewrite(pzr(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "expected error for invalid rewrite");
+});
+
+Deno.test("tactic: rewrite proof tree shows rule", () => {
+  const result = compile(`
+    system "TacticTree" extend "NatEq" {
+      prove rw2(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> rewrite(rw2(k))
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("rw2")!;
+  const succ = tree.cases[1].tree;
+  assertEquals(succ.rule, "rewrite");
+  assertEquals(succ.children.length, 1);
+});

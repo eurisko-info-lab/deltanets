@@ -54,9 +54,11 @@ export function evalBodyInto(
       }
       case "prove": {
         const hasHoles = proveContainsHole(item);
-        // Only generate agent + rules for complete proofs (no ? holes)
-        if (!hasHoles) {
-          const { agentDecl, ruleDecls } = desugarProve(item, agents);
+        const hasRewrites = proveContainsRewrite(item);
+        // Only generate agent + rules for complete proofs (no ? holes or rewrites)
+        if (!hasHoles && !hasRewrites) {
+          const stripped = stripProveTactics(item);
+          const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
           const agent = evalAgent(agentDecl);
           agents.set(agent.name, agent);
           for (const r of ruleDecls) {
@@ -413,4 +415,31 @@ function exprContainsHole(e: AST.ProveExpr): boolean {
 
 function proveContainsHole(prove: AST.ProveDecl): boolean {
   return prove.cases.some((c) => exprContainsHole(c.body));
+}
+
+function exprContainsRewrite(e: AST.ProveExpr): boolean {
+  if (e.kind === "call" && e.name === "rewrite") return true;
+  if (e.kind === "call") return e.args.some(exprContainsRewrite);
+  return false;
+}
+
+function proveContainsRewrite(prove: AST.ProveDecl): boolean {
+  return prove.cases.some((c) => exprContainsRewrite(c.body));
+}
+
+/** Strip exact/apply tactic sugar from prove bodies for desugaring. */
+function stripProveTactics(prove: AST.ProveDecl): AST.ProveDecl {
+  return {
+    ...prove,
+    cases: prove.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })),
+  };
+}
+
+function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind !== "call") return expr;
+  if (expr.name === "exact" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
+  if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
+    return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripExprTactics) };
+  }
+  return { kind: "call", name: expr.name, args: expr.args.map(stripExprTactics) };
 }
