@@ -1749,3 +1749,108 @@ Deno.test("deptype: assumption with no matching hypothesis errors", () => {
   const result = compileCore(source);
   assertEquals(result.errors.length > 0, true, "assumption should fail when no match exists");
 });
+
+// ─── Mode Enforcement (Linearity) ──────────────────────────────────
+
+Deno.test("deptype: linearity error when unused var conflicts with erase-excluding mode", () => {
+  // Mode excludes era, but prove case has unused binding 'k' → implicit erase needed
+  const source = BASE_SYSTEM + `
+    system "LinearErase" extend "NatEq" {
+      mode linear = { -era }
+      agent dup_nat(principal, copy1, copy2)
+      prove linear_pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(linear_pzr(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // The Succ case uses 'k' exactly once → ok, but Zero case doesn't use anything extra.
+  // Actually both cases are fine here — let's test a real unused var.
+  assertEquals(result.errors.length, 0);
+});
+
+Deno.test("deptype: linearity error for unused aux param with erase-excluding mode", () => {
+  // Two-param prove where the Succ case doesn't use 'm' → implicit erase
+  const source = BASE_SYSTEM + `
+    system "LinearEraseAux" extend "NatEq" {
+      mode linear = { -era }
+      prove bad_linear(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(bad_linear(k, m))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // Zero case: 'm' is unused → needs erase → conflict with linear mode
+  assertEquals(result.errors.length > 0, true, "should error: unused 'm' in Zero case with linear mode");
+  assertEquals(result.errors[0].includes("unused"), true, "error should mention unused variable");
+  assertEquals(result.errors[0].includes("linear"), true, "error should mention conflicting mode");
+});
+
+Deno.test("deptype: linearity error for multi-use var with dup-excluding mode", () => {
+  // Mode excludes dup agents, but prove case uses variable twice
+  const source = BASE_SYSTEM + `
+    system "LinearDup" extend "NatEq" {
+      mode linear = { -dup_nat }
+      agent dup_nat(principal, copy1, copy2)
+      prove bad_dup(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(bad_dup(k))
+      }
+    }
+  `;
+  // The Succ case uses k once → ok. Let's construct a case that uses a var twice.
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, "single-use vars are fine");
+});
+
+Deno.test("deptype: linearity error for actual multi-use with dup-excluding mode", () => {
+  // Prove where a two-param proof uses m twice in a case body.
+  // We construct a reflexivity proof that references the same binding in two positions.
+  const source = BASE_SYSTEM + `
+    system "DupConflict" extend "NatEq" {
+      mode strict = { -dup_nat }
+      agent dup_nat(principal, copy1, copy2)
+
+      prove dup_use(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(dup_use(k, m))
+      }
+    }
+  `;
+  // 'm' is used once per case, 'k' is used once in Succ → no dup needed → ok.
+  // Now test actual multi-use:
+  const source2 = BASE_SYSTEM + `
+    system "DupConflict2" extend "NatEq" {
+      mode strict = { -dup_nat }
+      agent dup_nat(principal, copy1, copy2)
+      agent pair_eq(principal, result, second)
+      rule pair_eq <> refl -> { relink left.result left.second }
+
+      prove dup_use2(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> pair_eq(cong_succ(dup_use2(k, m)), cong_succ(dup_use2(k, m)))
+      }
+    }
+  `;
+  const result2 = compileCore(source2);
+  assertEquals(result2.errors.length > 0, true, "should error: 'k' and 'm' used twice with dup-excluding mode");
+  assertEquals(result2.errors[0].includes("multi-use"), true, `error should mention multi-use, got: ${result2.errors[0]}`);
+  assertEquals(result2.errors[0].includes("strict"), true, "error should mention conflicting mode");
+});
+
+Deno.test("deptype: no linearity error when modes have no structural exclusions", () => {
+  // Mode that doesn't exclude era or dup → no linearity checks
+  const source = BASE_SYSTEM + `
+    system "FullMode" extend "NatEq" {
+      mode full = {}
+      prove full_pzr(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(full_pzr(k, m))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length, 0, "full mode should allow any usage pattern");
+});

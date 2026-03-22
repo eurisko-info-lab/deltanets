@@ -101,10 +101,13 @@ export function evalBodyInto(
             rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
           }
         }
+        // Mode-aware linearity check: error if prove needs erase/dup incompatible with modes
+        const linearityErrors = checkProveLinearity(prove, agents, modes);
         // Type check if return type is annotated
         const typeErrors = typecheckProve(prove, provedCtx, constructorsByType);
-        if (typeErrors.length > 0) {
-          throw new EvalError(typeErrors.join("\n"));
+        const allErrors = [...linearityErrors, ...typeErrors];
+        if (allErrors.length > 0) {
+          throw new EvalError(allErrors.join("\n"));
         }
         // Build proof derivation tree
         const tree = buildProofTree(prove, provedCtx);
@@ -472,6 +475,78 @@ function expandInduction(
 
 function isPreExisting(ref: AST.PortRef): boolean {
   return ref.node === "left" || ref.node === "right";
+}
+
+// ─── Mode-aware linearity checking ────────────────────────────────
+// Check whether a prove block's variable usage is compatible with all declared
+// modes in the system.  Returns warning strings (non-fatal).
+
+export function checkProveLinearity(
+  prove: AST.ProveDecl,
+  agents: Map<string, AgentDef>,
+  modes: Map<string, ModeDef>,
+): string[] {
+  if (modes.size === 0) return [];
+  if (prove.cases.length === 0) return [];
+
+  // Determine which modes forbid erase and which forbid duplication
+  const modesExcludingErase: string[] = [];
+  const modesExcludingDup: string[] = [];
+
+  for (const [modeName, mode] of modes) {
+    if (mode.excludedAgents.some((a) => a === "era" || a.startsWith("era"))) {
+      modesExcludingErase.push(modeName);
+    }
+    if (mode.excludedAgents.some((a) => a.startsWith("dup_") || a.startsWith("rep"))) {
+      modesExcludingDup.push(modeName);
+    }
+  }
+
+  if (modesExcludingErase.length === 0 && modesExcludingDup.length === 0) return [];
+
+  const auxParamNames = prove.params.slice(1).map((p) => p.name);
+  const warnings: string[] = [];
+
+  for (const caseArm of prove.cases) {
+    if (caseArm.body.kind === "hole") continue; // skip incomplete cases
+
+    const allVars = new Set<string>([
+      ...caseArm.bindings,
+      ...auxParamNames,
+    ]);
+    const useCounts = countVarUses(caseArm.body, allVars);
+
+    // Check for unused variables (would require erase)
+    if (modesExcludingErase.length > 0) {
+      const unused: string[] = [];
+      for (const v of allVars) {
+        if ((useCounts.get(v) ?? 0) === 0) unused.push(v);
+      }
+      if (unused.length > 0) {
+        warnings.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: ` +
+            `unused variable(s) ${unused.join(", ")} require implicit erasure ` +
+            `(incompatible with mode${modesExcludingErase.length > 1 ? "s" : ""} ${modesExcludingErase.join(", ")})`,
+        );
+      }
+    }
+
+    // Check for multi-use variables (would require duplication)
+    if (modesExcludingDup.length > 0) {
+      const multiUse: string[] = [];
+      for (const [v, count] of useCounts) {
+        if (count > 1) multiUse.push(`${v} (×${count})`);
+      }
+      if (multiUse.length > 0) {
+        warnings.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: ` +
+            `multi-use variable(s) ${multiUse.join(", ")} require implicit duplication ` +
+            `(incompatible with mode${modesExcludingDup.length > 1 ? "s" : ""} ${modesExcludingDup.join(", ")})`,
+        );
+      }
+    }
+  }
+  return warnings;
 }
 
 // Count how many times each variable from `vars` appears in expr
