@@ -13,9 +13,9 @@ export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: 
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes);
+  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
 }
 
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
@@ -27,11 +27,18 @@ export function evalBodyInto(
   rules: RuleDef[],
   modes: Map<string, ModeDef>,
   initialCtx?: ProvedContext,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext } {
+  inheritedConstructors?: Map<string, Set<string>>,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>> } {
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   // Pre-scan: collect constructor families from ALL prove blocks before processing
+  // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
+  if (inheritedConstructors) {
+    for (const [type, ctors] of inheritedConstructors) {
+      constructorsByType.set(type, new Set(ctors));
+    }
+  }
   for (const item of body) {
     if (item.kind === "prove") {
       const firstParam = item.params[0];
@@ -75,11 +82,16 @@ export function evalBodyInto(
         break;
       }
       case "prove": {
-        const hasHoles = proveContainsHole(item);
-        const hasRewrites = proveContainsRewrite(item);
+        // Expand induction(var) tactic into case arms with ? holes
+        let prove = item;
+        if (item.induction && item.cases.length === 0) {
+          prove = expandInduction(item, agents, constructorsByType);
+        }
+        const hasHoles = proveContainsHole(prove);
+        const hasRewrites = proveContainsRewrite(prove);
         // Only generate agent + rules for complete proofs (no ? holes or rewrites)
         if (!hasHoles && !hasRewrites) {
-          const stripped = stripProveTactics(item);
+          const stripped = stripProveTactics(prove);
           const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
           const agent = evalAgent(agentDecl);
           agents.set(agent.name, agent);
@@ -88,16 +100,16 @@ export function evalBodyInto(
           }
         }
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(item, provedCtx, constructorsByType);
+        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType);
         if (typeErrors.length > 0) {
           throw new EvalError(typeErrors.join("\n"));
         }
         // Build proof derivation tree
-        const tree = buildProofTree(item, provedCtx);
+        const tree = buildProofTree(prove, provedCtx);
         if (tree) proofTrees.push(tree);
         // Register this prove's type for cross-lemma resolution
-        if (item.returnType) {
-          provedCtx.set(item.name, {
+        if (prove.returnType) {
+          provedCtx.set(prove.name, {
             params: item.params,
             returnType: item.returnType,
           });
@@ -106,7 +118,7 @@ export function evalBodyInto(
       }
     }
   }
-  return { proofTrees, provedCtx };
+  return { proofTrees, provedCtx, constructorsByType };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -123,10 +135,10 @@ export function evalExtend(
   const rules = [...base.rules];
   const modes = new Map(base.modes);
 
-  // Merge new declarations — inherit base system's proved propositions
-  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx);
+  // Merge new declarations — inherit base system's proved propositions and constructors
+  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -139,6 +151,7 @@ export function evalCompose(
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
   const mergedCtx: ProvedContext = new Map();
+  const mergedConstructors = new Map<string, Set<string>>();
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -171,12 +184,18 @@ export function evalCompose(
     for (const [name, entry] of comp.provedCtx) {
       mergedCtx.set(name, entry);
     }
+
+    // Constructors: merge
+    for (const [type, ctors] of comp.constructorsByType) {
+      if (!mergedConstructors.has(type)) mergedConstructors.set(type, new Set());
+      for (const c of ctors) mergedConstructors.get(type)!.add(c);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx);
+  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────
@@ -412,6 +431,41 @@ function desugarProve(
   }
 
   return { agentDecl, ruleDecls };
+}
+
+/** Expand induction(var) into case arms with ? holes for each constructor. */
+function expandInduction(
+  prove: AST.ProveDecl,
+  agents: Map<string, AgentDef>,
+  constructorsByType: Map<string, Set<string>>,
+): AST.ProveDecl {
+  const varName = prove.induction!;
+  const param = prove.params.find((p) => p.name === varName);
+  if (!param?.type) {
+    throw new EvalError(
+      `prove ${prove.name}: induction variable '${varName}' has no type annotation`,
+    );
+  }
+  const typeName = param.type.kind === "ident"
+    ? param.type.name
+    : param.type.kind === "call"
+    ? param.type.name
+    : null;
+  if (!typeName || !constructorsByType.has(typeName)) {
+    throw new EvalError(
+      `prove ${prove.name}: no constructors known for type '${typeName ?? "?"}'`,
+    );
+  }
+  const constructors = constructorsByType.get(typeName)!;
+  const cases: AST.ProveCase[] = [];
+  for (const consName of constructors) {
+    const consDef = agents.get(consName);
+    // Aux ports = all ports except principal (index 0)
+    const auxPorts = consDef ? consDef.ports.slice(1) : [];
+    const bindings = auxPorts.map((p) => p.name);
+    cases.push({ pattern: consName, bindings, body: { kind: "hole" } });
+  }
+  return { ...prove, cases, induction: undefined };
 }
 
 function isPreExisting(ref: AST.PortRef): boolean {

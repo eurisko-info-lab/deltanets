@@ -469,27 +469,37 @@ class Parser {
     }
     this.eat(TT.LBRACE);
     const cases: AST.ProveCase[] = [];
-    while (this.check(TT.PIPE)) {
-      this.advance(); // eat |
-      const pattern = this.eatIdent();
-      const bindings: string[] = [];
-      if (this.check(TT.LPAREN)) {
-        this.advance();
-        if (!this.check(TT.RPAREN)) {
-          bindings.push(this.eatIdent());
-          while (this.check(TT.COMMA)) {
-            this.advance();
+    let induction: string | undefined;
+    // Check for induction(var) sugar — auto-generates case arms
+    if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
+        this.check(TT.IDENT) && this.peek().value === "induction") {
+      this.advance(); // eat 'induction'
+      this.eat(TT.LPAREN);
+      induction = this.eatIdent();
+      this.eat(TT.RPAREN);
+    } else {
+      while (this.check(TT.PIPE)) {
+        this.advance(); // eat |
+        const pattern = this.eatIdent();
+        const bindings: string[] = [];
+        if (this.check(TT.LPAREN)) {
+          this.advance();
+          if (!this.check(TT.RPAREN)) {
             bindings.push(this.eatIdent());
+            while (this.check(TT.COMMA)) {
+              this.advance();
+              bindings.push(this.eatIdent());
+            }
           }
+          this.eat(TT.RPAREN);
         }
-        this.eat(TT.RPAREN);
+        this.eat(TT.ARROW);
+        const body = this.parseProveExpr();
+        cases.push({ pattern, bindings, body });
       }
-      this.eat(TT.ARROW);
-      const body = this.parseProveExpr();
-      cases.push({ pattern, bindings, body });
     }
     this.eat(TT.RBRACE);
-    return { kind: "prove", name, params, returnType, cases };
+    return { kind: "prove", name, params, returnType, cases, induction };
   }
 
   parseProveParam(): AST.ProveParam {

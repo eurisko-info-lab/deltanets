@@ -1655,3 +1655,50 @@ Deno.test("deptype: snd on non-Sigma type errors", () => {
   const result = compileCore(source);
   assertEquals(result.errors.length > 0, true, "snd on Eq should error");
 });
+
+// ─── Induction Tactic ──────────────────────────────────────────────
+
+Deno.test("deptype: induction(n) expands to case arms with holes", () => {
+  // A sibling prove block establishes Zero/Succ as constructors of Nat.
+  // induction(n) should then expand into | Zero -> ? | Succ(pred) -> ?
+  const result = compile(`
+    system "InductHole" extend "NatEq" {
+      prove refl_proof(n : Nat) -> Eq(n, n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(refl_proof(k))
+      }
+      prove ind_test(n : Nat) -> Eq(add(n, Zero), n) {
+        induction(n)
+      }
+    }
+  `);
+  const sys = result.systems.get("InductHole")!;
+  // Agent NOT generated because all cases are holes
+  assertEquals(sys.agents.has("ind_test"), false);
+  // But refl_proof should be generated
+  assertEquals(sys.agents.has("refl_proof"), true);
+});
+
+Deno.test("deptype: induction on unknown variable errors", () => {
+  const source = BASE_SYSTEM + `
+    system "InductBadVar" extend "NatEq" {
+      prove bad_ind(n : Nat) -> Eq(n, n) {
+        induction(m)
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "induction on unknown var should error");
+});
+
+Deno.test("deptype: induction on untyped variable errors", () => {
+  const source = BASE_SYSTEM + `
+    system "InductNoType" extend "NatEq" {
+      prove bad_ind(n) -> Eq(n, n) {
+        induction(n)
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "induction on untyped var should error");
+});

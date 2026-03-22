@@ -54,6 +54,7 @@ export type ProveDecl = {
   params: ProveParam[]; // first = principal (induction var), rest = aux ports
   returnType?: ProveExpr; // optional: the proposition being proved
   cases: ProveCase[];
+  induction?: string; // if set, auto-expand cases for this variable's type
 };
 
 export type ProveParam = {

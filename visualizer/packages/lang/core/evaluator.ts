@@ -44,6 +44,7 @@ export type SystemDef = {
   rules: RuleDef[];
   modes: Map<string, ModeDef>;
   provedCtx: import("./typecheck-prove.ts").ProvedContext;
+  constructorsByType: Map<string, Set<string>>;
 };
 
 export type GraphDef =
@@ -196,8 +197,8 @@ export function evaluate(
               if (!allAgents.has(name)) allAgents.set(name, agent);
             }
           }
-          const trees = evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
-          for (const t of trees) proofTrees.set(t.name, t);
+          const result = evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
+          for (const t of result.proofTrees) proofTrees.set(t.name, t);
           // Copy back newly created agents
           for (const [name, agent] of allAgents) {
             if (!ambientAgents.has(name)) ambientAgents.set(name, agent);
@@ -239,6 +240,8 @@ export function evaluate(
       agents: ambientAgents,
       rules: ambientRules,
       modes: ambientModes,
+      provedCtx: new Map(),
+      constructorsByType: new Map(),
     });
   }
 
