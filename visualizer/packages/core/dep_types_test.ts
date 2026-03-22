@@ -1001,3 +1001,100 @@ Deno.test("sigma: fst/snd reduction in INet", () => {
   // fst(sigma_id(Zero)) → fst(pair(Zero, refl)) → Zero
   assertEquals(readRootType(g.graph), "Zero");
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Transport / J elimination (subst) tests
+// ═══════════════════════════════════════════════════════════════════
+
+const SUBST_SYSTEM = `
+system "SubstTest" extend "NatEq" {
+  agent dup_nat(principal, copy1, copy2)
+  rule dup_nat <> Zero -> {
+    let z1 = Zero  let z2 = Zero
+    relink left.copy1 z1.principal
+    relink left.copy2 z2.principal
+  }
+  rule dup_nat <> Succ -> {
+    let s1 = Succ  let s2 = Succ  let d = dup_nat
+    relink left.copy1 s1.principal
+    relink left.copy2 s2.principal
+    wire s1.pred -- d.copy1
+    wire s2.pred -- d.copy2
+    relink right.pred d.principal
+  }
+
+  prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(pzr(k))
+  }
+
+  prove psr(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(psr(k, m))
+  }
+
+  prove succ_one(n : Nat) -> Eq(add(n, Succ(Zero)), Succ(n)) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(subst(pzr(k), psr(k, Zero)))
+  }
+}
+`;
+
+Deno.test("subst: subst(pzr(k), psr(k, Zero)) rewrites type correctly", () => {
+  const result = compile(SUBST_SYSTEM);
+  const sys = result.systems.get("SubstTest")!;
+  assertEquals(sys.agents.has("succ_one"), true);
+});
+
+Deno.test("subst: proof tree shows subst rule with two children", () => {
+  const result = compile(SUBST_SYSTEM);
+  const tree = result.proofTrees.get("succ_one")!;
+  const succ = tree.cases[1].tree; // Succ case
+  assertEquals(succ.rule, "cong_succ");
+  assertEquals(succ.children.length, 1);
+  // Inner: subst(pzr(k), psr(k, Zero))
+  const substNode = succ.children[0];
+  assertEquals(substNode.rule, "subst");
+  assertEquals(substNode.children.length, 2);
+  assertEquals(substNode.children[0].rule, "pzr");       // cross-lemma
+  assertEquals(substNode.children[1].rule, "psr");       // cross-lemma
+});
+
+Deno.test("subst: wrong subst argument is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "SubstBad" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+      # subst(pzr(n), refl) doesn't help — refl type has no add(n,Zero) to replace
+      prove bad(n : Nat) -> Eq(add(n, Succ(Zero)), Succ(n)) {
+        | Zero -> refl
+        | Succ(k) -> subst(pzr(k), refl)
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // subst(pzr(k), refl): a=add(k,Zero), b=k, T=Eq(_refl_a, _refl_a)
+  // T[add(k,Zero):=k] = Eq(_refl_a, _refl_a) — no match
+  // Expected: Eq(Succ(add(k, Succ(Zero))), Succ(Succ(k))) — mismatch
+  assertEquals(result.errors.length > 0, true, "expected type error for bad subst");
+});
+
+Deno.test("subst: succ_one(1) reduces to refl", () => {
+  const core = compile(SUBST_SYSTEM + `
+    graph test {
+      let r = root
+      let so = succ_one
+      let s = Succ
+      let z = Zero
+      wire r.principal -- so.result
+      wire so.principal -- s.principal
+      wire s.pred -- z.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(readRootType(g.graph), "refl");
+});

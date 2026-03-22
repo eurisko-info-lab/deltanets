@@ -10,6 +10,7 @@
 //   sym(p)          : Eq(b, a)       when p : Eq(a, b)
 //   trans(p, q)     : Eq(a, c)       when p : Eq(a, b), q : Eq(b, c)
 //   pair(w, p)      : Sigma(w, T)    when p : T  (∃-introduction)
+//   subst(p, e)     : T[a := b]      when p : Eq(a, b), e : T  (transport/J)
 //   recursive(args) : substitute args into declared proposition
 //
 // Normalization rules (computes with types):
@@ -217,6 +218,21 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   return e;
 }
 
+// ─── Expression-level pattern substitution ────────────────────────
+// Replaces all occurrences of `pattern` with `replacement` in `expr`.
+// Used by subst/transport to rewrite types through equality proofs.
+
+function substituteExprPattern(
+  expr: AST.ProveExpr,
+  pattern: AST.ProveExpr,
+  replacement: AST.ProveExpr,
+): AST.ProveExpr {
+  if (exprEqual(expr, pattern)) return replacement;
+  if (expr.kind !== "call") return expr;
+  const newArgs = expr.args.map((a) => substituteExprPattern(a, pattern, replacement));
+  return { kind: "call", name: expr.name, args: newArgs };
+}
+
 // ─── Type inference ────────────────────────────────────────────────
 // Infers the Eq-type of a proof expression given the prove context.
 
@@ -309,6 +325,22 @@ function inferType(
     const proofResult = inferType(args[1], ctx);
     if (!proofResult.ok) return proofResult;
     return { ok: true, type: app("Sigma", args[0], proofResult.type) };
+  }
+
+  // subst(p, e) : T[a := b]  where p : Eq(a, b) and e : T
+  // Transport / J elimination: rewrites the type of e through equality p.
+  if (name === "subst" && args.length === 2) {
+    const pResult = inferType(args[0], ctx);
+    if (!pResult.ok) return pResult;
+    const eq = extractEq(normalize(pResult.type));
+    if (!eq) {
+      return { ok: false, error: `subst first argument must have Eq type, got ${exprToString(pResult.type)}` };
+    }
+    const eResult = inferType(args[1], ctx);
+    if (!eResult.ok) return eResult;
+    const a = normalize(eq.left);
+    const b = normalize(eq.right);
+    return { ok: true, type: normalize(substituteExprPattern(normalize(eResult.type), a, b)) };
   }
 
   // Recursive call to a prove-declared agent
@@ -584,6 +616,15 @@ function buildNode(
       term,
       conclusion,
       children: [buildNode(args[1], ctx, proofExpected)],
+    };
+  }
+  // subst(p, e) — transport / J elimination
+  if (name === "subst" && args.length === 2) {
+    return {
+      rule: "subst",
+      term,
+      conclusion,
+      children: [buildNode(args[0], ctx), buildNode(args[1], ctx)],
     };
   }
   if (name === ctx.prove.name) {
