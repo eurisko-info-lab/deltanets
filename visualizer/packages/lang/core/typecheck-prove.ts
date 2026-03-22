@@ -238,6 +238,17 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     return e.args[0].args[1];
   }
 
+  // ── W-types (well-founded trees) ──
+
+  // wrec(sup(a₁, …, aₙ), step) → step(a₁, …, aₙ)
+  if (
+    e.name === "wrec" && e.args.length === 2 &&
+    e.args[0].kind === "call" && (e.args[0].name === "sup" || e.args[0].name === "Sup") &&
+    e.args[1].kind === "ident"
+  ) {
+    return normalize(app(e.args[1].name, ...e.args[0].args));
+  }
+
   return e;
 }
 
@@ -266,6 +277,9 @@ export function typeUniverse(type: AST.ProveExpr): number {
     if (n.name === "Eq") return 0;
     if (n.name === "Sigma" && n.args.length >= 3) {
       return Math.max(typeUniverse(n.args[0]), typeUniverse(n.args[2]));
+    }
+    if (n.name === "W" && n.args.length >= 2) {
+      return Math.max(typeUniverse(n.args[0]), typeUniverse(n.args[1]));
     }
   }
   return 0;

@@ -1031,6 +1031,95 @@ Deno.test("universe: typeUniverse computation", () => {
   assertEquals(typeUniverse({ kind: "call", name: "Eq", args: [
     { kind: "ident", name: "a" }, { kind: "ident", name: "b" }
   ] }), 0);
+  // W(A, B) lives in Type(max(level(A), level(B)))
+  assertEquals(typeUniverse({ kind: "call", name: "W", args: [
+    { kind: "ident", name: "Nat" }, { kind: "ident", name: "Bool" }
+  ] }), 0);
+  assertEquals(typeUniverse({ kind: "call", name: "W", args: [
+    { kind: "ident", name: "Type0" }, { kind: "ident", name: "Nat" }
+  ] }), 1);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// W-types (well-founded trees) tests
+// ═══════════════════════════════════════════════════════════════════
+
+const W_SYSTEM = `
+system "WBase" extend "NatEq" {
+  agent Sup(principal, label, children)
+  agent wrec(principal, result, step)
+
+  agent cong_sup(principal, result, label_proof)
+  rule cong_sup <> refl -> {
+    let r = refl
+    relink left.result r.principal
+    erase left.label_proof
+  }
+
+  rule wrec <> Sup -> {
+    # wrec(Sup(a, f), step) → step(a, f)
+    relink left.result left.step
+    erase right.label
+    erase right.children
+  }
+}
+`;
+
+Deno.test("w-type: Sup equality provable with refl", () => {
+  const result = compile(W_SYSTEM + `
+    system "W1" extend "WBase" {
+      prove sup_refl(n : Nat) -> Eq(Sup(n, Zero), Sup(n, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("sup_refl")!;
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("w-type: cong_sup infers correct type", () => {
+  const result = compile(W_SYSTEM + `
+    system "W2" extend "WBase" {
+      prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+
+      prove sup_cong(n : Nat) -> Eq(Sup(Zero, add(n, Zero)), Sup(Zero, n)) {
+        | Zero -> refl
+        | Succ(k) -> cong_sup(plus_zero_right(Succ(k)), Zero)
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("sup_cong")!;
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("w-type: wrec(Sup(a, f), step) normalizes to step(a, f)", () => {
+  const result = compile(W_SYSTEM + `
+    system "W3" extend "WBase" {
+      prove wrec_beta(n : Nat) -> Eq(wrec(Sup(n, Zero), id), id(n, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("wrec_beta")!;
+  assertEquals(tree.hasHoles, false);
+});
+
+Deno.test("w-type: wrec normalization mismatch caught", () => {
+  const source = BASE_SYSTEM + W_SYSTEM + `
+    system "WBad" extend "WBase" {
+      prove wrec_bad(n : Nat) -> Eq(wrec(Sup(n, Zero), id), id(Zero, n)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "expected error for wrec mismatch");
 });
 
 Deno.test("sigma: snd in proof position is not yet supported", () => {
