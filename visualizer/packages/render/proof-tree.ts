@@ -21,6 +21,7 @@ export type ProofNode = {
   conclusion: string;
   children: ProofNode[];
   isGoal?: boolean;
+  suggestions?: string[];
 };
 
 /** Proof derivation tree for one prove block. */
@@ -47,6 +48,8 @@ const CHAR_W = FONT_SIZE * 0.58;
 const RULE_CHAR_W = RULE_FONT_SIZE * 0.55;
 
 const GOAL_COLOR = "#e8a838"; // amber for open goals
+const SUGGEST_COLOR = "#4caf50"; // green for suggestions
+const SUGGEST_FONT_SIZE = 12;
 
 // ─── SVG text primitive ───────────────────────────────────────────
 
@@ -149,25 +152,42 @@ function layoutNode(node: ProofNode): LayoutNode {
   const conclusionW = textWidth(node.conclusion, CHAR_W);
   const ruleW = textWidth(node.rule, RULE_CHAR_W);
 
-  // Goal leaf (? hole) — render with highlight
+  // Goal leaf (? hole) — render with highlight and suggestions
   if (node.isGoal) {
     const lineW = conclusionW + 2 * LINE_PAD;
     const totalW = lineW + ruleW + LINE_PAD;
-    const totalH = FONT_SIZE + LEVEL_GAP + DEFAULT_LINE_WIDTH;
+    const suggestions = node.suggestions ?? [];
+    const suggestH = suggestions.length > 0
+      ? LEVEL_GAP + suggestions.length * (SUGGEST_FONT_SIZE + 3)
+      : 0;
+    const totalH = FONT_SIZE + LEVEL_GAP + DEFAULT_LINE_WIDTH + suggestH;
     return {
       width: totalW,
       height: totalH,
       render(parent, cx, bottomY) {
+        // Suggestions below the conclusion
+        let sy = bottomY;
+        if (suggestions.length > 0) {
+          for (let i = suggestions.length - 1; i >= 0; i--) {
+            const label = i === 0 ? `→ ${suggestions[i]}` : `  ${suggestions[i]}`;
+            const st = new ProofText(label, SUGGEST_FONT_SIZE, { color: SUGGEST_COLOR, italic: true });
+            st.pos = { x: cx, y: sy };
+            parent.add(st, false);
+            sy -= SUGGEST_FONT_SIZE + 3;
+          }
+          sy -= LEVEL_GAP / 2;
+        }
         // Highlight box behind the conclusion
+        const concY = sy;
         const bg = new GoalHighlight(conclusionW, FONT_SIZE);
-        bg.pos = { x: cx, y: bottomY };
+        bg.pos = { x: cx, y: concY };
         parent.add(bg, false);
         // Conclusion text in goal color
         const concText = new ProofText(node.conclusion, FONT_SIZE, { color: GOAL_COLOR, bold: true });
-        concText.pos = { x: cx, y: bottomY };
+        concText.pos = { x: cx, y: concY };
         parent.add(concText, false);
         // Inference line in goal color
-        const lineY = bottomY - FONT_SIZE / 2 - LEVEL_GAP;
+        const lineY = concY - FONT_SIZE / 2 - LEVEL_GAP;
         const line = new InferenceLine(lineW, GOAL_COLOR);
         line.pos = { x: cx, y: lineY };
         parent.add(line, false);

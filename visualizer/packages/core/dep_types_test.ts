@@ -789,3 +789,68 @@ Deno.test("hole: all-? prove generates no agent/rules", () => {
   assertEquals(result.proofTrees.get("pzr")!.cases[0].tree.conclusion, "Eq(Zero, Zero)");
   assertEquals(result.proofTrees.get("pzr")!.cases[1].tree.conclusion, "Eq(Succ(add(k, Zero)), Succ(k))");
 });
+
+// ─── Proof Search / Auto-fill Tests ─────────────────────────────────
+
+Deno.test("search: ? in Zero case of pzr suggests refl", () => {
+  const result = compile(`
+    system "Search1" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> ?
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  // Zero case goal: Eq(Zero, Zero) — refl should be suggested
+  const zeroNode = tree.cases[0].tree;
+  assertEquals(zeroNode.isGoal, true);
+  assertEquals(Array.isArray(zeroNode.suggestions), true);
+  assertEquals(zeroNode.suggestions!.includes("refl"), true, `expected refl in suggestions, got: ${zeroNode.suggestions}`);
+});
+
+Deno.test("search: ? in Succ case of pzr suggests cong_succ(pzr(k))", () => {
+  const result = compile(`
+    system "Search2" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> ?
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pzr")!;
+  // Succ case goal: Eq(Succ(add(k, Zero)), Succ(k))
+  // Should suggest cong_succ(pzr(k))
+  const succNode = tree.cases[1].tree;
+  assertEquals(succNode.isGoal, true);
+  assertEquals(Array.isArray(succNode.suggestions), true);
+  assertEquals(
+    succNode.suggestions!.includes("cong_succ(pzr(k))"),
+    true,
+    `expected cong_succ(pzr(k)) in suggestions, got: ${succNode.suggestions}`,
+  );
+});
+
+Deno.test("search: ? in Zero case of plus_comm suggests sym(pzr(m))", () => {
+  const result = compile(`
+    system "Search3" extend "NatEq" {
+      prove pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(pzr(k))
+      }
+      prove pc(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+        | Zero -> ?
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  const tree = result.proofTrees.get("pc")!;
+  // Zero case goal: Eq(m, add(m, Zero)) — should suggest sym(pzr(m))
+  const zeroNode = tree.cases[0].tree;
+  assertEquals(zeroNode.isGoal, true);
+  assertEquals(
+    zeroNode.suggestions!.includes("sym(pzr(m))"),
+    true,
+    `expected sym(pzr(m)) in suggestions, got: ${zeroNode.suggestions}`,
+  );
+});

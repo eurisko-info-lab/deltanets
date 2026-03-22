@@ -33,6 +33,7 @@ export type ProofNode = {
   conclusion: string;  // the derived type (Eq(..., ...))
   children: ProofNode[];
   isGoal?: boolean;    // true when this node is an unfilled ? hole
+  suggestions?: string[]; // auto-fill candidates that would satisfy the goal
 };
 
 /** Proof derivation tree for one prove block. */
@@ -317,6 +318,104 @@ function extractEq(
   return null;
 }
 
+// ─── Proof search (auto-fill candidates) ──────────────────────────
+// When a ? hole has a known expected type, try to find proof expressions
+// that would satisfy the goal.  The search is bounded (depth ≤ 2).
+
+function tryCandidateType(
+  candidate: AST.ProveExpr,
+  ctx: ProveCtx,
+  goal: AST.ProveExpr,
+): boolean {
+  const result = inferType(candidate, ctx);
+  if (!result.ok) return false;
+  const goalEq = extractEq(normalize(goal));
+  const infEq = extractEq(normalize(result.type));
+  if (!goalEq || !infEq) return false;
+  // refl produces Eq(_refl_a, _refl_a) — check that goal sides are equal
+  if (infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
+      infEq.right.kind === "ident" && infEq.right.name === "_refl_a") {
+    return exprEqual(normalize(goalEq.left), normalize(goalEq.right));
+  }
+  return exprEqual(normalize(infEq.left), normalize(goalEq.left)) &&
+         exprEqual(normalize(infEq.right), normalize(goalEq.right));
+}
+
+function searchCandidates(
+  ctx: ProveCtx,
+  goal: AST.ProveExpr,
+): string[] {
+  const goalEq = extractEq(normalize(goal));
+  if (!goalEq) return [];
+
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const add = (expr: AST.ProveExpr) => {
+    const s = exprToString(expr);
+    if (!seen.has(s)) { seen.add(s); found.push(s); }
+  };
+
+  // 1. refl — if both sides are equal
+  if (tryCandidateType(ident("refl"), ctx, goal)) add(ident("refl"));
+
+  // Collect ALL possible IH expressions (not filtered by goal match yet)
+  const allIHs: AST.ProveExpr[] = [];
+  if (ctx.prove.returnType) {
+    for (const [binding] of ctx.caseBindings) {
+      const auxArgs = ctx.prove.params.slice(1).map((p) => ident(p.name));
+      allIHs.push(app(ctx.prove.name, ident(binding), ...auxArgs));
+    }
+  }
+
+  // 2. IH — check which ones directly match the goal
+  for (const ih of allIHs) {
+    if (tryCandidateType(ih, ctx, goal)) add(ih);
+  }
+
+  // 3. Cross-lemma calls — collect all, check which match
+  const availableVars = [
+    ...Array.from(ctx.caseBindings.keys()).map(ident),
+    ...ctx.prove.params.slice(1).map((p) => ident(p.name)),
+  ];
+  const allLemmaCalls: AST.ProveExpr[] = [];
+  for (const [lemmaName, lemma] of ctx.provedCtx) {
+    if (lemma.params.length <= availableVars.length) {
+      const call = app(lemmaName, ...availableVars.slice(0, lemma.params.length));
+      allLemmaCalls.push(call);
+      if (tryCandidateType(call, ctx, goal)) add(call);
+    }
+  }
+
+  // 4. Depth-2: sym wrappers on all IH and lemma calls
+  const depth1Exprs = [...allIHs, ...allLemmaCalls];
+  for (const inner of depth1Exprs) {
+    const symExpr = app("sym", inner);
+    if (tryCandidateType(symExpr, ctx, goal)) add(symExpr);
+  }
+
+  // 5. cong_X wrapping — if goal is Eq(X(...,a), X(...,b))
+  if (goalEq.left.kind === "call" && goalEq.right.kind === "call" &&
+      goalEq.left.name === goalEq.right.name &&
+      goalEq.left.args.length === goalEq.right.args.length) {
+    const cons = goalEq.left.name;
+    const suffix = cons.charAt(0).toLowerCase() + cons.slice(1);
+    const congName = `cong_${suffix}`;
+    const constants = goalEq.left.args.slice(0, -1);
+    // Try wrapping all candidates (refl, IH, lemma, sym(...))
+    const innerCandidates = [ident("refl"), ...allIHs, ...allLemmaCalls];
+    for (const inner of innerCandidates) {
+      const congExpr = app(congName, inner, ...constants);
+      if (tryCandidateType(congExpr, ctx, goal)) add(congExpr);
+    }
+    for (const inner of depth1Exprs) {
+      const congExpr = app(congName, app("sym", inner), ...constants);
+      if (tryCandidateType(congExpr, ctx, goal)) add(congExpr);
+    }
+  }
+
+  return found;
+}
+
 // ─── Proof tree builder ────────────────────────────────────────────
 // Builds a ProofNode tree by walking the proof expression, mirroring inferType.
 // The optional `expected` type enables goal-directed checking for ? holes.
@@ -326,10 +425,11 @@ function buildNode(
   ctx: ProveCtx,
   expected?: AST.ProveExpr,
 ): ProofNode {
-  // ? hole → show goal type from the expected type
+  // ? hole → show goal type from the expected type + search for candidates
   if (expr.kind === "hole") {
     const goalStr = expected ? exprToString(normalize(expected)) : "?";
-    return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true };
+    const suggestions = expected ? searchCandidates(ctx, expected) : [];
+    return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true, suggestions };
   }
 
   const result = inferType(expr, ctx);
