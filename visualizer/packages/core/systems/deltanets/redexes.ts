@@ -156,105 +156,62 @@ export function getRedexes(
         console.error("Error: eraser in relevant system", node);
       }
       if (node.ports[0].port === 0) {
+        const other = node.ports[0].node;
         if (
-          node.type === "var" || node.ports[0].node.type === "var" ||
-          node.type === "root" || node.ports[0].node.type === "root" ||
-          isTypeNode(node) || isTypeNode(node.ports[0].node)
+          node.type === "var" || other.type === "var" ||
+          node.type === "root" || other.type === "root" ||
+          isTypeNode(node) || isTypeNode(other)
         ) {
           continue;
         }
+
+        const matchesPair = (pairs: [string, string][]) =>
+          pairs.some(([a, b]) =>
+            (node.type === a && other.type === b) ||
+            (node.type === b && other.type === a)
+          );
+
         if (node.type === "era") {
-          createRedex(
-            node,
-            node.ports[0].node,
-            false,
-            () => reduceErase(node.ports[0].node, graph),
-          );
-        } else if (node.ports[0].node.type === "era") {
-          createRedex(
-            node,
-            node.ports[0].node,
-            false,
-            () => reduceErase(node, graph),
-          );
+          createRedex(node, other, false, () => reduceErase(other, graph));
+        } else if (other.type === "era") {
+          createRedex(node, other, false, () => reduceErase(node, graph));
         } else if (
-          node.type === "abs" && node.ports[0].node.type === "app"
+          (node.type === "abs" && other.type === "app") ||
+          matchesPair(ANNIHILATION_PAIRS)
         ) {
-          createRedex(
-            node,
-            node.ports[0].node,
-            false,
-            () => reduceAnnihilate(node, graph),
-          );
-        } else if (
-          ANNIHILATION_PAIRS.some(([a, b]) =>
-            (node.type === a && node.ports[0].node.type === b) ||
-            (node.type === b && node.ports[0].node.type === a)
-          )
-        ) {
-          createRedex(
-            node,
-            node.ports[0].node,
-            false,
-            () => reduceAnnihilate(node, graph),
-          );
-        } else if (
-          ERASE_RULE_PAIRS.some(([a, b]) =>
-            (node.type === a && node.ports[0].node.type === b) ||
-            (node.type === b && node.ports[0].node.type === a)
-          )
-        ) {
-          createRedex(
-            node,
-            node.ports[0].node,
-            false,
-            () => reduceEraseRule(node, node.ports[0].node, graph),
-          );
-        } else if (
-          rules !== undefined &&
-          findRule(node.type, node.ports[0].node.type, rules) !== undefined
-        ) {
+          createRedex(node, other, false, () => reduceAnnihilate(node, graph));
+        } else if (matchesPair(ERASE_RULE_PAIRS)) {
+          createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
+        } else if (rules !== undefined && findRule(node.type, other.type, rules) !== undefined) {
           // Dynamic rule lookup from .inet system definitions
-          const rule = findRule(node.type, node.ports[0].node.type, rules)!;
+          const rule = findRule(node.type, other.type, rules)!;
           if (rule.action.kind === "builtin") {
             if (rule.action.name === "annihilate") {
-              createRedex(
-                node,
-                node.ports[0].node,
-                false,
-                () => reduceAnnihilate(node, graph),
-              );
+              createRedex(node, other, false, () => reduceAnnihilate(node, graph));
             } else if (rule.action.name === "erase") {
-              createRedex(
-                node,
-                node.ports[0].node,
-                false,
-                () => reduceEraseRule(node, node.ports[0].node, graph),
-              );
+              createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
             } else if (rule.action.name === "commute") {
-              createRedex(node, node.ports[0].node, false, () => {
-                reduceCommute(node, graph);
-              });
+              createRedex(node, other, false, () => reduceCommute(node, graph));
             }
           } else if (rule.action.kind === "custom" && agentPorts) {
-            const left = node.type === rule.agentA ? node : node.ports[0].node;
-            const right = left === node ? node.ports[0].node : node;
-            createRedex(node, node.ports[0].node, false, () => {
+            const left = node.type === rule.agentA ? node : other;
+            const right = left === node ? other : node;
+            createRedex(node, other, false, () => {
               reduceCustomRule(left, right, graph, rule, agentPorts);
             });
           }
         } else if (
           node.type.startsWith("rep") &&
-          !node.ports[0].node.type.startsWith("rep") &&
-          !isExprAgent(node.ports[0].node.type) &&
-          !isTypeNode(node.ports[0].node) &&
-          node.ports[0].node.type !== "var" &&
-          node.ports[0].node.type !== "root"
+          !other.type.startsWith("rep") &&
+          !isExprAgent(other.type) &&
+          !isTypeNode(other) &&
+          other.type !== "var" &&
+          other.type !== "root"
         ) {
           // Rep commutation with lambda cube agents
           const rep = node;
           const level = parseRepLabel(rep.label!).level;
-          createRedex(node, node.ports[0].node, false, () => {
+          createRedex(node, other, false, () => {
             const { nodeClones } = reduceCommute(rep, graph);
             nodeClones.forEach((clone, i) => {
               clone.label = formatRepLabel(
@@ -267,12 +224,12 @@ export function getRedexes(
             });
           });
         } else if (
-          (node.type.startsWith("rep") && (node.ports[0].node.type === "abs" ||
-            node.ports[0].node.type === "app"))
+          (node.type.startsWith("rep") && (other.type === "abs" ||
+            other.type === "app"))
         ) {
-          const rep = node.type.startsWith("rep") ? node : node.ports[0].node;
+          const rep = node.type.startsWith("rep") ? node : other;
           const level = parseRepLabel(rep.label!).level;
-          createRedex(node, node.ports[0].node, false, () => {
+          createRedex(node, other, false, () => {
             const { nodeClones } = reduceCommute(rep, graph);
             nodeClones[0].label = formatRepLabel(level, "unknown");
             nodeClones[1].label = formatRepLabel(
@@ -289,10 +246,10 @@ export function getRedexes(
           });
         } else if (
           node.type.startsWith("rep") &&
-          node.ports[0].node.type.startsWith("rep")
+          other.type.startsWith("rep")
         ) {
           const a = node;
-          const b = node.ports[0].node;
+          const b = other;
           const { level: top, status: topFlag } = parseRepLabel(a.label!);
           const { level: bottom, status: bottomFlag } = parseRepLabel(b.label!);
           if (top === bottom) {
@@ -317,7 +274,7 @@ export function getRedexes(
         }
       } else if (
         node.type.startsWith("rep") &&
-        node.ports[0].node.type.startsWith("rep") &&
+        node.ports[0].node?.type.startsWith("rep") &&
         parseRepLabel(node.ports[0].node.label!).status === "unpaired"
       ) {
         const firstReplicator = node.ports[0].node;

@@ -97,6 +97,12 @@ export function isMusicLane(
 
 // ─── Clef rendering ───────────────────────────────────────────────
 
+const CLEF_GLYPHS: Record<string, { glyph: string; size: string; yAdj: number; topAdj: number }> = {
+  treble: { glyph: "\u{1D11E}", size: "56px", yAdj: 14, topAdj: -8 },
+  bass:   { glyph: "\u{1D122}", size: "36px", yAdj: 4, topAdj: 0 },
+  alto:   { glyph: "\u{1D121}", size: "36px", yAdj: 4, topAdj: 0 },
+};
+
 export class ClefSymbol extends Node2D {
   constructor(
     private clef: string,
@@ -113,51 +119,20 @@ export class ClefSymbol extends Node2D {
     pos: Pos,
     theme: "light" | "dark",
   ): SVG | null {
+    const cfg = CLEF_GLYPHS[this.clef];
+    if (!cfg) return null;
     const g = d3.create("svg:g");
-    const color = defaultStroke(theme);
-    const x = pos.x + CLEF_WIDTH / 2;
-
-    if (this.clef === "treble") {
-      // Treble clef — draw a stylized G-clef shape
-      const top = pos.y + this.staffTop - 8;
-      g.append("text")
-        .text("\u{1D11E}")
-        .attr("x", x)
-        .attr("y", top + STAFF_HEIGHT / 2 + 14)
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", color)
-        .style("font-size", "56px")
-        .attr("font-family", "serif")
-        .attr("pointer-events", "none");
-    } else if (this.clef === "bass") {
-      // Bass clef
-      const top = pos.y + this.staffTop;
-      g.append("text")
-        .text("\u{1D122}")
-        .attr("x", x)
-        .attr("y", top + STAFF_HEIGHT / 2 + 4)
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", color)
-        .style("font-size", "36px")
-        .attr("font-family", "serif")
-        .attr("pointer-events", "none");
-    } else if (this.clef === "alto") {
-      // Alto clef — C clef
-      const top = pos.y + this.staffTop;
-      g.append("text")
-        .text("\u{1D121}")
-        .attr("x", x)
-        .attr("y", top + STAFF_HEIGHT / 2 + 4)
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", color)
-        .style("font-size", "36px")
-        .attr("font-family", "serif")
-        .attr("pointer-events", "none");
-    }
-
+    const top = pos.y + this.staffTop + cfg.topAdj;
+    g.append("text")
+      .text(cfg.glyph)
+      .attr("x", pos.x + CLEF_WIDTH / 2)
+      .attr("y", top + STAFF_HEIGHT / 2 + cfg.yAdj)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", defaultStroke(theme))
+      .style("font-size", cfg.size)
+      .attr("font-family", "serif")
+      .attr("pointer-events", "none");
     return g;
   }
 }
@@ -236,31 +211,26 @@ export class MusicNoteNode extends Node2D {
     const noteY = pos.y + this.staffTop + staffPositionToY(staffPos);
     const noteX = pos.x;
 
-    // Ledger lines
+    // Ledger lines (below and above staff)
+    const ledgerPath = d3.path();
     if (staffPos < 0) {
-      // Below the staff
-      const path = d3.path();
       for (let p = -2; p >= staffPos; p -= 2) {
         const ly = pos.y + this.staffTop + staffPositionToY(p);
-        path.moveTo(noteX - LEDGER_LINE_HALF, ly);
-        path.lineTo(noteX + LEDGER_LINE_HALF, ly);
+        ledgerPath.moveTo(noteX - LEDGER_LINE_HALF, ly);
+        ledgerPath.lineTo(noteX + LEDGER_LINE_HALF, ly);
       }
-      g.append("path")
-        .attr("d", path.toString())
-        .attr("fill", "none")
-        .attr("stroke", color)
-        .attr("stroke-width", 0.8);
     }
     if (staffPos > 8) {
-      // Above the staff
-      const path = d3.path();
       for (let p = 10; p <= staffPos; p += 2) {
         const ly = pos.y + this.staffTop + staffPositionToY(p);
-        path.moveTo(noteX - LEDGER_LINE_HALF, ly);
-        path.lineTo(noteX + LEDGER_LINE_HALF, ly);
+        ledgerPath.moveTo(noteX - LEDGER_LINE_HALF, ly);
+        ledgerPath.lineTo(noteX + LEDGER_LINE_HALF, ly);
       }
+    }
+    const ledgerStr = ledgerPath.toString();
+    if (ledgerStr) {
       g.append("path")
-        .attr("d", path.toString())
+        .attr("d", ledgerStr)
         .attr("fill", "none")
         .attr("stroke", color)
         .attr("stroke-width", 0.8);

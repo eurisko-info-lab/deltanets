@@ -281,6 +281,12 @@ export function renderLaneView(input: LaneViewInput): Node2D {
   return root;
 }
 
+// ─── Theme helpers ─────────────────────────────────────────────────
+
+type Theme = "light" | "dark";
+const tc = (theme: Theme, light: string, dark: string) =>
+  theme === "light" ? light : dark;
+
 // ─── Scene graph primitives for lanes ──────────────────────────────
 
 class LaneBackground extends Node2D {
@@ -289,19 +295,13 @@ class LaneBackground extends Node2D {
     this.bounds = { min: { x: 0, y: 0 }, max: { x: w, y: h } };
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
-    return d3
-      .create("svg:rect")
-      .attr("x", pos.x)
-      .attr("y", pos.y)
-      .attr("width", this.w)
-      .attr("height", this.h)
+  override renderSelf(pos: Pos, theme: Theme): SVG | null {
+    return d3.create("svg:rect")
+      .attr("x", pos.x).attr("y", pos.y)
+      .attr("width", this.w).attr("height", this.h)
       .attr("rx", 4)
-      .attr("fill", theme === "light" ? "#f5f5f5" : "#2a2a2a")
-      .attr("stroke", theme === "light" ? "#ddd" : "#444")
+      .attr("fill", tc(theme, "#f5f5f5", "#2a2a2a"))
+      .attr("stroke", tc(theme, "#ddd", "#444"))
       .attr("stroke-width", DEFAULT_LINE_WIDTH);
   }
 }
@@ -315,39 +315,25 @@ class LaneLabel extends Node2D {
     };
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
-    return d3
-      .create("svg:text")
+  override renderSelf(pos: Pos, theme: Theme): SVG | null {
+    return d3.create("svg:text")
       .text(this.label)
-      .attr("x", pos.x)
-      .attr("y", pos.y)
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
+      .attr("x", pos.x).attr("y", pos.y)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
       .attr("fill", defaultStroke(theme))
-      .style("font-size", "14px")
-      .style("font-weight", "600")
+      .style("font-size", "14px").style("font-weight", "600")
       .attr("font-family", "system-ui, sans-serif")
       .attr("pointer-events", "none");
   }
 }
 
 class GuideLines extends Node2D {
-  constructor(
-    private w: number,
-    private h: number,
-    private count: number,
-  ) {
+  constructor(private w: number, private h: number, private count: number) {
     super();
     this.bounds = { min: { x: 0, y: 0 }, max: { x: w, y: h } };
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
+  override renderSelf(pos: Pos, theme: Theme): SVG | null {
     const path = d3.path();
     const spacing = this.h / (this.count + 1);
     for (let i = 1; i <= this.count; i++) {
@@ -355,108 +341,72 @@ class GuideLines extends Node2D {
       path.moveTo(pos.x, y);
       path.lineTo(pos.x + this.w, y);
     }
-    return d3
-      .create("svg:path")
+    return d3.create("svg:path")
       .attr("d", path.toString())
       .attr("fill", "none")
-      .attr("stroke", theme === "light" ? "#ccc" : "#555")
+      .attr("stroke", tc(theme, "#ccc", "#555"))
       .attr("stroke-width", 0.5)
       .attr("pointer-events", "none");
   }
 }
 
 class LaneItemNode extends Node2D {
-  constructor(
-    private w: number,
-    private h: number,
-    private label: string,
-  ) {
+  constructor(private w: number, private h: number, private label: string) {
     super();
     this.bounds = { min: { x: 0, y: 0 }, max: { x: w, y: h } };
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
-    // Return a group with rect + text
+  override renderSelf(pos: Pos, theme: Theme): SVG | null {
     const g = d3.create("svg:g");
-
     g.append("rect")
-      .attr("x", pos.x)
-      .attr("y", pos.y)
-      .attr("width", this.w)
-      .attr("height", this.h)
+      .attr("x", pos.x).attr("y", pos.y)
+      .attr("width", this.w).attr("height", this.h)
       .attr("rx", 6)
-      .attr("fill", theme === "light" ? "#e3f2fd" : "#1e3a5f")
-      .attr("stroke", theme === "light" ? "#90caf9" : "#5c9ce6")
+      .attr("fill", tc(theme, "#e3f2fd", "#1e3a5f"))
+      .attr("stroke", tc(theme, "#90caf9", "#5c9ce6"))
       .attr("stroke-width", SHAPE_LINE_WIDTH);
-
     g.append("text")
       .text(this.label)
-      .attr("x", pos.x + this.w / 2)
-      .attr("y", pos.y + this.h / 2)
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
+      .attr("x", pos.x + this.w / 2).attr("y", pos.y + this.h / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
       .attr("fill", defaultStroke(theme))
       .style("font-size", "12px")
       .attr("font-family", "system-ui, sans-serif")
       .attr("pointer-events", "none");
-
     return g;
   }
 }
 
 class LaneMarkerNode extends Node2D {
-  constructor(
-    private h: number,
-    private label?: string,
-    private solid?: boolean,
-  ) {
+  constructor(private h: number, private label?: string, private solid?: boolean) {
     super();
     this.bounds = { min: { x: -1, y: 0 }, max: { x: 1, y: h } };
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
+  override renderSelf(pos: Pos, theme: Theme): SVG | null {
     const g = d3.create("svg:g");
-
     const line = g.append("line")
-      .attr("x1", pos.x)
-      .attr("y1", pos.y)
-      .attr("x2", pos.x)
-      .attr("y2", pos.y + this.h)
-      .attr("stroke", theme === "light" ? "#999" : "#777")
+      .attr("x1", pos.x).attr("y1", pos.y)
+      .attr("x2", pos.x).attr("y2", pos.y + this.h)
+      .attr("stroke", tc(theme, "#999", "#777"))
       .attr("stroke-width", this.solid ? 1.2 : DEFAULT_LINE_WIDTH);
-
-    if (!this.solid) {
-      line.attr("stroke-dasharray", "4,3");
-    }
-
+    if (!this.solid) line.attr("stroke-dasharray", "4,3");
     if (this.label) {
       g.append("text")
         .text(this.label)
-        .attr("x", pos.x)
-        .attr("y", pos.y - 4)
+        .attr("x", pos.x).attr("y", pos.y - 4)
         .attr("text-anchor", "middle")
-        .attr("fill", theme === "light" ? "#666" : "#999")
+        .attr("fill", tc(theme, "#666", "#999"))
         .style("font-size", "10px")
         .attr("font-family", "system-ui, sans-serif")
         .attr("pointer-events", "none");
     }
-
     return g;
   }
 }
 
 class LaneLinkNode extends Node2D {
-  constructor(
-    private from: Pos,
-    private to: Pos,
-    private label?: string,
-  ) {
+  constructor(private from: Pos, private to: Pos, private label?: string) {
     super();
     this.bounds = {
       min: {
@@ -470,69 +420,55 @@ class LaneLinkNode extends Node2D {
     };
   }
 
-  override renderSelf(
-    _pos: Pos,
-    theme: "light" | "dark",
-  ): SVG | null {
+  override renderSelf(_pos: Pos, theme: Theme): SVG | null {
     const g = d3.create("svg:g");
     const { from, to } = this;
-
-    // Offset start/end to exit/enter item boundaries
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
+    const dx = to.x - from.x, dy = to.y - from.y;
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len === 0) return null;
 
-    const ux = dx / len;
-    const uy = dy / len;
+    const ux = dx / len, uy = dy / len;
     const startX = from.x + ux * (ITEM_WIDTH / 2 + 2);
     const startY = from.y + uy * (ITEM_HEIGHT / 2 + 2);
     const endX = to.x - ux * (ITEM_WIDTH / 2 + 2);
     const endY = to.y - uy * (ITEM_HEIGHT / 2 + 2);
 
-    // Arrow path
     const path = d3.path();
     path.moveTo(startX, startY);
     path.lineTo(endX, endY);
+    const color = tc(theme, "#666", "#aaa");
 
     g.append("path")
       .attr("d", path.toString())
       .attr("fill", "none")
-      .attr("stroke", theme === "light" ? "#666" : "#aaa")
+      .attr("stroke", color)
       .attr("stroke-width", SHAPE_LINE_WIDTH)
       .attr("marker-end", "url(#laneLinkArrow)");
 
     // Arrowhead
-    const ax = endX - ux * LINK_ARROW_SIZE;
-    const ay = endY - uy * LINK_ARROW_SIZE;
-    const perpX = -uy * LINK_ARROW_SIZE * 0.5;
-    const perpY = ux * LINK_ARROW_SIZE * 0.5;
+    const ax = endX - ux * LINK_ARROW_SIZE, ay = endY - uy * LINK_ARROW_SIZE;
+    const perpX = -uy * LINK_ARROW_SIZE * 0.5, perpY = ux * LINK_ARROW_SIZE * 0.5;
     const arrowPath = d3.path();
     arrowPath.moveTo(endX, endY);
     arrowPath.lineTo(ax + perpX, ay + perpY);
     arrowPath.lineTo(ax - perpX, ay - perpY);
     arrowPath.closePath();
-
     g.append("path")
       .attr("d", arrowPath.toString())
-      .attr("fill", theme === "light" ? "#666" : "#aaa")
+      .attr("fill", color)
       .attr("stroke", "none");
 
-    // Label
     if (this.label) {
-      const midX = (startX + endX) / 2;
-      const midY = (startY + endY) / 2;
+      const midX = (startX + endX) / 2, midY = (startY + endY) / 2;
       g.append("text")
         .text(this.label)
-        .attr("x", midX)
-        .attr("y", midY - 6)
+        .attr("x", midX).attr("y", midY - 6)
         .attr("text-anchor", "middle")
-        .attr("fill", theme === "light" ? "#555" : "#bbb")
+        .attr("fill", tc(theme, "#555", "#bbb"))
         .style("font-size", "10px")
         .attr("font-family", "system-ui, sans-serif")
         .attr("pointer-events", "none");
     }
-
     return g;
   }
 }

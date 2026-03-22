@@ -230,79 +230,23 @@ function renderAstNode(
         currState.forward = undefined;
         currState.forwardParallel = undefined;
 
-        // Function to go forward to the next state
-        const forward = () => {
-          const currState = state.peek()!;
-          // Move forward one step
-          currState.idx = currState.idx + 1;
-          // Update other functions
-          if (currState.stack.length - 1 === currState.idx) {
-            currState.forward = undefined;
-            currState.forwardParallel = undefined;
-            currState.last = undefined;
-          }
-          currState.back = back;
-          currState.reset = reset;
-          // Trigger state update
-          batch(() => {
-            state.value = { ...currState };
-          });
-        };
-
-        // Function to go back to the previous state
-        const back = () => {
-          const currState = state.peek()!;
-          // Move back one step
-          currState.idx = currState.idx - 1;
-          // Update other functions
-          if (currState.idx === 0) {
-            currState.back = undefined;
-            currState.reset = undefined;
-          }
-          currState.forward = forward;
-          currState.last = last;
-          // Trigger state update
-          batch(() => {
-            state.value = { ...currState };
-          });
-        };
-
-        // Function to reset to the initial state
-        const reset = () => {
-          const currState = state.peek()!;
-          // Move back all the way to the beginning
-          currState.idx = 0;
-          // Update other functions
-          currState.back = undefined;
-          currState.reset = undefined;
-          currState.forward = forward;
-          currState.last = last;
-          // Trigger state update
-          batch(() => {
-            state.value = { ...currState };
-          });
-        };
-
-        // Function to go to the last state
-        const last = () => {
-          const currState = state.peek()!;
-          // Move forward all the way to the end
-          currState.idx = currState.stack.length - 1;
-          // Update other functions
-          currState.forward = undefined;
-          currState.forwardParallel = undefined;
-          currState.last = undefined;
-          currState.back = back;
-          currState.reset = reset;
-          // Trigger state update
-          batch(() => {
-            state.value = { ...currState };
-          });
+        // Navigate to a target index and update nav callbacks accordingly
+        const navigate = (targetIdx: number) => {
+          const s = state.peek()!;
+          s.idx = targetIdx;
+          const atStart = s.idx === 0;
+          const atEnd = s.stack.length - 1 === s.idx;
+          s.forward = atEnd ? undefined : () => navigate(s.idx + 1);
+          s.forwardParallel = atEnd ? undefined : s.forwardParallel;
+          s.last = atEnd ? undefined : () => navigate(s.stack.length - 1);
+          s.back = atStart ? undefined : () => navigate(s.idx - 1);
+          s.reset = atStart ? undefined : () => navigate(0);
+          batch(() => { state.value = { ...s }; });
         };
 
         // Update functions that are also set to defined values inside `forward` defined above, assuming that `currState.stack.length - 1 === currState.idx`
-        currState.back = back;
-        currState.reset = reset;
+        currState.back = () => navigate(currState.idx - 1);
+        currState.reset = () => navigate(0);
 
         // Perform beta reduction i.e. substitute occurrances of the variable in the function body by the argument
         const result = substitute(

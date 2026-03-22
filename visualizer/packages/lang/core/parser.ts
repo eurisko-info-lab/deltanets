@@ -45,6 +45,7 @@
 import { TT } from "./lexer.ts";
 import type { Token, TokenKind } from "./lexer.ts";
 import type * as AST from "./types.ts";
+import type { BuiltinAction } from "./types.ts";
 
 export class ParseError extends Error {
   line: number;
@@ -118,6 +119,13 @@ class Parser {
       tok.line,
       tok.col,
     );
+  }
+
+  /** Parse: item ("," item)* */
+  parseCommaList<T>(parseItem: () => T): T[] {
+    const items = [parseItem()];
+    while (this.check(TT.COMMA)) { this.advance(); items.push(parseItem()); }
+    return items;
   }
 
   // ─── Program ─────────────────────────────────────────────────────
@@ -317,14 +325,8 @@ class Parser {
     this.eat(TT.AGENT);
     const name = this.eatIdent();
     this.eat(TT.LPAREN);
-    const ports: AST.PortDef[] = [];
-    if (!this.check(TT.RPAREN)) {
-      ports.push(this.parsePortDef());
-      while (this.check(TT.COMMA)) {
-        this.advance();
-        ports.push(this.parsePortDef());
-      }
-    }
+    const ports = this.check(TT.RPAREN)
+      ? [] : this.parseCommaList(() => this.parsePortDef());
     this.eat(TT.RPAREN);
     return { kind: "agent", name, ports };
   }
@@ -349,24 +351,15 @@ class Parser {
     return { kind: "rule", agentA, agentB, action };
   }
 
+  private static BUILTIN_RULES: Record<string, BuiltinAction["name"]> = {
+    [TT.ANNIHILATE]: "annihilate", [TT.ERASE]: "erase",
+    [TT.COMMUTE]: "commute", [TT.AUX_FAN]: "aux-fan",
+  };
+
   parseRuleAction(): AST.RuleAction {
     const tok = this.peek();
-    if (tok.type === TT.ANNIHILATE) {
-      this.advance();
-      return { kind: "builtin", name: "annihilate" };
-    }
-    if (tok.type === TT.ERASE) {
-      this.advance();
-      return { kind: "builtin", name: "erase" };
-    }
-    if (tok.type === TT.COMMUTE) {
-      this.advance();
-      return { kind: "builtin", name: "commute" };
-    }
-    if (tok.type === TT.AUX_FAN) {
-      this.advance();
-      return { kind: "builtin", name: "aux-fan" };
-    }
+    const builtin = Parser.BUILTIN_RULES[tok.type];
+    if (builtin) { this.advance(); return { kind: "builtin", name: builtin }; }
     if (tok.type === TT.LBRACE) {
       return { kind: "custom", body: this.parseCustomRuleBody() };
     }
@@ -455,11 +448,7 @@ class Parser {
     this.eat(TT.PROVE);
     const name = this.eatIdent();
     this.eat(TT.LPAREN);
-    const params: AST.ProveParam[] = [this.parseProveParam()];
-    while (this.check(TT.COMMA)) {
-      this.advance();
-      params.push(this.parseProveParam());
-    }
+    const params = this.parseCommaList(() => this.parseProveParam());
     this.eat(TT.RPAREN);
     // Optional return type: -> TypeExpr
     let returnType: AST.ProveExpr | undefined;
@@ -484,13 +473,8 @@ class Parser {
         const bindings: string[] = [];
         if (this.check(TT.LPAREN)) {
           this.advance();
-          if (!this.check(TT.RPAREN)) {
-            bindings.push(this.eatIdent());
-            while (this.check(TT.COMMA)) {
-              this.advance();
-              bindings.push(this.eatIdent());
-            }
-          }
+          if (!this.check(TT.RPAREN))
+            bindings.push(...this.parseCommaList(() => this.eatIdent()));
           this.eat(TT.RPAREN);
         }
         this.eat(TT.ARROW);
@@ -520,14 +504,8 @@ class Parser {
     const name = this.eatIdent();
     if (this.check(TT.LPAREN)) {
       this.advance();
-      const args: AST.ProveExpr[] = [];
-      if (!this.check(TT.RPAREN)) {
-        args.push(this.parseProveExpr());
-        while (this.check(TT.COMMA)) {
-          this.advance();
-          args.push(this.parseProveExpr());
-        }
-      }
+      const args = this.check(TT.RPAREN)
+        ? [] : this.parseCommaList(() => this.parseProveExpr());
       this.eat(TT.RPAREN);
       return { kind: "call", name, args };
     }

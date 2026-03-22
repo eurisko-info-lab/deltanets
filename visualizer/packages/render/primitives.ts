@@ -11,180 +11,107 @@ import {
   type SVG,
 } from "./core.ts";
 
+// deno-lint-ignore no-explicit-any
+type Entries = Record<string, any>;
+
+/** Apply attrs / styles / eventHandlers overrides to an SVG element. */
+// deno-lint-ignore no-explicit-any
+function applyOverrides(svg: any, o: { attrs: Entries; styles: Entries; eventHandlers: Entries }) {
+  applyEntries(svg, "attr", o.attrs);
+  applyEntries(svg, "style", o.styles);
+  applyEntries(svg, "on", o.eventHandlers);
+}
+
 // Some text.
 export class Text extends Node2D {
-  value: string;
-  attrs: Record<string, any>;
-  styles: Record<string, any>;
-  eventHandlers: Record<string, any>;
-
   constructor(
-    value: string = "",
-    attrs: Record<string, any> = {},
-    styles: Record<string, any> = {},
-    eventHandlers: Record<string, any> = {},
-  ) {
-    super();
-    this.value = value;
-    this.attrs = attrs;
-    this.styles = styles;
-    this.eventHandlers = eventHandlers;
-  }
+    public value: string = "",
+    public attrs: Entries = {},
+    public styles: Entries = {},
+    public eventHandlers: Entries = {},
+  ) { super(); }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-    debug = false,
-  ): SVG | null {
-    const svg = d3
-      .create("svg:text")
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug = false): SVG | null {
+    const svg = d3.create("svg:text")
       .text(this.value)
-      .attr("x", pos.x)
-      .attr("y", pos.y)
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
+      .attr("x", pos.x).attr("y", pos.y)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
       .attr("fill", defaultStroke(theme))
       .style("font-size", "20px")
       .attr("font-family", "Libertinus")
       .attr("pointer-events", "none");
-    applyEntries(svg, "attr", this.attrs);
-    applyEntries(svg, "style", this.styles);
-    applyEntries(svg, "on", this.eventHandlers);
+    applyOverrides(svg, this);
     return svg;
   }
 }
 
 // A rectangle.
 export class Rect extends Node2D {
-  width: number;
-  height: number;
-  rx: number;
-  ry: number;
-  attrs: Record<string, any>;
-  styles: Record<string, any>;
-  eventHandlers: Record<string, any>;
-
   constructor(
-    width: number,
-    height: number,
-    rx: number = 0,
-    ry: number = 0,
-    attrs: Record<string, any> = {},
-    styles: Record<string, any> = {},
-    eventHandlers: Record<string, any> = {},
-  ) {
-    super();
-    this.width = width;
-    this.height = height;
-    this.rx = rx;
-    this.ry = ry;
-    this.attrs = attrs;
-    this.styles = styles;
-    this.eventHandlers = eventHandlers;
-  }
+    public width: number,
+    public height: number,
+    public rx: number = 0,
+    public ry: number = 0,
+    public attrs: Entries = {},
+    public styles: Entries = {},
+    public eventHandlers: Entries = {},
+  ) { super(); }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-    debug = false,
-  ): SVG | null {
-    const svg = d3
-      .create("svg:rect")
-      .attr("x", pos.x)
-      .attr("y", pos.y)
-      .attr("width", this.width)
-      .attr("height", this.height)
-      .attr("rx", this.rx)
-      .attr("ry", this.ry)
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug = false): SVG | null {
+    const svg = d3.create("svg:rect")
+      .attr("x", pos.x).attr("y", pos.y)
+      .attr("width", this.width).attr("height", this.height)
+      .attr("rx", this.rx).attr("ry", this.ry)
       .attr("fill", defaultFill(theme))
       .attr("stroke", defaultStroke(theme))
       .attr("stroke-width", DEFAULT_LINE_WIDTH);
-    applyEntries(svg, "attr", this.attrs);
-    applyEntries(svg, "style", this.styles);
-    applyEntries(svg, "on", this.eventHandlers);
+    applyOverrides(svg, this);
     return svg;
   }
 }
 
 // A circle.
 export class Circle extends Node2D {
-  radius: number;
-  attrs: Record<string, any>;
-  styles: Record<string, any>;
-  eventHandlers: Record<string, any>;
-
   constructor(
-    radius: number,
-    attrs: Record<string, any> = {},
-    styles: Record<string, any> = {},
-    eventHandlers: Record<string, any> = {},
-  ) {
-    super();
-    this.radius = radius;
-    this.attrs = attrs;
-    this.styles = styles;
-    this.eventHandlers = eventHandlers;
-  }
+    public radius: number,
+    public attrs: Entries = {},
+    public styles: Entries = {},
+    public eventHandlers: Entries = {},
+  ) { super(); }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-    debug = false,
-  ): SVG | null {
-    const svg = d3
-      .create("svg:circle")
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug = false): SVG | null {
+    const svg = d3.create("svg:circle")
       .attr("r", this.radius)
-      .attr("cx", pos.x)
-      .attr("cy", pos.y)
+      .attr("cx", pos.x).attr("cy", pos.y)
       .attr("fill", defaultFill(theme))
       .attr("stroke", defaultStroke(theme))
       .attr("stroke-width", DEFAULT_LINE_WIDTH);
-    applyEntries(svg, "attr", this.attrs);
-    applyEntries(svg, "style", this.styles);
-    applyEntries(svg, "on", this.eventHandlers);
+    applyOverrides(svg, this);
     return svg;
   }
 }
 
 // A path.
 export class Path extends Node2D {
-  path: d3.Path;
-  attrs: Record<string, any>;
-  styles: Record<string, any>;
-  eventHandlers: Record<string, any>;
   translate = true;
-
   constructor(
-    path: d3.Path = d3.path(),
-    attrs: Record<string, any> = {},
-    styles: Record<string, any> = {},
-    eventHandlers: Record<string, any> = {},
+    public path: d3.Path = d3.path(),
+    public attrs: Entries = {},
+    public styles: Entries = {},
+    public eventHandlers: Entries = {},
   ) {
     super();
-    this.path = path;
-    this.attrs = attrs;
-    this.styles = styles;
-    this.eventHandlers = eventHandlers;
     this.attrs["stroke-linejoin"] = "round";
   }
 
-  override renderSelf(
-    pos: Pos,
-    theme: "light" | "dark",
-    debug = false,
-  ): SVG | null {
-    const svg = d3
-      .create("svg:path")
+  override renderSelf(pos: Pos, theme: "light" | "dark", debug = false): SVG | null {
+    const svg = d3.create("svg:path")
       .attr("d", this.path.toString())
       .attr("fill", "none")
       .attr("stroke", defaultStroke(theme))
       .attr("stroke-width", DEFAULT_LINE_WIDTH);
-    if (this.translate) {
-      svg.attr("transform", `translate(${pos.x}, ${pos.y})`);
-    }
-    applyEntries(svg, "attr", this.attrs);
-    applyEntries(svg, "style", this.styles);
-    applyEntries(svg, "on", this.eventHandlers);
+    if (this.translate) svg.attr("transform", `translate(${pos.x}, ${pos.y})`);
+    applyOverrides(svg, this);
     return svg;
   }
 }
@@ -306,24 +233,16 @@ export class Edge extends Node2D {
     this.add(this.highlightPath);
   }
 
+  private static readonly PORT_DIRS: Record<Port, [number, number]> = {
+    n: [0, -1], ne: [Math.SQRT1_2, -Math.SQRT1_2],
+    e: [1, 0], se: [Math.SQRT1_2, Math.SQRT1_2],
+    s: [0, 1], sw: [-Math.SQRT1_2, Math.SQRT1_2],
+    w: [-1, 0], nw: [-Math.SQRT1_2, -Math.SQRT1_2],
+  };
+
   portOffset(port: Port, s: number): Pos {
-    if (port === "n") {
-      return { x: 0, y: -s };
-    } else if (port === "ne") {
-      return { x: Math.SQRT1_2 * s, y: -Math.SQRT1_2 * s };
-    } else if (port === "e") {
-      return { x: s, y: 0 };
-    } else if (port === "se") {
-      return { x: Math.SQRT1_2 * s, y: Math.SQRT1_2 * s };
-    } else if (port === "s") {
-      return { x: 0, y: s };
-    } else if (port === "sw") {
-      return { x: -Math.SQRT1_2 * s, y: Math.SQRT1_2 * s };
-    } else if (port === "w") {
-      return { x: -s, y: 0 };
-    } else {
-      return { x: -Math.SQRT1_2 * s, y: -Math.SQRT1_2 * s }; // port === "nw"
-    }
+    const [dx, dy] = Edge.PORT_DIRS[port];
+    return { x: dx * s, y: dy * s };
   }
 
   override renderSelf(
