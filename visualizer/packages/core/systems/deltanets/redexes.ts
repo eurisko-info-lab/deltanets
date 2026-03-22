@@ -17,8 +17,7 @@ import {
   reduceErase,
 } from "../../reductions.ts";
 import {
-  ANNIHILATION_PAIRS,
-  ERASE_RULE_PAIRS,
+  DEFAULT_RULES,
   formatRepLabel,
   isExprAgent,
   isTypeNode,
@@ -226,89 +225,81 @@ export function getRedexes(
           continue;
         }
 
-        const matchesPair = (pairs: [string, string][]) =>
-          pairs.some(([a, b]) =>
-            (node.type === a && other.type === b) ||
-            (node.type === b && other.type === a)
-          );
+        const activeRules = rules ?? DEFAULT_RULES;
 
         if (node.type === "era") {
           createRedex(node, other, false, () => reduceErase(other, graph));
         } else if (other.type === "era") {
           createRedex(node, other, false, () => reduceErase(node, graph));
-        } else if (
-          (node.type === "abs" && other.type === "app") ||
-          matchesPair(ANNIHILATION_PAIRS)
-        ) {
+        } else if (node.type === "abs" && other.type === "app") {
           createRedex(node, other, false, () => reduceAnnihilate(node, graph));
-        } else if (matchesPair(ERASE_RULE_PAIRS)) {
-          createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
-        } else if (rules !== undefined && findRule(node.type, other.type, rules) !== undefined) {
-          // Dynamic rule lookup from .inet system definitions
-          const rule = findRule(node.type, other.type, rules)!;
-          if (rule.action.kind === "builtin") {
-            if (rule.action.name === "annihilate") {
-              createRedex(node, other, false, () => reduceAnnihilate(node, graph));
-            } else if (rule.action.name === "erase") {
-              createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
-            } else if (rule.action.name === "commute") {
-              createRedex(node, other, false, () => reduceCommute(node, graph));
+        } else {
+          const rule = findRule(node.type, other.type, activeRules);
+          if (rule !== undefined) {
+            if (rule.action.kind === "builtin") {
+              if (rule.action.name === "annihilate") {
+                createRedex(node, other, false, () => reduceAnnihilate(node, graph));
+              } else if (rule.action.name === "erase") {
+                createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
+              } else if (rule.action.name === "commute") {
+                createRedex(node, other, false, () => reduceCommute(node, graph));
+              }
+            } else if (rule.action.kind === "custom" && agentPorts) {
+              const left = node.type === rule.agentA ? node : other;
+              const right = left === node ? other : node;
+              createRedex(node, other, false, () => {
+                reduceCustomRule(left, right, graph, rule, agentPorts);
+              });
             }
-          } else if (rule.action.kind === "custom" && agentPorts) {
-            const left = node.type === rule.agentA ? node : other;
-            const right = left === node ? other : node;
+          } else if (
+            node.type.startsWith("rep") &&
+            !other.type.startsWith("rep")
+          ) {
+            // Rep commutation with expression agents (abs, app, custom)
+            const level = parseRepLabel(node.label!).level;
             createRedex(node, other, false, () => {
-              reduceCustomRule(left, right, graph, rule, agentPorts);
-            });
-          }
-        } else if (
-          node.type.startsWith("rep") &&
-          !other.type.startsWith("rep")
-        ) {
-          // Rep commutation with expression agents (abs, app, custom)
-          const level = parseRepLabel(node.label!).level;
-          createRedex(node, other, false, () => {
-            const { nodeClones } = reduceCommute(node, graph);
-            nodeClones.forEach((clone, i) => {
-              if (i === 0) {
-                clone.label = formatRepLabel(level, "unknown");
-              } else if (other.type === "abs" && i >= 2) {
-                // Abs type-port clone: base level, no type flip
-                clone.label = formatRepLabel(level, "unknown");
-              } else {
-                clone.label = formatRepLabel(
-                  relativeLevel ? level + 1 : level, "unknown",
-                );
-                clone.type = clone.type === "rep-in" ? "rep-out" : "rep-in";
-              }
-            });
-          });
-        } else if (
-          node.type.startsWith("rep") &&
-          other.type.startsWith("rep")
-        ) {
-          const a = node;
-          const b = other;
-          const { level: top, status: topFlag } = parseRepLabel(a.label!);
-          const { level: bottom, status: bottomFlag } = parseRepLabel(b.label!);
-          if (top === bottom) {
-            createRedex(a, b, false, () => reduceAnnihilate(b, graph));
-          } else {
-            createRedex(a, b, false, () => {
-              const { nodeClones, otherClones } = reduceCommute(b, graph);
-              if (top > bottom) {
-                otherClones.forEach((node, i) => {
-                  node.label = formatRepLabel(top + b.levelDeltas![i], topFlag);
-                });
-              } else {
-                nodeClones.forEach((node, i) => {
-                  node.label = formatRepLabel(
-                    bottom + a.levelDeltas![i],
-                    bottomFlag,
+              const { nodeClones } = reduceCommute(node, graph);
+              nodeClones.forEach((clone, i) => {
+                if (i === 0) {
+                  clone.label = formatRepLabel(level, "unknown");
+                } else if (other.type === "abs" && i >= 2) {
+                  // Abs type-port clone: base level, no type flip
+                  clone.label = formatRepLabel(level, "unknown");
+                } else {
+                  clone.label = formatRepLabel(
+                    relativeLevel ? level + 1 : level, "unknown",
                   );
-                });
-              }
+                  clone.type = clone.type === "rep-in" ? "rep-out" : "rep-in";
+                }
+              });
             });
+          } else if (
+            node.type.startsWith("rep") &&
+            other.type.startsWith("rep")
+          ) {
+            const a = node;
+            const b = other;
+            const { level: top, status: topFlag } = parseRepLabel(a.label!);
+            const { level: bottom, status: bottomFlag } = parseRepLabel(b.label!);
+            if (top === bottom) {
+              createRedex(a, b, false, () => reduceAnnihilate(b, graph));
+            } else {
+              createRedex(a, b, false, () => {
+                const { nodeClones, otherClones } = reduceCommute(b, graph);
+                if (top > bottom) {
+                  otherClones.forEach((node, i) => {
+                    node.label = formatRepLabel(top + b.levelDeltas![i], topFlag);
+                  });
+                } else {
+                  nodeClones.forEach((node, i) => {
+                    node.label = formatRepLabel(
+                      bottom + a.levelDeltas![i],
+                      bottomFlag,
+                    );
+                  });
+                }
+              });
+            }
           }
         }
       } else if (

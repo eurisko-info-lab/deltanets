@@ -2,7 +2,7 @@
 
 import { removeFromArrayIf } from "../../util.ts";
 import { Ports } from "../../types.ts";
-import type { Graph, Node, NodePort } from "../../types.ts";
+import type { Graph, InteractionRule, Node, NodePort } from "../../types.ts";
 import { link, reciprocal } from "../../graph.ts";
 import { reduceCommute } from "../../reductions.ts";
 
@@ -150,19 +150,22 @@ export function reduceEraseRule(nodeA: Node, nodeB: Node, graph: Graph) {
   removeFromArrayIf(graph, (n) => n === nodeA || n === nodeB);
 }
 
-// Lambda cube annihilation pairs: [agentA, agentB]
-export const ANNIHILATION_PAIRS: [string, string][] = [
-  ["tyabs", "tyapp"],
-  ["type-abs", "type-app"],
-  ["fst", "pair"],
-  ["snd", "pair"],
-  ["tyapp", "type-abs"], // λω cross-rule
-];
+// Default interaction rules for lambda cube agents (used when no .inet rules are provided).
+// These mirror the rules defined in lambda-cube.inet but are available for raw lambda terms.
 
-// Lambda cube cross-rule erasure pairs: [agentA, agentB]
-export const ERASE_RULE_PAIRS: [string, string][] = [
-  ["tyabs", "fst"], // λP2
-  ["tyabs", "snd"], // λP2
-  ["type-abs", "fst"], // λPω
-  ["type-abs", "snd"], // λPω
+const annihilate = { kind: "builtin", name: "annihilate" } as const;
+const erase = { kind: "builtin", name: "erase" } as const;
+
+export const DEFAULT_RULES: InteractionRule[] = [
+  // Lambda cube annihilation rules
+  { agentA: "tyabs", agentB: "tyapp", action: annihilate },
+  { agentA: "type-abs", agentB: "type-app", action: annihilate },
+  { agentA: "fst", agentB: "pair", action: annihilate },
+  { agentA: "snd", agentB: "pair", action: annihilate },
+  { agentA: "tyapp", agentB: "type-abs", action: annihilate }, // λω cross-rule
+  // Lambda cube cross-rule erasure
+  { agentA: "tyabs", agentB: "fst", action: erase }, // λP2
+  { agentA: "tyabs", agentB: "snd", action: erase }, // λP2
+  { agentA: "type-abs", agentB: "fst", action: erase }, // λPω
+  { agentA: "type-abs", agentB: "snd", action: erase }, // λPω
 ];
