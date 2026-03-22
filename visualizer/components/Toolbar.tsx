@@ -41,6 +41,7 @@ import IconArrowLeft from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-
 import IconArrowRight from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-right.tsx";
 import IconArrowRightToArc from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-right-to-arc.tsx";
 import IconArrowBarToRight from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/arrow-bar-to-right.tsx";
+import IconChevronsRight from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/chevrons-right.tsx";
 import IconFocusCentered from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/focus-centered.tsx";
 import IconMaximize from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/maximize.tsx";
 import IconDownload from "https://deno.land/x/tabler_icons_tsx@0.0.7/tsx/download.tsx";
@@ -433,6 +434,20 @@ export default function Toolbar({ examples }: { examples: Example[] }) {
             ? <IconArrowRight />
             : <IconArrowRightToArc />)}
       </button>
+      {!tcActive && METHODS[method.value].state.value?.forwardParallel && (
+        <button
+          type="button"
+          title="Reduce all parallel redexes in one step. Keyboard shortcut: Ctrl + right arrow key."
+          class={squareButtonClass}
+          style={{
+            borderColor: theme.value === "light" ? "#000D" : "#FFF6",
+          }}
+          onClick={METHODS[method.value].state.value?.forwardParallel}
+          disabled={!METHODS[method.value].state.value?.forwardParallel}
+        >
+          <IconChevronsRight />
+        </button>
+      )}
       <button
         type="button"
         title="Go to the last step in the history. Keyboard shortcut: Shift + right arrow key."
