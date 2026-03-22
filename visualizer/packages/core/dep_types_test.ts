@@ -450,3 +450,131 @@ Deno.test("deptype: wrong plus_comm proof is caught", () => {
   const result = compileCore(source);
   assertEquals(result.errors.length > 0, true, "expected type errors for wrong plus_comm");
 });
+
+// ─── plus_assoc Tests ──────────────────────────────────────────────
+
+const ASSOC_SYSTEM = COMM_SYSTEM.trimEnd().replace(/\}$/, "") + `
+  prove plus_assoc(a : Nat, b : Nat, c : Nat) -> Eq(add(add(a, b), c), add(a, add(b, c))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_assoc(k, b, c))
+  }
+}
+`;
+
+Deno.test("deptype: plus_assoc compiles with correct ports", () => {
+  const result = compile(ASSOC_SYSTEM);
+  const sys = result.systems.get("Comm")!;
+  assertEquals(sys.agents.has("plus_assoc"), true);
+  const pa = sys.agents.get("plus_assoc")!;
+  assertEquals(pa.ports.map((p: { name: string }) => p.name), ["principal", "result", "b", "c"]);
+});
+
+Deno.test("deptype: plus_assoc(0, 0, 0) → refl in 3 steps", () => {
+  const core = compile(ASSOC_SYSTEM + `
+    graph test {
+      let r = root  let pa = plus_assoc
+      let z1 = Zero  let z2 = Zero  let z3 = Zero
+      wire r.principal -- pa.result
+      wire pa.principal -- z1.principal
+      wire pa.b -- z2.principal
+      wire pa.c -- z3.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 3);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: plus_assoc(1, 0, 0) → refl in 5 steps", () => {
+  const core = compile(ASSOC_SYSTEM + `
+    graph test {
+      let r = root  let pa = plus_assoc
+      let s = Succ  let z1 = Zero  let z2 = Zero  let z3 = Zero
+      wire r.principal -- pa.result
+      wire pa.principal -- s.principal
+      wire s.pred -- z1.principal
+      wire pa.b -- z2.principal
+      wire pa.c -- z3.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 5);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: plus_assoc(2, 1, 1) → refl in 9 steps", () => {
+  const core = compile(ASSOC_SYSTEM + `
+    graph test {
+      let r = root  let pa = plus_assoc
+      let s1 = Succ  let s2 = Succ  let z1 = Zero
+      let s3 = Succ  let z2 = Zero
+      let s4 = Succ  let z3 = Zero
+      wire r.principal -- pa.result
+      wire pa.principal -- s1.principal
+      wire s1.pred -- s2.principal
+      wire s2.pred -- z1.principal
+      wire pa.b -- s3.principal
+      wire s3.pred -- z2.principal
+      wire pa.c -- s4.principal
+      wire s4.pred -- z3.principal
+    }
+  `);
+  const g = core.graphs.get("test")!;
+  if (g.kind !== "explicit") throw new Error("expected explicit graph");
+  const steps = reduceAll(g.graph, collectRules(core), collectAgentPorts(core));
+  assertEquals(steps, 9);
+  assertEquals(readRootType(g.graph), "refl");
+});
+
+Deno.test("deptype: wrong plus_assoc proof is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "NatEq2" extend "NatEq" {
+      prove bad_assoc(a : Nat, b : Nat, c : Nat) -> Eq(add(add(a, b), c), add(b, add(a, c))) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(bad_assoc(k, b, c))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // Zero case: Eq(add(b, c), add(b, add(Zero, c))) → Eq(add(b, c), add(b, c)) → refl OK
+  // Succ case: left = Succ(add(add(k,b),c)), right = add(b, Succ(add(k,c)))
+  //   cong_succ would give Succ(_) on both sides, but right isn't Succ(...)
+  assertEquals(result.errors.length > 0, true, "expected type errors for wrong plus_assoc");
+});
+
+// ─── Generalized cong Tests ───────────────────────────────────────
+
+Deno.test("deptype: generalized cong works for new constructors", () => {
+  // Define a Wrap constructor and cong_wrap — the type checker handles it
+  // via the generalized cong_ prefix rule without any special casing
+  const result = compile(`
+    system "WrapEq" extend "NatEq" {
+      agent Wrap(principal, inner)
+
+      agent cong_wrap(principal, result)
+      rule cong_wrap <> refl -> {
+        let r = refl
+        relink left.result r.principal
+      }
+
+      prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(plus_zero_right(k))
+      }
+
+      # Uses generalized cong: cong_wrap isn't hardcoded in the type checker,
+      # but the cong_ prefix detection handles it automatically.
+      # Each case uses cross-lemma call to plus_zero_right.
+      prove wrap_pzr(n : Nat) -> Eq(Wrap(add(n, Zero)), Wrap(n)) {
+        | Zero -> refl
+        | Succ(k) -> cong_wrap(cong_succ(plus_zero_right(k)))
+      }
+    }
+  `);
+  const sys = result.systems.get("WrapEq")!;
+  assertEquals(sys.agents.has("wrap_pzr"), true);
+});

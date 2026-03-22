@@ -6,7 +6,7 @@
 //
 // Type inference rules (hard-coded for the Eq/Nat proof system):
 //   refl            : Eq(a, a)       for any a
-//   cong_succ(p)    : Eq(S(a), S(b)) when p : Eq(a, b)
+//   cong_X(p, ...)  : Eq(X(...,a), X(...,b)) when p : Eq(a, b)  (generalized)
 //   sym(p)          : Eq(b, a)       when p : Eq(a, b)
 //   trans(p, q)     : Eq(a, c)       when p : Eq(a, b), q : Eq(b, c)
 //   recursive(args) : substitute args into declared proposition
@@ -199,28 +199,25 @@ function inferType(
   // call expressions
   const { name, args } = expr;
 
-  // cong_succ(p) : Eq(Succ(a), Succ(b)) when p : Eq(a, b)
-  if (name === "cong_succ" && args.length === 1) {
+  // Generalized congruence: cong_X(proof, c1, ..., cn) where X is a constructor.
+  // The proof applies to the LAST position; c1..cn are constants for earlier positions.
+  //   cong_succ(p)       : Eq(Succ(a), Succ(b))       when p : Eq(a, b)
+  //   cong_cons(p, h)    : Eq(Cons(h, a), Cons(h, b)) when p : Eq(a, b)
+  //   cong_pair(p, q, v) : ... etc for any constructor
+  if (name.startsWith("cong_") && args.length >= 1) {
+    const suffix = name.slice(5);
+    const constructorName = suffix.charAt(0).toUpperCase() + suffix.slice(1);
     const inner = inferType(args[0], ctx);
     if (!inner.ok) return inner;
     const eq = extractEq(inner.type);
     if (!eq) {
-      return { ok: false, error: `cong_succ argument must have Eq type, got ${exprToString(inner.type)}` };
+      return { ok: false, error: `${name} first argument must have Eq type, got ${exprToString(inner.type)}` };
     }
-    return { ok: true, type: app("Eq", app("Succ", eq.left), app("Succ", eq.right)) };
-  }
-
-  // cong_cons(p, h) : Eq(Cons(h, a), Cons(h, b)) when p : Eq(a, b)
-  // First arg is the proof, second arg is the head value (erased at runtime)
-  if (name === "cong_cons" && args.length === 2) {
-    const inner = inferType(args[0], ctx);
-    if (!inner.ok) return inner;
-    const eq = extractEq(inner.type);
-    if (!eq) {
-      return { ok: false, error: `cong_cons first argument must have Eq type, got ${exprToString(inner.type)}` };
-    }
-    // args[1] is the head element — appears identically on both sides
-    return { ok: true, type: app("Eq", app("Cons", args[1], eq.left), app("Cons", args[1], eq.right)) };
+    const constants = args.slice(1);
+    return {
+      ok: true,
+      type: app("Eq", app(constructorName, ...constants, eq.left), app(constructorName, ...constants, eq.right)),
+    };
   }
 
   // sym(p) : Eq(b, a) when p : Eq(a, b)

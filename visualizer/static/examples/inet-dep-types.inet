@@ -113,6 +113,18 @@ system "DepTypedProofs" extend "NatEq" {
     | Zero -> sym(plus_zero_right(m))
     | Succ(k) -> trans(cong_succ(plus_comm(k, m)), sym(plus_succ_right(m, k)))
   }
+
+  # ∀a,b,c. add(add(a, b), c) = add(a, add(b, c)) — ASSOCIATIVITY
+  #
+  # Induction on a:
+  #   Zero case:  add(add(0, b), c) = add(b, c) = add(0, add(b, c))  → refl
+  #   Succ case:  add(add(S(k), b), c) normalizes to S(add(add(k, b), c))
+  #               add(S(k), add(b, c)) normalizes to S(add(k, add(b, c)))
+  #               → cong_succ(plus_assoc(k, b, c))
+  prove plus_assoc(a : Nat, b : Nat, c : Nat) -> Eq(add(add(a, b), c), add(a, add(b, c))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_assoc(k, b, c))
+  }
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -337,6 +349,58 @@ graph pc-two-one {
   wire s2.pred      -- z1.principal
   wire pc.m         -- s3.principal
   wire s3.pred      -- z2.principal
+}
+
+# ─── plus_assoc ─────────────────────────────────────────────────────
+# Associativity: add(add(a, b), c) = add(a, add(b, c))
+
+# pa(0, 0, 0) → refl  [3 steps]
+graph pa-zero {
+  let r  = root
+  let pa = plus_assoc
+  let z1 = Zero
+  let z2 = Zero
+  let z3 = Zero
+  wire r.principal  -- pa.result
+  wire pa.principal -- z1.principal
+  wire pa.b         -- z2.principal
+  wire pa.c         -- z3.principal
+}
+
+# pa(1, 0, 0) → refl  [5 steps]
+graph pa-one-zero-zero {
+  let r  = root
+  let pa = plus_assoc
+  let s  = Succ
+  let z1 = Zero
+  let z2 = Zero
+  let z3 = Zero
+  wire r.principal  -- pa.result
+  wire pa.principal -- s.principal
+  wire s.pred       -- z1.principal
+  wire pa.b         -- z2.principal
+  wire pa.c         -- z3.principal
+}
+
+# pa(2, 1, 1) → refl  [9 steps]
+graph pa-two-one-one {
+  let r  = root
+  let pa = plus_assoc
+  let s1 = Succ
+  let s2 = Succ
+  let z1 = Zero
+  let s3 = Succ
+  let z2 = Zero
+  let s4 = Succ
+  let z3 = Zero
+  wire r.principal  -- pa.result
+  wire pa.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z1.principal
+  wire pa.b         -- s3.principal
+  wire s3.pred      -- z2.principal
+  wire pa.c         -- s4.principal
+  wire s4.pred      -- z3.principal
 }
 
 # ─── verification: subst(pc(1,1), add(1,1)) → Succ(Succ(Zero)) ───
