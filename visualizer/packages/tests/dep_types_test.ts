@@ -1498,3 +1498,72 @@ Deno.test("include-aware: compose merges proved context from components", () => 
   const tree = result.proofTrees.get("uses_both")!;
   assertEquals(tree.hasHoles, false);
 });
+
+// ─── Additional negative tests ─────────────────────────────────────
+
+Deno.test("deptype: refl on different constructors is caught", () => {
+  // Eq(Zero, Succ(Zero)) — refl should fail since sides differ
+  const source = BASE_SYSTEM + `
+    system "Bad" extend "NatEq" {
+      prove bad_eq() -> Eq(Zero, Succ(Zero)) {
+        refl
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "refl on Zero ≠ Succ(Zero) should error");
+});
+
+Deno.test("deptype: incomplete pattern match still compiles (no exhaustiveness check yet)", () => {
+  // Only match Zero, missing Succ case — currently accepted
+  const source = BASE_SYSTEM + `
+    system "Incomplete" extend "NatEq" {
+      prove bad_pzr(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+      }
+    }
+  `;
+  const result = compileCore(source);
+  // NOTE: exhaustiveness checking not yet implemented
+  assertEquals(result.errors.length, 0, "incomplete match accepted (no exhaustiveness check)");
+});
+
+Deno.test("deptype: using undefined lemma is caught", () => {
+  const source = BASE_SYSTEM + `
+    system "NoLemma" extend "NatEq" {
+      prove bad(n : Nat) -> Eq(add(n, Zero), n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(nonexistent_lemma(k))
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "undefined lemma should error");
+});
+
+Deno.test("deptype: applying proof term to wrong type is caught", () => {
+  // cong_succ expects Eq(a,b) but gets Nat
+  const source = BASE_SYSTEM + `
+    system "WrongApp" extend "NatEq" {
+      prove bad_app(n : Nat) -> Eq(Succ(n), Succ(n)) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(k)
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "cong_succ applied to Nat should error");
+});
+
+Deno.test("deptype: universe level mismatch in prove return type", () => {
+  // Try to prove Type₁ = Type₀ with refl — should be caught
+  const source = BASE_SYSTEM + `
+    system "UniMismatch" extend "NatEq" {
+      prove bad_uni() -> Eq(Type₁, Type₀) {
+        refl
+      }
+    }
+  `;
+  const result = compileCore(source);
+  assertEquals(result.errors.length > 0, true, "Type₁ ≠ Type₀ refl should error");
+});

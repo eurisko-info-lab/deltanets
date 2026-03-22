@@ -27,3 +27,17 @@ Deno.test("readback: Church numeral 2", () => roundtrip("λf.λx.f (f x)"));
 Deno.test("readback: erasure", () => roundtrip("λx.λy.y"));
 Deno.test("readback: application of terms", () => roundtrip("(λx.x) (λy.y)"));
 Deno.test("readback: free variable", () => roundtrip("λx.y"));
+
+// ─── Edge cases ────────────────────────────────────────────────────
+
+Deno.test("readback: Church numeral 3 (deeper nesting)", () =>
+  roundtrip("λf.λx.f (f (f x))"));
+
+Deno.test("readback: triple abstraction with erasure", () =>
+  roundtrip("λx.λy.λz.x"));
+
+Deno.test("readback: nested application left-associated", () =>
+  roundtrip("λf.λx.f x x"));
+
+Deno.test("readback: K combinator applied", () =>
+  roundtrip("(λx.λy.x) (λa.a)"));

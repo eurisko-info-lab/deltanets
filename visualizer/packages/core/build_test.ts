@@ -23,8 +23,16 @@ function nodeTypes(source: string, systemType?: SystemType) {
 Deno.test("build: identity has root, abs, era, type nodes", () => {
   const graph = build("λx.x", "linear");
   assert(graph.some((n) => n.type === "root"), "has root");
-  assert(graph.some((n) => n.type === "abs"), "has abs");
-  // In linear system, eraser for unused bind is removed along with reps
+  assertEquals(
+    graph.filter((n) => n.type === "abs").length,
+    1,
+    "exactly one abs node",
+  );
+  assertEquals(
+    graph.filter((n) => n.type === "root").length,
+    1,
+    "exactly one root node",
+  );
 });
 
 Deno.test("build: always has exactly one root node", () => {
@@ -42,7 +50,16 @@ Deno.test("build: always has exactly one root node", () => {
 
 Deno.test("build: application creates app node", () => {
   const graph = build("(λx.x) (λy.y)");
-  assert(graph.some((n) => n.type === "app"), "has app node");
+  assertEquals(
+    graph.filter((n) => n.type === "app").length,
+    1,
+    "exactly one app node",
+  );
+  assertEquals(
+    graph.filter((n) => n.type === "abs").length,
+    2,
+    "two abs nodes for two lambdas",
+  );
 });
 
 // ─── Variable binding ──────────────────────────────────────────────
@@ -57,15 +74,19 @@ Deno.test("build: bound variable connects to abs bind port", () => {
 
 Deno.test("build: unused variable creates eraser", () => {
   const graph = build("λx.λy.x", "affine");
-  // y is unused, so there should be an eraser connected to its bind port
+  // y is unused, so there should be exactly one eraser connected to its bind port
   const erasers = graph.filter((n) => n.type === "era");
-  assert(erasers.length >= 1, "at least one eraser for unused variable");
+  assertEquals(erasers.length, 1, "exactly one eraser for one unused variable");
+  // The eraser should be connected to something (the abs node's bind port)
+  assertEquals(erasers[0].ports[0].node.type, "abs");
 });
 
 Deno.test("build: duplicated variable creates replicator", () => {
   const graph = build("λx.x x");
   const reps = graph.filter((n) => n.type.startsWith("rep"));
-  assert(reps.length >= 1, "at least one replicator for duplicated variable");
+  assertEquals(reps.length, 1, "exactly one replicator for one duplication");
+  // Replicator should have 3 ports (principal + 2 aux)
+  assertEquals(reps[0].ports.length, 3);
 });
 
 // ─── Variable shadowing ────────────────────────────────────────────
@@ -94,7 +115,7 @@ Deno.test("build: affine system removes trivial replicators", () => {
 Deno.test("build: full system preserves non-trivial replicators", () => {
   const graph = build("λx.x x", "full");
   const reps = graph.filter((n) => n.type.startsWith("rep"));
-  assert(reps.length >= 1, "replicators preserved for duplication");
+  assertEquals(reps.length, 1, "exactly one replicator for one duplication");
 });
 
 // ─── Free variables ────────────────────────────────────────────────
@@ -108,12 +129,26 @@ Deno.test("build: free variable creates var node", () => {
 
 Deno.test("build: type annotation creates type nodes", () => {
   const graph = build("λx:A.x");
-  assert(graph.some((n) => n.type === "type-base"), "has type-base node");
+  assertEquals(
+    graph.filter((n) => n.type === "type-base").length,
+    1,
+    "exactly one type-base node",
+  );
 });
 
 Deno.test("build: arrow type annotation creates type-arrow", () => {
   const graph = build("λf:A->B.f");
-  assert(graph.some((n) => n.type === "type-arrow"), "has type-arrow node");
+  assertEquals(
+    graph.filter((n) => n.type === "type-arrow").length,
+    1,
+    "exactly one type-arrow node",
+  );
+  // Arrow type must also have two type-base children for A and B
+  assertEquals(
+    graph.filter((n) => n.type === "type-base").length,
+    2,
+    "two type-base nodes for A and B",
+  );
 });
 
 Deno.test("build: unannotated creates type-hole", () => {
@@ -143,4 +178,53 @@ Deno.test("build: all ports are bidirectionally linked", () => {
       );
     }
   }
+});
+
+// ─── Deeper structure tests ────────────────────────────────────────
+
+Deno.test("build: root principal port connects to top-level node", () => {
+  const graph = build("λx.x");
+  const root = graph.find((n) => n.type === "root")!;
+  // Root's principal port should connect to the top-level abs
+  assertEquals(root.ports[0].node.type, "abs");
+});
+
+Deno.test("build: bidirectionality holds for all system types", () => {
+  const exprs = ["λx.x", "λx.λy.x", "λx.x x", "λx.λy.x x"];
+  const systemTypes: Array<"linear" | "affine" | "relevant" | "full"> = [
+    "linear",
+    "affine",
+    "relevant",
+    "full",
+  ];
+  for (const st of systemTypes) {
+    for (const expr of exprs) {
+      const graph = build(expr, st);
+      for (const node of graph) {
+        for (let i = 0; i < node.ports.length; i++) {
+          const target = node.ports[i];
+          assertEquals(
+            target.node.ports[target.port].node,
+            node,
+            `[${st}] "${expr}": port ${i} of ${node.type} should be bidirectional`,
+          );
+        }
+      }
+    }
+  }
+});
+
+Deno.test("build: multiple erasures in full system", () => {
+  // λx.λy.λz.x — both y and z are unused
+  const graph = build("λx.λy.λz.x", "full");
+  const erasers = graph.filter((n) => n.type === "era");
+  assertEquals(erasers.length, 2, "two erasers for two unused variables");
+});
+
+Deno.test("build: triple duplication creates replicator with extra aux port", () => {
+  // λx.x x x – single fan-out node with 4 ports (1 principal + 3 aux)
+  const graph = build("λx.x x x", "full");
+  const reps = graph.filter((n) => n.type.startsWith("rep"));
+  assertEquals(reps.length, 1, "one replicator for triple use");
+  assertEquals(reps[0].ports.length, 4, "replicator has 4 ports for 3-way fan-out");
 });
