@@ -1,15 +1,18 @@
-// Tests for meta-agents (Phase 18).
-// Verifies MatchGoal, NormalizeTerm, ApplyRule agents, graph read/write,
-// and integration with `open "Meta"`.
+// Tests for meta-agents (Phase 18 + Phase 20).
+// Verifies MatchGoal, NormalizeTerm, ApplyRule, CtxSearch, EqCheck agents,
+// graph read/write, and integration with `open "Meta"`.
 
 import { assertEquals, assertNotEquals } from "$std/assert/mod.ts";
 import {
   compileCore,
   META_AGENTS, META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
+  META_CTX_SEARCH, META_EQ_CHECK,
   META_AGENT_DECLS,
   registerMetaAgents,
   readTermFromGraph, writeTermToGraph, collectTermTree,
   createNormalizeHandler, createApplyRuleHandler,
+  createCtxSearchHandler, createEqCheckHandler,
+  exprEqual, searchProofContext,
   TM_VAR, TM_APP, TM_PI, TM_NIL, TM_CONS,
 } from "@deltanets/lang";
 import { link } from "@deltanets/core";
@@ -38,11 +41,13 @@ function mkNode(type: string, label: string, portCount: number): Node {
 
 // ─── META_AGENTS constant ──────────────────────────────────────────
 
-Deno.test("meta-agents: META_AGENTS contains 3 agents", () => {
-  assertEquals(META_AGENTS.length, 3);
+Deno.test("meta-agents: META_AGENTS contains 5 agents", () => {
+  assertEquals(META_AGENTS.length, 5);
   assertEquals(META_AGENTS[0], META_MATCH_GOAL);
   assertEquals(META_AGENTS[1], META_APPLY_RULE);
   assertEquals(META_AGENTS[2], META_NORMALIZE);
+  assertEquals(META_AGENTS[3], META_CTX_SEARCH);
+  assertEquals(META_AGENTS[4], META_EQ_CHECK);
 });
 
 Deno.test("meta-agents: META_AGENT_DECLS matches META_AGENTS", () => {
@@ -554,4 +559,189 @@ system "T" extend "NatEq" {
   assertEquals(ar.ports.length, 2);
   assertEquals(ar.ports[0].name, "principal");
   assertEquals(ar.ports[1].name, "result");
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase 20 — CtxSearch, EqCheck, exprEqual, searchProofContext
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Constants ─────────────────────────────────────────────────────
+
+Deno.test("meta-agents: META_CTX_SEARCH is 'CtxSearch'", () => {
+  assertEquals(META_CTX_SEARCH, "CtxSearch");
+});
+
+Deno.test("meta-agents: META_EQ_CHECK is 'EqCheck'", () => {
+  assertEquals(META_EQ_CHECK, "EqCheck");
+});
+
+Deno.test("meta-agents: META_AGENT_DECLS includes CtxSearch", () => {
+  const decl = META_AGENT_DECLS.find((d) => d.name === META_CTX_SEARCH);
+  assertNotEquals(decl, undefined);
+  assertEquals(decl!.ports.length, 2);
+  assertEquals(decl!.ports[0].name, "principal");
+  assertEquals(decl!.ports[1].name, "result");
+});
+
+Deno.test("meta-agents: META_AGENT_DECLS includes EqCheck", () => {
+  const decl = META_AGENT_DECLS.find((d) => d.name === META_EQ_CHECK);
+  assertNotEquals(decl, undefined);
+  assertEquals(decl!.ports.length, 4);
+  assertEquals(decl!.ports[0].name, "principal");
+  assertEquals(decl!.ports[1].name, "second");
+  assertEquals(decl!.ports[2].name, "on_eq");
+  assertEquals(decl!.ports[3].name, "on_neq");
+});
+
+// ─── exprEqual ─────────────────────────────────────────────────────
+
+Deno.test("meta-agents: exprEqual — identical idents", () => {
+  assertEquals(exprEqual({ kind: "ident", name: "x" }, { kind: "ident", name: "x" }), true);
+});
+
+Deno.test("meta-agents: exprEqual — different idents", () => {
+  assertEquals(exprEqual({ kind: "ident", name: "x" }, { kind: "ident", name: "y" }), false);
+});
+
+Deno.test("meta-agents: exprEqual — identical calls", () => {
+  const a = { kind: "call" as const, name: "Succ", args: [{ kind: "ident" as const, name: "n" }] };
+  const b = { kind: "call" as const, name: "Succ", args: [{ kind: "ident" as const, name: "n" }] };
+  assertEquals(exprEqual(a, b), true);
+});
+
+Deno.test("meta-agents: exprEqual — different calls", () => {
+  const a = { kind: "call" as const, name: "Succ", args: [{ kind: "ident" as const, name: "n" }] };
+  const b = { kind: "call" as const, name: "Succ", args: [{ kind: "ident" as const, name: "m" }] };
+  assertEquals(exprEqual(a, b), false);
+});
+
+Deno.test("meta-agents: exprEqual — pi with α-renaming", () => {
+  const a: ProveExpr = { kind: "pi", param: "x", domain: { kind: "ident", name: "Nat" }, codomain: { kind: "ident", name: "x" } };
+  const b: ProveExpr = { kind: "pi", param: "y", domain: { kind: "ident", name: "Nat" }, codomain: { kind: "ident", name: "y" } };
+  assertEquals(exprEqual(a, b), true);
+});
+
+// ─── EqCheck handler ───────────────────────────────────────────────
+
+Deno.test("meta-agents: EqCheck on equal terms produces TmVar(refl)", () => {
+  const graph: Node[] = [];
+  const eqAgent = mkNode(META_EQ_CHECK, META_EQ_CHECK, 4);
+  const termA = mkNode(TM_VAR, "x", 1);
+  const termB = mkNode(TM_VAR, "x", 1);
+  const resultEq = mkNode("root", "root", 1);
+  const resultNeq = mkNode("root", "root", 1);
+  graph.push(eqAgent, termA, termB, resultEq, resultNeq);
+
+  // Wire: principal ↔ termA, second ↔ termB, on_eq ↔ resultEq, on_neq ↔ resultNeq
+  link({ node: eqAgent, port: 0 }, { node: termA, port: 0 });
+  link({ node: eqAgent, port: 1 }, { node: termB, port: 0 });
+  link({ node: eqAgent, port: 2 }, { node: resultEq, port: 0 });
+  link({ node: eqAgent, port: 3 }, { node: resultNeq, port: 0 });
+
+  const handler = createEqCheckHandler();
+  const agentPorts: AgentPortDefs = new Map();
+  handler(eqAgent, termA, graph, agentPorts);
+
+  // on_eq should have TmVar("refl")
+  const eqNode = resultEq.ports[0].node;
+  assertEquals(eqNode.type, TM_VAR);
+  assertEquals(eqNode.label, "refl");
+
+  // on_neq should have eraser
+  const neqNode = resultNeq.ports[0].node;
+  assertEquals(neqNode.type, "era");
+});
+
+Deno.test("meta-agents: EqCheck on unequal terms branches to on_neq", () => {
+  const graph: Node[] = [];
+  const eqAgent = mkNode(META_EQ_CHECK, META_EQ_CHECK, 4);
+  const termA = mkNode(TM_VAR, "x", 1);
+  const termB = mkNode(TM_VAR, "y", 1);
+  const resultEq = mkNode("root", "root", 1);
+  const resultNeq = mkNode("root", "root", 1);
+  graph.push(eqAgent, termA, termB, resultEq, resultNeq);
+
+  link({ node: eqAgent, port: 0 }, { node: termA, port: 0 });
+  link({ node: eqAgent, port: 1 }, { node: termB, port: 0 });
+  link({ node: eqAgent, port: 2 }, { node: resultEq, port: 0 });
+  link({ node: eqAgent, port: 3 }, { node: resultNeq, port: 0 });
+
+  const handler = createEqCheckHandler();
+  const agentPorts: AgentPortDefs = new Map();
+  handler(eqAgent, termA, graph, agentPorts);
+
+  // on_neq should have TmVar("x") (original goal)
+  const neqNode = resultNeq.ports[0].node;
+  assertEquals(neqNode.type, TM_VAR);
+  assertEquals(neqNode.label, "x");
+
+  // on_eq should have eraser
+  const eqNode = resultEq.ports[0].node;
+  assertEquals(eqNode.type, "era");
+});
+
+// ─── registerMetaAgents includes EqCheck ───────────────────────────
+
+Deno.test("meta-agents: registerMetaAgents registers EqCheck rules", () => {
+  const agents = new Map<string, import("@deltanets/lang").AgentDef>();
+  const rules: import("@deltanets/lang").RuleDef[] = [];
+  registerMetaAgents(agents, rules);
+  assertEquals(agents.has(META_EQ_CHECK), true);
+  const eqRules = rules.filter((r) => r.agentA === META_EQ_CHECK || r.agentB === META_EQ_CHECK);
+  // Should have EqCheck × each of the 5 Tm* types
+  assertEquals(eqRules.length >= 5, true, `expected ≥5 EqCheck rules, got ${eqRules.length}`);
+});
+
+Deno.test("meta-agents: registerMetaAgents registers CtxSearch agent", () => {
+  const agents = new Map<string, import("@deltanets/lang").AgentDef>();
+  const rules: import("@deltanets/lang").RuleDef[] = [];
+  registerMetaAgents(agents, rules);
+  assertEquals(agents.has(META_CTX_SEARCH), true);
+  // CtxSearch rules are per-invocation only, not in registerMetaAgents
+  const ctxRules = rules.filter((r) => r.agentA === META_CTX_SEARCH || r.agentB === META_CTX_SEARCH);
+  assertEquals(ctxRules.length, 0);
+});
+
+// ─── open "Meta" integration ───────────────────────────────────────
+
+Deno.test("meta-agents: open Meta registers CtxSearch and EqCheck agents", () => {
+  const result = compileAndAssert(BASE + `
+system "T" extend "NatEq" {
+  open "Quote"
+  open "Meta"
+}
+`);
+  const sys = result.systems.get("T")!;
+  assertEquals(sys.agents.has(META_CTX_SEARCH), true);
+  assertEquals(sys.agents.has(META_EQ_CHECK), true);
+});
+
+Deno.test("meta-agents: EqCheck port structure via open Meta", () => {
+  const result = compileAndAssert(BASE + `
+system "T" extend "NatEq" {
+  open "Quote"
+  open "Meta"
+}
+`);
+  const sys = result.systems.get("T")!;
+  const eq = sys.agents.get(META_EQ_CHECK)!;
+  assertEquals(eq.ports.length, 4);
+  assertEquals(eq.ports[0].name, "principal");
+  assertEquals(eq.ports[1].name, "second");
+  assertEquals(eq.ports[2].name, "on_eq");
+  assertEquals(eq.ports[3].name, "on_neq");
+});
+
+Deno.test("meta-agents: CtxSearch port structure via open Meta", () => {
+  const result = compileAndAssert(BASE + `
+system "T" extend "NatEq" {
+  open "Quote"
+  open "Meta"
+}
+`);
+  const sys = result.systems.get("T")!;
+  const cs = sys.agents.get(META_CTX_SEARCH)!;
+  assertEquals(cs.ports.length, 2);
+  assertEquals(cs.ports[0].name, "principal");
+  assertEquals(cs.ports[1].name, "result");
 });

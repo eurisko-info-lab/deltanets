@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// Tactics — Phase 19
+// Tactics — Phase 19 + Phase 20 (meta-agent primitives in user tactics)
 // Built-in tactic agents (Simp, Decide, Omega, Auto) as INet
 // meta-handlers, and user-definable tactics via
 // `tactic name { agents... rules... }`.
@@ -13,7 +13,12 @@ import {
   withNormTable, normalize, computeGoalType,
   tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto,
 } from "./typecheck-prove.ts";
-import { readTermFromGraph, writeTermToGraph, collectTermTree } from "./meta-agents.ts";
+import {
+  readTermFromGraph, writeTermToGraph, collectTermTree,
+  createCtxSearchHandler, createNormalizeHandler, createEqCheckHandler,
+  META_CTX_SEARCH, META_NORMALIZE, META_EQ_CHECK,
+  META_AGENT_DECLS,
+} from "./meta-agents.ts";
 import {
   TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM,
 } from "./quotation.ts";
@@ -352,7 +357,7 @@ function resolveUserTacticExpr(
       const tactic = tactics.get(expr.name)!;
       const goal = computeGoalType(prove, caseArm, provedCtx);
       return withNormTable(computeRules, () => {
-        const result = runUserTactic(tactic, goal, agents, rules);
+        const result = runUserTactic(tactic, goal, agents, rules, prove, caseArm, provedCtx, computeRules);
         return result ?? expr;
       });
     }
@@ -390,12 +395,18 @@ function resolveUserTacticExpr(
 }
 
 /** Run a user-defined tactic by creating a temporary INet graph,
- *  reducing it, and reading back the proof term. */
+ *  reducing it, and reading back the proof term.
+ *  Phase 20: CtxSearch/NormalizeTerm/EqCheck meta-agents are injected
+ *  so user tactics can normalize, search context, and compare terms. */
 function runUserTactic(
   tactic: TacticDef,
   goal: AST.ProveExpr,
   systemAgents: Map<string, AgentDef>,
   systemRules: RuleDef[],
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
 ): AST.ProveExpr | null {
   const graph: Graph = [];
 
@@ -424,13 +435,43 @@ function runUserTactic(
     })),
   ];
 
-  // Build agent port defs
+  // Phase 20: inject CtxSearch rules (per-invocation, captures proof context)
+  const ctxHandler = createCtxSearchHandler(prove, caseArm, provedCtx, computeRules);
+  const normHandler = createNormalizeHandler(computeRules);
+  const eqHandler = createEqCheckHandler();
+  const tmTypes = [TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM];
+  for (const tm of tmTypes) {
+    allRules.push({ agentA: META_CTX_SEARCH, agentB: tm, action: { kind: "meta", handler: ctxHandler } });
+    // Ensure NormalizeTerm and EqCheck are always available
+    if (!allRules.some((r) =>
+      (r.agentA === META_NORMALIZE && r.agentB === tm) ||
+      (r.agentB === META_NORMALIZE && r.agentA === tm)
+    )) {
+      allRules.push({ agentA: META_NORMALIZE, agentB: tm, action: { kind: "meta", handler: normHandler } });
+    }
+    if (!allRules.some((r) =>
+      (r.agentA === META_EQ_CHECK && r.agentB === tm) ||
+      (r.agentB === META_EQ_CHECK && r.agentA === tm)
+    )) {
+      allRules.push({ agentA: META_EQ_CHECK, agentB: tm, action: { kind: "meta", handler: eqHandler } });
+    }
+  }
+
+  // Build agent port defs — include meta-agents
   const agentPorts: AgentPortDefs = new Map();
   for (const [name, agent] of tactic.agents) {
     agentPorts.set(name, agent.portIndex);
   }
   for (const [name, agent] of systemAgents) {
     if (!agentPorts.has(name)) agentPorts.set(name, agent.portIndex);
+  }
+  // Ensure meta-agent port defs are registered
+  for (const decl of META_AGENT_DECLS) {
+    if (!agentPorts.has(decl.name)) {
+      const portIndex = new Map<string, number>();
+      decl.ports.forEach((p, i) => portIndex.set(p.name, i));
+      agentPorts.set(decl.name, portIndex);
+    }
   }
 
   // Reduce

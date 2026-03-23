@@ -249,7 +249,7 @@ function resolveImplicitCall(
 
 // ─── Expression equality (syntactic, after normalization) ──────────
 
-function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
+export function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   if (a.kind === "hole" || b.kind === "hole") return false;
   if (a.kind === "match" || b.kind === "match") return false;
   if (a.kind === "metavar" && b.kind === "metavar") return a.id === b.id;
@@ -1420,6 +1420,21 @@ export function computeGoalType(
   constructorTyping?: ConstructorTyping,
 ): AST.ProveExpr {
   return caseCtx(prove, caseArm, provedCtx, constructorTyping).expectedType;
+}
+
+/**
+ * Search the proof context for a proof term matching the given goal.
+ * Used by CtxSearch meta-agent. Assumes withNormTable is already active.
+ */
+export function searchProofContext(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  goal: AST.ProveExpr,
+): AST.ProveExpr | null {
+  const { ctx } = caseCtx(prove, caseArm, provedCtx);
+  const candidates = searchCandidates(ctx, goal);
+  return candidates.length > 0 ? parseProofString(candidates[0]) : null;
 }
 
 // ─── Per-leaf tactic resolvers (public API for unified tactic system) ──

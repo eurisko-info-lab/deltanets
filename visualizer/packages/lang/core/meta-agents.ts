@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// Meta-Agents — Phase 18
+// Meta-Agents — Phase 18 + Phase 20 (CtxSearch, EqCheck)
 // Built-in agents that inspect/construct/transform quoted terms
 // at INet reduction time using procedural (TypeScript) handlers.
 // ═══════════════════════════════════════════════════════════════════
@@ -7,8 +7,8 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, RuleDef } from "./evaluator.ts";
 import { evalAgent } from "./eval-system.ts";
-import type { ComputeRule } from "./typecheck-prove.ts";
-import { withNormTable, normalize } from "./typecheck-prove.ts";
+import type { ComputeRule, ProvedContext } from "./typecheck-prove.ts";
+import { withNormTable, normalize, exprEqual, searchProofContext } from "./typecheck-prove.ts";
 import {
   TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM, TM_NIL, TM_CONS,
 } from "./quotation.ts";
@@ -21,9 +21,12 @@ import { removeFromArrayIf } from "@deltanets/core";
 export const META_MATCH_GOAL = "MatchGoal";
 export const META_APPLY_RULE = "ApplyRule";
 export const META_NORMALIZE = "NormalizeTerm";
+export const META_CTX_SEARCH = "CtxSearch";
+export const META_EQ_CHECK = "EqCheck";
 
 export const META_AGENTS = [
   META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
+  META_CTX_SEARCH, META_EQ_CHECK,
 ] as const;
 
 // ─── Agent declarations ────────────────────────────────────────────
@@ -42,6 +45,8 @@ export const META_AGENT_DECLS: AST.AgentDecl[] = [
   ]),
   mkAgent(META_APPLY_RULE, ["principal", "result"]),
   mkAgent(META_NORMALIZE, ["principal", "result"]),
+  mkAgent(META_CTX_SEARCH, ["principal", "result"]),
+  mkAgent(META_EQ_CHECK, ["principal", "second", "on_eq", "on_neq"]),
 ];
 
 // ─── Term type helpers ─────────────────────────────────────────────
@@ -354,6 +359,92 @@ export function createApplyRuleHandler(agents: Map<string, AgentDef>): MetaHandl
   };
 }
 
+// ─── CtxSearch handler ─────────────────────────────────────────────
+
+/**
+ * Create a CtxSearch handler that captures proof context.
+ * When CtxSearch × Tm*: reads goal, searches proof context for a proof,
+ * writes proof term (or original goal on failure) to result port.
+ */
+export function createCtxSearchHandler(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
+): MetaHandler {
+  return (left, right, graph, _agentPorts) => {
+    const ctxAgent = left.type === META_CTX_SEARCH ? left : right;
+    const tmAgent = left.type === META_CTX_SEARCH ? right : left;
+
+    const goal = readTermFromGraph(tmAgent);
+    const proof = withNormTable(computeRules, () =>
+      searchProofContext(prove, caseArm, provedCtx, goal)
+    );
+
+    // Remove old term tree
+    const oldNodes = collectTermTree(tmAgent);
+    removeFromArrayIf(graph, (n) => oldNodes.has(n));
+
+    // Write proof (or original goal if not found) to result
+    const newRoot = writeTermToGraph(proof ?? goal, graph);
+    link({ node: newRoot, port: 0 }, ctxAgent.ports[1]);
+    removeFromArrayIf(graph, (n) => n === ctxAgent);
+  };
+}
+
+// ─── EqCheck handler ───────────────────────────────────────────────
+
+/**
+ * Create an EqCheck handler.
+ * When EqCheck × Tm*: reads term A (from principal interaction) and
+ * term B (from `second` port). If structurally equal, wires on_eq
+ * with TmVar("refl") and erases on_neq. Otherwise, wires on_neq
+ * with the original goal and erases on_eq.
+ */
+export function createEqCheckHandler(): MetaHandler {
+  return (left, right, graph, _agentPorts) => {
+    const eqAgent = left.type === META_EQ_CHECK ? left : right;
+    const tmAgent = left.type === META_EQ_CHECK ? right : left;
+
+    // Read term A from the principal interaction
+    const termA = readTermFromGraph(tmAgent);
+
+    // Read term B from the second port
+    const secondNode = eqAgent.ports[1]?.node;
+    const termB = (secondNode && secondNode !== eqAgent && isTmAgent(secondNode.type))
+      ? readTermFromGraph(secondNode)
+      : { kind: "ident" as const, name: "?" };
+
+    const equal = exprEqual(termA, termB);
+
+    // Remove both input Tm* trees
+    const oldA = collectTermTree(tmAgent);
+    removeFromArrayIf(graph, (n) => oldA.has(n));
+    if (secondNode && secondNode !== eqAgent && isTmAgent(secondNode.type)) {
+      const oldB = collectTermTree(secondNode);
+      removeFromArrayIf(graph, (n) => oldB.has(n));
+    }
+
+    if (equal) {
+      // Wire TmVar("refl") to on_eq; erase on_neq
+      const refl = writeTermToGraph({ kind: "ident", name: "refl" }, graph);
+      link({ node: refl, port: 0 }, eqAgent.ports[2]); // on_eq
+      const eraser = mkNode("era", "era", 1);
+      graph.push(eraser);
+      link({ node: eraser, port: 0 }, eqAgent.ports[3]); // on_neq
+    } else {
+      // Wire original goal back to on_neq; erase on_eq
+      const goalBack = writeTermToGraph(termA, graph);
+      link({ node: goalBack, port: 0 }, eqAgent.ports[3]); // on_neq
+      const eraser = mkNode("era", "era", 1);
+      graph.push(eraser);
+      link({ node: eraser, port: 0 }, eqAgent.ports[2]); // on_eq
+    }
+
+    removeFromArrayIf(graph, (n) => n === eqAgent);
+  };
+}
+
 // ─── Registration ──────────────────────────────────────────────────
 
 /**
@@ -400,6 +491,16 @@ export function registerMetaAgents(
       agentA: META_APPLY_RULE,
       agentB: tm,
       action: { kind: "meta", handler: applyHandler },
+    });
+  }
+
+  // EqCheck × Tm* rules (structural equality, no captured context)
+  const eqHandler = createEqCheckHandler();
+  for (const tm of normTmTypes) {
+    rules.push({
+      agentA: META_EQ_CHECK,
+      agentB: tm,
+      action: { kind: "meta", handler: eqHandler },
     });
   }
 }

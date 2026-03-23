@@ -34,11 +34,13 @@ export {
 export type { QuoteResult } from "./quotation.ts";
 export {
   registerMetaAgents, createNormalizeHandler, createApplyRuleHandler,
+  createCtxSearchHandler, createEqCheckHandler,
   readTermFromGraph, writeTermToGraph, collectTermTree,
   META_AGENTS, META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
+  META_CTX_SEARCH, META_EQ_CHECK,
   META_AGENT_DECLS,
 } from "./meta-agents.ts";
-export { normalize, computeGoalType, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./typecheck-prove.ts";
+export { normalize, computeGoalType, exprEqual, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./typecheck-prove.ts";
 export {
   registerBuiltinTactics, compileTactic, resolveAllTactics,
   createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,
