@@ -583,6 +583,16 @@ class Parser {
       this.advance();
       return { kind: "hole" };
     }
+    // let x = value in body
+    if (this.check(TT.LET)) {
+      this.advance();
+      const name = this.eatIdent();
+      this.eat(TT.EQ);
+      const value = this.parseProveExpr();
+      this.eat(TT.IN);
+      const body = this.parseProveExpr();
+      return { kind: "let", name, value, body };
+    }
     const name = this.eatIdent();
     // match(scrutinee) { | Pat(bindings) -> body ... }
     if (name === "match") {

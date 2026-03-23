@@ -442,6 +442,11 @@ function desugarProve(
     function translateExpr(expr: AST.ProveExpr): AST.PortRef {
       if (expr.kind === "hole") throw new EvalError(`prove ${prove.name}: unexpected ? hole in desugaring`);
       if (expr.kind === "match") throw new EvalError(`prove ${prove.name}: match expressions cannot be desugared into agents`);
+      if (expr.kind === "let") {
+        const valPort = translateExpr(expr.value);
+        varMap.set(expr.name, valPort);
+        return translateExpr(expr.body);
+      }
       if (expr.kind === "ident") {
         if (copyQueues.has(expr.name)) { usedVars.add(expr.name); return copyQueues.get(expr.name)!.shift()!; }
         if (varMap.has(expr.name)) { usedVars.add(expr.name); return varMap.get(expr.name)!; }
@@ -603,6 +608,9 @@ function countVarUses(
       counts.set(e.name, (counts.get(e.name) || 0) + 1);
     } else if (e.kind === "call") {
       for (const arg of e.args) walk(arg);
+    } else if (e.kind === "let") {
+      walk(e.value);
+      walk(e.body);
     } else if (e.kind === "match") {
       if (vars.has(e.scrutinee)) counts.set(e.scrutinee, (counts.get(e.scrutinee) || 0) + 1);
       for (const c of e.cases) walk(c.body);
@@ -615,6 +623,7 @@ function countVarUses(
 function exprContainsHole(e: AST.ProveExpr): boolean {
   if (e.kind === "hole") return true;
   if (e.kind === "call") return e.args.some(exprContainsHole);
+  if (e.kind === "let") return exprContainsHole(e.value) || exprContainsHole(e.body);
   if (e.kind === "match") return e.cases.some((c) => exprContainsHole(c.body));
   return false;
 }
@@ -626,6 +635,7 @@ function proveContainsHole(prove: AST.ProveDecl): boolean {
 function exprContainsRewrite(e: AST.ProveExpr): boolean {
   if (e.kind === "call" && e.name === "rewrite") return true;
   if (e.kind === "call") return e.args.some(exprContainsRewrite);
+  if (e.kind === "let") return exprContainsRewrite(e.value) || exprContainsRewrite(e.body);
   if (e.kind === "match") return e.cases.some((c) => exprContainsRewrite(c.body));
   return false;
 }
@@ -637,6 +647,7 @@ function proveContainsRewrite(prove: AST.ProveDecl): boolean {
 function exprContainsMatch(e: AST.ProveExpr): boolean {
   if (e.kind === "match") return true;
   if (e.kind === "call") return e.args.some(exprContainsMatch);
+  if (e.kind === "let") return exprContainsMatch(e.value) || exprContainsMatch(e.body);
   return false;
 }
 
@@ -654,7 +665,10 @@ function stripProveTactics(prove: AST.ProveDecl): AST.ProveDecl {
 
 /** Normalize proof-level projections: fst(pair(a,b))→a, snd(pair(a,b))→b. */
 function normalizeProofExpr(expr: AST.ProveExpr): AST.ProveExpr {
-  if (expr.kind !== "call" && expr.kind !== "match") return expr;
+  if (expr.kind !== "call" && expr.kind !== "match" && expr.kind !== "let") return expr;
+  if (expr.kind === "let") {
+    return { kind: "let", name: expr.name, value: normalizeProofExpr(expr.value), body: normalizeProofExpr(expr.body) };
+  }
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: normalizeProofExpr(c.body) })) };
   }
@@ -672,6 +686,9 @@ function normalizeProofExpr(expr: AST.ProveExpr): AST.ProveExpr {
 }
 
 function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind === "let") {
+    return { kind: "let", name: expr.name, value: stripExprTactics(expr.value), body: stripExprTactics(expr.body) };
+  }
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })) };
   }

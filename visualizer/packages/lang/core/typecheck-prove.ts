@@ -82,6 +82,10 @@ function constructorReturnType(
 function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   if (a.kind === "hole" || b.kind === "hole") return false;
   if (a.kind === "match" || b.kind === "match") return false;
+  if (a.kind === "let" && b.kind === "let") {
+    return a.name === b.name && exprEqual(a.value, b.value) && exprEqual(a.body, b.body);
+  }
+  if (a.kind === "let" || b.kind === "let") return false;
   if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
   if (a.kind === "call" && b.kind === "call") {
     if (a.name !== b.name || a.args.length !== b.args.length) return false;
@@ -98,6 +102,7 @@ function toSubscript(n: number): string {
 function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
   if (e.kind === "match") return `match(${e.scrutinee}) { ... }`;
+  if (e.kind === "let") return `let ${e.name} = ${exprToString(e.value)} in ${exprToString(e.body)}`;
   if (e.kind === "ident") {
     if (e.name === "Type") return "Type" + toSubscript(0);
     const m = e.name.match(/^Type(\d+)$/);
@@ -122,6 +127,12 @@ function substitute(
   if (expr.kind === "hole") return expr;
   if (expr.kind === "ident") {
     return expr.name === varName ? value : expr;
+  }
+  if (expr.kind === "let") {
+    const newValue = substitute(expr.value, varName, value);
+    // Shadowing: if the let-bound name matches, don't substitute in body
+    if (expr.name === varName) return { kind: "let", name: expr.name, value: newValue, body: expr.body };
+    return { kind: "let", name: expr.name, value: newValue, body: substitute(expr.body, varName, value) };
   }
   if (expr.kind === "match") {
     return {
@@ -148,6 +159,13 @@ function substituteAll(
   if (expr.kind === "hole") return expr;
   if (expr.kind === "ident") {
     return bindings.get(expr.name) ?? expr;
+  }
+  if (expr.kind === "let") {
+    const newValue = substituteAll(expr.value, bindings);
+    // Shadowing: remove binding for the let-bound name in the body
+    const innerBindings = new Map(bindings);
+    innerBindings.delete(expr.name);
+    return { kind: "let", name: expr.name, value: newValue, body: substituteAll(expr.body, innerBindings) };
   }
   if (expr.kind === "match") {
     const replacement = bindings.get(expr.scrutinee);
@@ -285,6 +303,11 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     return expr;
   }
   if (expr.kind === "hole" || expr.kind === "match") return expr;
+  if (expr.kind === "let") {
+    // Inline the let binding: let x = v in body → body[x := v]
+    const normValue = normalize(expr.value);
+    return normalize(substitute(expr.body, expr.name, normValue));
+  }
 
   const args = expr.args.map(normalize);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
@@ -356,6 +379,14 @@ function substituteExprPattern(
   replacement: AST.ProveExpr,
 ): AST.ProveExpr {
   if (exprEqual(expr, pattern)) return replacement;
+  if (expr.kind === "let") {
+    return {
+      kind: "let",
+      name: expr.name,
+      value: substituteExprPattern(expr.value, pattern, replacement),
+      body: substituteExprPattern(expr.body, pattern, replacement),
+    };
+  }
   if (expr.kind === "match") {
     return {
       kind: "match",
@@ -391,6 +422,16 @@ function inferType(
   // Hole → can't infer, needs goal from context
   if (expr.kind === "hole") {
     return { ok: false, error: "hole" };
+  }
+
+  // Let → infer type of body with binding in scope
+  if (expr.kind === "let") {
+    const valResult = inferType(expr.value, ctx);
+    if (!valResult.ok) return valResult;
+    const innerBindings = new Map(ctx.caseBindings);
+    innerBindings.set(expr.name, valResult.type);
+    const innerCtx: ProveCtx = { ...ctx, caseBindings: innerBindings };
+    return inferType(expr.body, innerCtx);
   }
 
   // Match → infer type by checking each case arm; return first arm's type.
@@ -444,6 +485,10 @@ function inferType(
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
       return { ok: true, type: constructorReturnType(ctorInfo) };
+    }
+    // Let-bound or case-bound variable: look up type from caseBindings
+    if (ctx.caseBindings.has(expr.name)) {
+      return { ok: true, type: ctx.caseBindings.get(expr.name)! };
     }
     return { ok: false, error: `unexpected identifier '${expr.name}' in proof position` };
   }
@@ -758,6 +803,19 @@ function buildNode(
     return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true, suggestions };
   }
 
+  // let → build sub-trees for value and body
+  if (expr.kind === "let") {
+    const valNode = buildNode(expr.value, ctx);
+    const valResult = inferType(expr.value, ctx);
+    const innerBindings = new Map(ctx.caseBindings);
+    if (valResult.ok) innerBindings.set(expr.name, valResult.type);
+    const innerCtx: ProveCtx = { ...ctx, caseBindings: innerBindings };
+    const bodyNode = buildNode(expr.body, innerCtx, expected);
+    const result = inferType(expr, ctx);
+    const conclusion = result.ok ? exprToString(normalize(result.type)) : `✘ ${result.error}`;
+    return { rule: "let", term: `let ${expr.name}`, conclusion, children: [valNode, bodyNode] };
+  }
+
   // match → sub-trees for each case arm with per-arm expected type
   if (expr.kind === "match") {
     const children = expr.cases.map((c) => {
@@ -1051,6 +1109,9 @@ export function buildProofTree(
 // calc(p1, p2, ...) → trans(trans(p1, p2), ...).
 
 function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind === "let") {
+    return { kind: "let", name: expr.name, value: stripTacticSugar(expr.value), body: stripTacticSugar(expr.body) };
+  }
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripTacticSugar(c.body) })) };
   }
@@ -1101,6 +1162,10 @@ function collectRecursiveCalls(
     if (e.kind === "call") {
       if (e.name === funcName) calls.push({ call: e, bindings });
       for (const a of e.args) walk(a, bindings);
+    }
+    if (e.kind === "let") {
+      walk(e.value, bindings);
+      walk(e.body, bindings);
     }
     if (e.kind === "match") {
       walk(e.scrutinee, bindings);
@@ -1486,6 +1551,12 @@ function resolveSimpExpr(
       return expr; // leave as simp — type checker will report the error
     });
   }
+  if (expr.kind === "let") {
+    const newValue = resolveSimpExpr(expr.value, prove, caseArm, provedCtx, computeRules);
+    const newBody = resolveSimpExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
+  }
   if (expr.kind === "match") {
     let changed = false;
     const newCases = expr.cases.map((c) => {
@@ -1594,6 +1665,7 @@ export function resolveDecide(
 function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveExpr>): boolean {
   if (expr.kind === "ident") return !caseBindings.has(expr.name);
   if (expr.kind === "call") return expr.args.every(a => isGroundTerm(a, caseBindings));
+  if (expr.kind === "let") return isGroundTerm(expr.value, caseBindings) && isGroundTerm(expr.body, caseBindings);
   return false;
 }
 
@@ -1617,6 +1689,12 @@ function resolveDecideExpr(
       }
       return expr;
     });
+  }
+  if (expr.kind === "let") {
+    const newValue = resolveDecideExpr(expr.value, prove, caseArm, provedCtx, computeRules);
+    const newBody = resolveDecideExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
   }
   if (expr.kind === "match") {
     let changed = false;
@@ -1701,6 +1779,12 @@ function resolveOmegaExpr(
 
       return expr;
     });
+  }
+  if (expr.kind === "let") {
+    const newValue = resolveOmegaExpr(expr.value, prove, caseArm, provedCtx, computeRules);
+    const newBody = resolveOmegaExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
   }
   if (expr.kind === "match") {
     let changed = false;
@@ -1789,6 +1873,12 @@ function resolveAutoExpr(
       const result = autoSearch(goal, ctx, 3);
       return result ?? expr;
     });
+  }
+  if (expr.kind === "let") {
+    const newValue = resolveAutoExpr(expr.value, prove, caseArm, provedCtx, computeRules);
+    const newBody = resolveAutoExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
   }
   if (expr.kind === "match") {
     let changed = false;
