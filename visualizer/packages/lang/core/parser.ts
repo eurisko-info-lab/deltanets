@@ -209,6 +209,8 @@ class Parser {
         return this.parseSectionDecl();
       case TT.NOTATION:
         return this.parseNotationDecl();
+      case TT.COERCION:
+        return this.parseCoercionDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -369,8 +371,9 @@ class Parser {
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
+      else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1081,6 +1084,7 @@ class Parser {
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
+      else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1122,7 +1126,7 @@ class Parser {
           assoc = assocStr;
         } else {
           throw new ParseError(
-            `Expected 'left' or 'right', got '${assocTok}'`,
+            `Expected 'left' or 'right', got '${assocStr}'`,
             this.peek().line, this.peek().col,
           );
         }
@@ -1132,6 +1136,21 @@ class Parser {
     // Register in parser's notation table for subsequent expressions
     this.notations.set(symbol, { func, precedence, assoc });
     return { kind: "notation", symbol, func, precedence, assoc };
+  }
+
+  // ─── Coercion ────────────────────────────────────────────────────
+  // coercion name = From -> To via func
+
+  parseCoercionDecl(): AST.CoercionDecl {
+    this.eat(TT.COERCION);
+    const name = this.eatIdent();
+    this.eat(TT.EQ);
+    const from = this.eatIdent();
+    this.eat(TT.ARROW);
+    const to = this.eatIdent();
+    this.eatIdentValue("via");
+    const func = this.eatIdent();
+    return { kind: "coercion", name, from, to, func };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

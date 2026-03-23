@@ -24,7 +24,8 @@ export type Statement =
   | TacticDecl
   | MutualDecl
   | SectionDecl
-  | NotationDecl;
+  | NotationDecl
+  | CoercionDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -51,7 +52,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -89,6 +90,16 @@ export type NotationDecl = {
   func: string; // expansion function name, e.g. "add"
   precedence: number;
   assoc: "left" | "right";
+};
+
+// coercion name = From -> To via func
+// Registers an implicit type conversion for the type checker.
+export type CoercionDecl = {
+  kind: "coercion";
+  name: string;
+  from: string;
+  to: string;
+  func: string;
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

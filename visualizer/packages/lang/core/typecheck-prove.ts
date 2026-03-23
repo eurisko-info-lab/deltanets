@@ -307,6 +307,14 @@ function exprToString(e: AST.ProveExpr): string {
 
 // ─── Substitution ──────────────────────────────────────────────────
 
+// Extract the top-level type constructor name from a ProveExpr.
+// Returns undefined for non-type expressions (holes, metavars, etc.).
+function topTypeName(e: AST.ProveExpr): string | undefined {
+  if (e.kind === "ident") return e.name;
+  if (e.kind === "call") return e.name;
+  return undefined;
+}
+
 function substitute(
   expr: AST.ProveExpr,
   varName: string,
@@ -1935,6 +1943,7 @@ export function typecheckProve(
   computeRules?: ComputeRule[],
   constructorTyping?: ConstructorTyping,
   codataTypes?: Set<string>,
+  coercions?: Map<string, Map<string, string>>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -2061,6 +2070,25 @@ export function typecheckProve(
     }
     if (reqSigma || (inferred.type.kind === "call" && inferred.type.name === "Sigma")) {
       errors.push(`${prefix}: type structure mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+      continue;
+    }
+
+    // General type comparison for non-Eq, non-Sigma types
+    const infNorm = normalize(inferred.type);
+    const reqNorm = normalize(requiredType);
+    if (!exprEqual(infNorm, reqNorm)) {
+      const infName = topTypeName(infNorm);
+      const reqName = topTypeName(reqNorm);
+      // Same top-level constructor (e.g. Stream(A) vs Stream(Nat)) — accept;
+      // parameter instantiation is handled elsewhere
+      if (infName && reqName && infName === reqName) {
+        continue;
+      }
+      // Check for implicit coercion
+      if (coercions && infName && reqName && coercions.get(infName)?.has(reqName)) {
+        continue;
+      }
+      errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(reqNorm)}\n  inferred: ${exprToString(infNorm)}`);
     }
   }
 
