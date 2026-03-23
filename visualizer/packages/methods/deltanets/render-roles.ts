@@ -73,7 +73,7 @@ function renderChild(
   const { node2D: child, endpoints } = renderNodePort(portRef, state, redexes, level);
   const redex = getRedex(parentNode, portRef.node, redexes);
 
-  if (!child.isWireEndpoint && wireOpts !== undefined) {
+  if (wireOpts !== undefined) {
     const wire = new Wire(
       parent, child, wireOpts.viaD ?? 0,
       redex?.reduce && (() => applyReduction(state, redex.reduce)),
@@ -83,7 +83,8 @@ function renderChild(
     if (wireOpts.startOffsetX !== undefined) wire.startOffset.x = wireOpts.startOffsetX;
     if (wireOpts.startOffsetY !== undefined) wire.startOffset.y = wireOpts.startOffsetY;
     wireContainer.add(wire);
-  } else if (child.isWireEndpoint && redex) {
+  }
+  if (child.isWireEndpoint && redex) {
     const ep = endpoints.find((ep) => ep.nodePort === portRef);
     if (ep) ep.redex = redex;
   }
