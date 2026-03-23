@@ -7,9 +7,10 @@ import {
   compileCore,
   TACTIC_AGENTS, TACTIC_SIMP, TACTIC_DECIDE, TACTIC_OMEGA, TACTIC_AUTO,
   TACTIC_AGENT_DECLS, BUILTIN_TACTIC_NAMES,
-  registerBuiltinTactics, compileTactic, resolveUserTactics,
+  registerBuiltinTactics, compileTactic, resolveAllTactics,
   createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,
   computeGoalType,
+  tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto,
 } from "@deltanets/lang";
 import type { Graph, AgentPortDefs, InteractionRule } from "@deltanets/core";
 import { getRedexes, link } from "@deltanets/core";
@@ -37,7 +38,8 @@ Deno.test("TACTIC_AGENT_DECLS all have (principal, result) ports", () => {
   }
 });
 
-Deno.test("BUILTIN_TACTIC_NAMES has simp/decide/omega/auto", () => {
+Deno.test("BUILTIN_TACTIC_NAMES has assumption/simp/decide/omega/auto", () => {
+  assertEquals(BUILTIN_TACTIC_NAMES.has("assumption"), true);
   assertEquals(BUILTIN_TACTIC_NAMES.has("simp"), true);
   assertEquals(BUILTIN_TACTIC_NAMES.has("decide"), true);
   assertEquals(BUILTIN_TACTIC_NAMES.has("omega"), true);

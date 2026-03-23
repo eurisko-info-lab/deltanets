@@ -38,9 +38,9 @@ export {
   META_AGENTS, META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
   META_AGENT_DECLS,
 } from "./meta-agents.ts";
-export { normalize, computeGoalType } from "./typecheck-prove.ts";
+export { normalize, computeGoalType, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./typecheck-prove.ts";
 export {
-  registerBuiltinTactics, compileTactic, resolveUserTactics,
+  registerBuiltinTactics, compileTactic, resolveAllTactics,
   createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,
   TACTIC_AGENTS, TACTIC_SIMP, TACTIC_DECIDE, TACTIC_OMEGA, TACTIC_AUTO,
   TACTIC_AGENT_DECLS, BUILTIN_TACTIC_NAMES,

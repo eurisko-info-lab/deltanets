@@ -9,7 +9,10 @@ import type * as AST from "./types.ts";
 import type { AgentDef, RuleDef, TacticDef } from "./evaluator.ts";
 import { evalAgent } from "./eval-system.ts";
 import type { ComputeRule, ProvedContext } from "./typecheck-prove.ts";
-import { withNormTable, normalize, computeGoalType } from "./typecheck-prove.ts";
+import {
+  withNormTable, normalize, computeGoalType,
+  tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto,
+} from "./typecheck-prove.ts";
 import { readTermFromGraph, writeTermToGraph, collectTermTree } from "./meta-agents.ts";
 import {
   TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM,
@@ -36,7 +39,22 @@ const BUILTIN_TACTIC_MAP: Record<string, string> = {
   auto: TACTIC_AUTO,
 };
 
-export const BUILTIN_TACTIC_NAMES = new Set(Object.keys(BUILTIN_TACTIC_MAP));
+export const BUILTIN_TACTIC_NAMES = new Set([...Object.keys(BUILTIN_TACTIC_MAP), "assumption"]);
+
+/** AST-level resolver for each built-in tactic keyword. */
+type BuiltinResolver = (
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+) => AST.ProveExpr | null;
+
+const BUILTIN_RESOLVERS = new Map<string, BuiltinResolver>([
+  ["assumption", tryResolveAssumption],
+  ["simp", tryResolveSimp],
+  ["decide", tryResolveDecide],
+  ["omega", tryResolveOmega],
+  ["auto", tryResolveAuto],
+]);
 
 // ─── Agent declarations ────────────────────────────────────────────
 
@@ -288,7 +306,7 @@ export function compileTactic(
 
 // ─── User tactic resolution ────────────────────────────────────────
 
-export function resolveUserTactics(
+export function resolveAllTactics(
   prove: AST.ProveDecl,
   provedCtx: ProvedContext,
   computeRules: ComputeRule[],
@@ -296,7 +314,7 @@ export function resolveUserTactics(
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
 ): AST.ProveDecl {
-  if (!prove.returnType || tactics.size === 0) return prove;
+  if (!prove.returnType) return prove;
 
   let changed = false;
   const newCases = prove.cases.map((caseArm) => {
@@ -322,13 +340,22 @@ function resolveUserTacticExpr(
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
 ): AST.ProveExpr {
-  if (expr.kind === "ident" && tactics.has(expr.name)) {
-    const tactic = tactics.get(expr.name)!;
-    const goal = computeGoalType(prove, caseArm, provedCtx);
-    return withNormTable(computeRules, () => {
-      const result = runUserTactic(tactic, goal, agents, rules);
+  if (expr.kind === "ident") {
+    // Built-in tactic resolvers (assumption, simp, decide, omega, auto)
+    const builtinResolver = BUILTIN_RESOLVERS.get(expr.name);
+    if (builtinResolver) {
+      const result = builtinResolver(prove, caseArm, provedCtx);
       return result ?? expr;
-    });
+    }
+    // User-defined tactics
+    if (tactics.has(expr.name)) {
+      const tactic = tactics.get(expr.name)!;
+      const goal = computeGoalType(prove, caseArm, provedCtx);
+      return withNormTable(computeRules, () => {
+        const result = runUserTactic(tactic, goal, agents, rules);
+        return result ?? expr;
+      });
+    }
   }
   if (expr.kind === "let") {
     const nv = resolveUserTacticExpr(expr.value, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);

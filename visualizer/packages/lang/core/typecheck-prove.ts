@@ -1422,6 +1422,88 @@ export function computeGoalType(
   return caseCtx(prove, caseArm, provedCtx, constructorTyping).expectedType;
 }
 
+// ─── Per-leaf tactic resolvers (public API for unified tactic system) ──
+// Called when a built-in tactic keyword is found in ident position.
+// Assumes withNormTable is already active. Return null if resolution fails.
+
+export function tryResolveAssumption(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr | null {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const candidates = searchCandidates(ctx, goal);
+  return candidates.length > 0 ? parseProofString(candidates[0]) : null;
+}
+
+export function tryResolveSimp(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr | null {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const goalEq = extractEq(normalize(goal));
+  if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+    return ident("refl");
+  }
+  const candidates = searchCandidates(ctx, goal);
+  if (candidates.length > 0) return parseProofString(candidates[0]);
+  if (goalEq) {
+    const lemmaProof = trySimpRewrite(ctx, goalEq);
+    if (lemmaProof) return lemmaProof;
+  }
+  return null;
+}
+
+export function tryResolveDecide(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr | null {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const goalEq = extractEq(normalize(goal));
+  if (goalEq) {
+    const lhs = normalize(goalEq.left);
+    const rhs = normalize(goalEq.right);
+    if (isGroundTerm(lhs, ctx.caseBindings) && isGroundTerm(rhs, ctx.caseBindings) && exprEqual(lhs, rhs)) {
+      return ident("refl");
+    }
+  }
+  return null;
+}
+
+export function tryResolveOmega(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr | null {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const goalEq = extractEq(normalize(goal));
+  if (!goalEq) return null;
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+  if (exprEqual(lhs, rhs)) return ident("refl");
+  const congResult = tryCongSucc(lhs, rhs, ctx);
+  if (congResult) return congResult;
+  const rwResult = trySimpRewrite(ctx, goalEq);
+  if (rwResult) return rwResult;
+  if (lhs.kind === "call" && lhs.name === "Succ" && lhs.args.length === 1 &&
+      rhs.kind === "call" && rhs.name === "Succ" && rhs.args.length === 1) {
+    const innerRw = trySimpRewrite(ctx, { left: lhs.args[0], right: rhs.args[0] });
+    if (innerRw) return app("cong_succ", innerRw);
+  }
+  return null;
+}
+
+export function tryResolveAuto(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+): AST.ProveExpr | null {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  return autoSearch(goal, ctx, 3);
+}
+
 /** Build a proof derivation tree for a typed prove block. */
 export function buildProofTree(
   prove: AST.ProveDecl,

@@ -7,11 +7,11 @@ import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef, TacticDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, resolveDecide, resolveOmega, resolveAuto, typecheckProve, withNormTable } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 import { registerQuotationAgents, quoteExpr, containsQuote, QUOTE_AGENTS } from "./quotation.ts";
 import { registerMetaAgents, META_AGENTS } from "./meta-agents.ts";
-import { registerBuiltinTactics, compileTactic, resolveUserTactics, TACTIC_AGENTS } from "./tactics.ts";
+import { registerBuiltinTactics, compileTactic, resolveAllTactics, TACTIC_AGENTS } from "./tactics.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
@@ -196,20 +196,8 @@ export function evalBodyInto(
         if (item.induction && item.cases.length === 0) {
           prove = expandInduction(item, agents, constructorsByType);
         }
-        // Resolve assumption tactic to concrete proof terms
-        prove = withNormTable(computeRules, () => resolveAssumptions(prove, provedCtx));
-        // Resolve simp tactic to concrete proof terms
-        prove = withNormTable(computeRules, () => resolveSimp(prove, provedCtx, computeRules));
-        // Resolve decide tactic (ground-term equality)
-        prove = withNormTable(computeRules, () => resolveDecide(prove, provedCtx, computeRules));
-        // Resolve omega tactic (linear arithmetic)
-        prove = withNormTable(computeRules, () => resolveOmega(prove, provedCtx, computeRules));
-        // Resolve auto tactic (depth-bounded proof search)
-        prove = withNormTable(computeRules, () => resolveAuto(prove, provedCtx, computeRules));
-        // Resolve user-defined tactics
-        if (tactics.size > 0) {
-          prove = withNormTable(computeRules, () => resolveUserTactics(prove, provedCtx, computeRules, tactics, agents, rules));
-        }
+        // Resolve all tactics (built-in + user-defined) in a single pass
+        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
