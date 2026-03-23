@@ -63,6 +63,7 @@ function app(name: string, ...args: AST.ProveExpr[]): AST.ProveExpr {
 
 function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   if (a.kind === "hole" || b.kind === "hole") return false;
+  if (a.kind === "match" || b.kind === "match") return false;
   if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
   if (a.kind === "call" && b.kind === "call") {
     if (a.name !== b.name || a.args.length !== b.args.length) return false;
@@ -78,6 +79,7 @@ function toSubscript(n: number): string {
 
 function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
+  if (e.kind === "match") return `match(${e.scrutinee}) { ... }`;
   if (e.kind === "ident") {
     if (e.name === "Type") return "Type" + toSubscript(0);
     const m = e.name.match(/^Type(\d+)$/);
@@ -103,6 +105,13 @@ function substitute(
   if (expr.kind === "ident") {
     return expr.name === varName ? value : expr;
   }
+  if (expr.kind === "match") {
+    return {
+      kind: "match",
+      scrutinee: expr.scrutinee === varName && value.kind === "ident" ? value.name : expr.scrutinee,
+      cases: expr.cases.map((c) => ({ ...c, body: substitute(c.body, varName, value) })),
+    };
+  }
   // call: substitute in name if it matches (unlikely but handle), and all args
   const newArgs = expr.args.map((a) => substitute(a, varName, value));
   const newName = expr.name === varName && value.kind === "ident"
@@ -121,6 +130,15 @@ function substituteAll(
   if (expr.kind === "hole") return expr;
   if (expr.kind === "ident") {
     return bindings.get(expr.name) ?? expr;
+  }
+  if (expr.kind === "match") {
+    const replacement = bindings.get(expr.scrutinee);
+    const newScrutinee = replacement?.kind === "ident" ? replacement.name : expr.scrutinee;
+    return {
+      kind: "match",
+      scrutinee: newScrutinee,
+      cases: expr.cases.map((c) => ({ ...c, body: substituteAll(c.body, bindings) })),
+    };
   }
   const newArgs = expr.args.map((a) => substituteAll(a, bindings));
   const replacement = bindings.get(expr.name);
@@ -158,7 +176,7 @@ function substituteComputeResult(
   expr: AST.ProveExpr,
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
-  if (expr.kind === "hole") return expr;
+  if (expr.kind === "hole" || expr.kind === "match") return expr;
   if (expr.kind === "ident") return bindings.get(expr.name) ?? expr;
   const newArgs = expr.args.map((a) => substituteComputeResult(a, bindings));
   const replacement = bindings.get(expr.name);
@@ -248,7 +266,7 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     if (m) return app("Type", ident(m[1]));
     return expr;
   }
-  if (expr.kind === "hole") return expr;
+  if (expr.kind === "hole" || expr.kind === "match") return expr;
 
   const args = expr.args.map(normalize);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
@@ -320,6 +338,13 @@ function substituteExprPattern(
   replacement: AST.ProveExpr,
 ): AST.ProveExpr {
   if (exprEqual(expr, pattern)) return replacement;
+  if (expr.kind === "match") {
+    return {
+      kind: "match",
+      scrutinee: expr.scrutinee,
+      cases: expr.cases.map((c) => ({ ...c, body: substituteExprPattern(c.body, pattern, replacement) })),
+    };
+  }
   if (expr.kind !== "call") return expr;
   const newArgs = expr.args.map((a) => substituteExprPattern(a, pattern, replacement));
   return { kind: "call", name: expr.name, args: newArgs };
@@ -346,6 +371,20 @@ function inferType(
   // Hole → can't infer, needs goal from context
   if (expr.kind === "hole") {
     return { ok: false, error: "hole" };
+  }
+
+  // Match → infer type by checking each case arm; return first arm's type.
+  if (expr.kind === "match") {
+    let resultType: AST.ProveExpr | null = null;
+    for (const c of expr.cases) {
+      const newBindings = new Map(ctx.caseBindings);
+      for (const b of c.bindings) newBindings.set(b, ident(b));
+      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+      const inner = inferType(c.body, innerCtx);
+      if (!inner.ok) return inner;
+      if (!resultType) resultType = inner.type;
+    }
+    return resultType ? { ok: true, type: resultType } : { ok: false, error: "match: no cases" };
   }
 
   // refl → Eq(a, a) where 'a' is determined from context
@@ -660,6 +699,26 @@ function buildNode(
     return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true, suggestions };
   }
 
+  // match → sub-trees for each case arm with per-arm expected type
+  if (expr.kind === "match") {
+    const children = expr.cases.map((c) => {
+      const newBindings = new Map(ctx.caseBindings);
+      for (const b of c.bindings) newBindings.set(b, ident(b));
+      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+      let caseExpected = expected;
+      if (expected) {
+        const consExpr = c.bindings.length > 0
+          ? app(c.pattern, ...c.bindings.map(ident))
+          : ident(c.pattern);
+        caseExpected = normalize(substitute(expected, expr.scrutinee, consExpr));
+      }
+      return buildNode(c.body, innerCtx, caseExpected);
+    });
+    const result = inferType(expr, ctx);
+    const conclusion = result.ok ? exprToString(normalize(result.type)) : `✘ ${result.error}`;
+    return { rule: "match", term: `match(${expr.scrutinee})`, conclusion, children };
+  }
+
   const result = inferType(expr, ctx);
   const conclusion = result.ok
     ? exprToString(normalize(result.type))
@@ -840,6 +899,9 @@ export function buildProofTree(
 // Recursively rewrites exact(e) → e, apply(f, a, b) → f(a, b).
 
 function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind === "match") {
+    return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripTacticSugar(c.body) })) };
+  }
   if (expr.kind !== "call") return expr;
   if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
@@ -878,6 +940,47 @@ function checkExhaustiveness(
     ];
   }
   return [];
+}
+
+// ─── Match expression type checker ─────────────────────────────────
+// Validates each arm individually, substituting the scrutinee variable
+// with the constructor expression in the expected type (dependent matching).
+
+function typecheckMatchExpr(
+  matchExpr: AST.ProveExpr & { kind: "match" },
+  ctx: ProveCtx,
+  requiredType: AST.ProveExpr,
+  prefix: string,
+): string[] {
+  const errors: string[] = [];
+  for (const arm of matchExpr.cases) {
+    const consExpr: AST.ProveExpr = arm.bindings.length > 0
+      ? app(arm.pattern, ...arm.bindings.map(ident))
+      : ident(arm.pattern);
+    const armReq = normalize(substitute(requiredType, matchExpr.scrutinee, consExpr));
+    const newBindings = new Map(ctx.caseBindings);
+    for (const b of arm.bindings) newBindings.set(b, ident(b));
+    const armCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+    const armBody = stripTacticSugar(arm.body);
+
+    if (armBody.kind === "match") {
+      errors.push(...typecheckMatchExpr(armBody, armCtx, armReq, `${prefix}.${arm.pattern}`));
+      continue;
+    }
+    const inferred = inferType(armBody, armCtx);
+    if (!inferred.ok) {
+      if (inferred.error !== "hole") errors.push(`${prefix}.${arm.pattern}: ${inferred.error}`);
+      continue;
+    }
+    const reqEq = extractEq(armReq);
+    const infEq = extractEq(inferred.type);
+    if (reqEq && infEq) {
+      if (!eqTypeMatches(inferred.type, armReq)) {
+        errors.push(`${prefix}.${arm.pattern}: type mismatch\n  expected: ${exprToString(armReq)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+      }
+    }
+  }
+  return errors;
 }
 
 // ─── Main type checker ─────────────────────────────────────────────
@@ -923,6 +1026,12 @@ export function typecheckProve(
       errors.push(
         `${prefix}: rewrite failed\n  proof: ${exprToString(normalize(proofResult.type))}\n  goal: ${exprToString(requiredType)}`,
       );
+      continue;
+    }
+
+    // Handle match expression — validate each arm against per-arm expected type
+    if (body.kind === "match") {
+      errors.push(...typecheckMatchExpr(body, ctx, requiredType, prefix));
       continue;
     }
 
@@ -998,6 +1107,15 @@ function resolveAssumptionExpr(
     const candidates = searchCandidates(ctx, goal);
     if (candidates.length > 0) return parseProofString(candidates[0]);
     return expr;
+  }
+  if (expr.kind === "match") {
+    let changed = false;
+    const newCases = expr.cases.map((c) => {
+      const r = resolveAssumptionExpr(c.body, prove, caseArm, provedCtx);
+      if (r !== c.body) changed = true;
+      return { ...c, body: r };
+    });
+    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
   }
   if (expr.kind === "call") {
     let changed = false;

@@ -73,7 +73,8 @@ export type ProveCase = {
 export type ProveExpr =
   | { kind: "ident"; name: string } // variable reference or nullary agent
   | { kind: "call"; name: string; args: ProveExpr[] } // agent application
-  | { kind: "hole" }; // unfilled goal placeholder (?)
+  | { kind: "hole" } // unfilled goal placeholder (?)
+  | { kind: "match"; scrutinee: string; cases: ProveCase[] }; // nested case analysis
 
 // agent name(port, port, ..variadicPort)
 export type AgentDecl = {

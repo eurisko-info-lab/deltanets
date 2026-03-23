@@ -122,8 +122,9 @@ export function evalBodyInto(
         prove = withNormTable(computeRules, () => resolveAssumptions(prove, provedCtx));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
-        // Only generate agent + rules for complete proofs (no ? holes or rewrites)
-        if (!hasHoles && !hasRewrites) {
+        const hasMatch = proveContainsMatch(prove);
+        // Only generate agent + rules for complete proofs (no ? holes, rewrites, or match)
+        if (!hasHoles && !hasRewrites && !hasMatch) {
           const stripped = stripProveTactics(prove);
           const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
           const agent = evalAgent(agentDecl);
@@ -330,6 +331,7 @@ function desugarProve(
 
     function translateExpr(expr: AST.ProveExpr): AST.PortRef {
       if (expr.kind === "hole") throw new EvalError(`prove ${prove.name}: unexpected ? hole in desugaring`);
+      if (expr.kind === "match") throw new EvalError(`prove ${prove.name}: match expressions cannot be desugared into agents`);
       if (expr.kind === "ident") {
         if (copyQueues.has(expr.name)) { usedVars.add(expr.name); return copyQueues.get(expr.name)!.shift()!; }
         if (varMap.has(expr.name)) { usedVars.add(expr.name); return varMap.get(expr.name)!; }
@@ -491,6 +493,9 @@ function countVarUses(
       counts.set(e.name, (counts.get(e.name) || 0) + 1);
     } else if (e.kind === "call") {
       for (const arg of e.args) walk(arg);
+    } else if (e.kind === "match") {
+      if (vars.has(e.scrutinee)) counts.set(e.scrutinee, (counts.get(e.scrutinee) || 0) + 1);
+      for (const c of e.cases) walk(c.body);
     }
   }
   walk(expr);
@@ -500,6 +505,7 @@ function countVarUses(
 function exprContainsHole(e: AST.ProveExpr): boolean {
   if (e.kind === "hole") return true;
   if (e.kind === "call") return e.args.some(exprContainsHole);
+  if (e.kind === "match") return e.cases.some((c) => exprContainsHole(c.body));
   return false;
 }
 
@@ -510,11 +516,22 @@ function proveContainsHole(prove: AST.ProveDecl): boolean {
 function exprContainsRewrite(e: AST.ProveExpr): boolean {
   if (e.kind === "call" && e.name === "rewrite") return true;
   if (e.kind === "call") return e.args.some(exprContainsRewrite);
+  if (e.kind === "match") return e.cases.some((c) => exprContainsRewrite(c.body));
   return false;
 }
 
 function proveContainsRewrite(prove: AST.ProveDecl): boolean {
   return prove.cases.some((c) => exprContainsRewrite(c.body));
+}
+
+function exprContainsMatch(e: AST.ProveExpr): boolean {
+  if (e.kind === "match") return true;
+  if (e.kind === "call") return e.args.some(exprContainsMatch);
+  return false;
+}
+
+function proveContainsMatch(prove: AST.ProveDecl): boolean {
+  return prove.cases.some((c) => exprContainsMatch(c.body));
 }
 
 /** Strip exact/apply tactic sugar from prove bodies for desugaring. */
@@ -527,7 +544,10 @@ function stripProveTactics(prove: AST.ProveDecl): AST.ProveDecl {
 
 /** Normalize proof-level projections: fst(pair(a,b))→a, snd(pair(a,b))→b. */
 function normalizeProofExpr(expr: AST.ProveExpr): AST.ProveExpr {
-  if (expr.kind !== "call") return expr;
+  if (expr.kind !== "call" && expr.kind !== "match") return expr;
+  if (expr.kind === "match") {
+    return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: normalizeProofExpr(c.body) })) };
+  }
   const args = expr.args.map(normalizeProofExpr);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
   if (e.name === "fst" && e.args.length === 1 &&
@@ -542,6 +562,9 @@ function normalizeProofExpr(expr: AST.ProveExpr): AST.ProveExpr {
 }
 
 function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
+  if (expr.kind === "match") {
+    return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })) };
+  }
   if (expr.kind !== "call") return expr;
   if (expr.name === "exact" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {

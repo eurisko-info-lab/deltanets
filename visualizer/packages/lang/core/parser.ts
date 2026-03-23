@@ -567,6 +567,30 @@ class Parser {
       return { kind: "hole" };
     }
     const name = this.eatIdent();
+    // match(scrutinee) { | Pat(bindings) -> body ... }
+    if (name === "match") {
+      this.eat(TT.LPAREN);
+      const scrutinee = this.eatIdent();
+      this.eat(TT.RPAREN);
+      this.eat(TT.LBRACE);
+      const cases: AST.ProveCase[] = [];
+      while (this.check(TT.PIPE)) {
+        this.advance();
+        const pattern = this.eatIdent();
+        const bindings: string[] = [];
+        if (this.check(TT.LPAREN)) {
+          this.advance();
+          if (!this.check(TT.RPAREN))
+            bindings.push(...this.parseCommaList(() => this.eatIdent()));
+          this.eat(TT.RPAREN);
+        }
+        this.eat(TT.ARROW);
+        const body = this.parseProveExpr();
+        cases.push({ pattern, bindings, body });
+      }
+      this.eat(TT.RBRACE);
+      return { kind: "match", scrutinee, cases };
+    }
     if (this.check(TT.LPAREN)) {
       this.advance();
       const args = this.check(TT.RPAREN)
