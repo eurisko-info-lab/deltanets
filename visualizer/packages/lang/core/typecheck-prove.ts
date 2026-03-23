@@ -1004,6 +1004,62 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   return { kind: "call", name: expr.name, args: expr.args.map(stripTacticSugar) };
 }
 
+// ─── Termination checking (structural recursion) ───────────────────
+// Verifies that every recursive call in a prove body uses a
+// structurally smaller argument — at least one explicit argument must
+// be a case binding (a subcomponent of a matched variable).
+
+function collectRecursiveCalls(
+  expr: AST.ProveExpr,
+  funcName: string,
+  activeBindings: Set<string>,
+): { call: AST.ProveExpr; bindings: Set<string> }[] {
+  const calls: { call: AST.ProveExpr; bindings: Set<string> }[] = [];
+  function walk(e: AST.ProveExpr, bindings: Set<string>) {
+    if (e.kind === "call") {
+      if (e.name === funcName) calls.push({ call: e, bindings });
+      for (const a of e.args) walk(a, bindings);
+    }
+    if (e.kind === "match") {
+      walk(e.scrutinee, bindings);
+      for (const c of e.cases) {
+        const inner = new Set(bindings);
+        for (const b of c.bindings) inner.add(b);
+        walk(c.body, inner);
+      }
+    }
+  }
+  walk(expr, activeBindings);
+  return calls;
+}
+
+function checkTermination(
+  prove: AST.ProveDecl,
+): string[] {
+  const errors: string[] = [];
+  for (const caseArm of prove.cases) {
+    if (caseArm.body.kind === "hole") continue;
+    const topBindings = new Set(caseArm.bindings);
+    const recCalls = collectRecursiveCalls(caseArm.body, prove.name, topBindings);
+    for (const { call, bindings } of recCalls) {
+      if (call.kind !== "call" || call.args.length === 0) continue;
+      // At least one argument must be a case binding (structurally smaller)
+      const hasDecreasing = call.args.some(
+        (a) => a.kind === "ident" && bindings.has(a.name),
+      );
+      if (!hasDecreasing) {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: recursive call ` +
+          `${prove.name}(${call.args.map(exprToString).join(", ")}) ` +
+          `is not structurally decreasing — at least one argument must be a case binding` +
+          (bindings.size > 0 ? ` (${[...bindings].join(", ")})` : ``),
+        );
+      }
+    }
+  }
+  return errors;
+}
+
 // ─── Exhaustiveness checking ───────────────────────────────────────
 // When the first param has a type annotation (e.g., n : Nat) and we
 // know the constructors for that type, check that all are covered.
@@ -1104,7 +1160,8 @@ export function typecheckProve(
   const exhaustErrors = constructorsByType
     ? checkExhaustiveness(prove, constructorsByType)
     : [];
-  if (!prove.returnType) return exhaustErrors;
+  const termErrors = checkTermination(prove);
+  if (!prove.returnType) return [...exhaustErrors, ...termErrors];
 
   const errors: string[] = [];
 
@@ -1177,7 +1234,7 @@ export function typecheckProve(
     }
   }
 
-  return [...exhaustErrors, ...errors];
+  return [...exhaustErrors, ...termErrors, ...errors];
   }); // end withNormTable
 }
 
