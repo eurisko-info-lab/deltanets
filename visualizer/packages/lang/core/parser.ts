@@ -58,8 +58,38 @@ export class ParseError extends Error {
   }
 }
 
+type DeepPattern =
+  | { kind: "var"; name: string }
+  | { kind: "ctor"; name: string; args: DeepPattern[] };
+
+function flattenDeepPatterns(
+  args: DeepPattern[],
+  body: AST.ProveExpr,
+  counter: { value: number },
+): { bindings: string[]; body: AST.ProveExpr } {
+  const bindings: string[] = [];
+  let wrappedBody = body;
+  for (let i = args.length - 1; i >= 0; i--) {
+    const arg = args[i];
+    if (arg.kind === "var") {
+      bindings.unshift(arg.name);
+    } else {
+      const freshVar = `_dp${counter.value++}`;
+      bindings.unshift(freshVar);
+      const inner = flattenDeepPatterns(arg.args, wrappedBody, counter);
+      wrappedBody = {
+        kind: "match",
+        scrutinee: freshVar,
+        cases: [{ pattern: arg.name, bindings: inner.bindings, body: inner.body }],
+      };
+    }
+  }
+  return { bindings, body: wrappedBody };
+}
+
 class Parser {
   pos = 0;
+  private deepPatternCounter = { value: 0 };
   constructor(private tokens: Token[]) {}
 
   peek(): Token {
@@ -521,6 +551,46 @@ class Parser {
     return { node, port };
   }
 
+  // ─── Deep pattern parsing ─────────────────────────────────────────
+
+  parseDeepPattern(): DeepPattern {
+    const name = this.eatIdent();
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      const args: DeepPattern[] = [];
+      if (!this.check(TT.RPAREN))
+        args.push(...this.parseCommaList(() => this.parseDeepPattern()));
+      this.eat(TT.RPAREN);
+      return { kind: "ctor", name, args };
+    }
+    return { kind: "var", name };
+  }
+
+  parseCaseArms(): AST.ProveCase[] {
+    const cases: AST.ProveCase[] = [];
+    while (this.check(TT.PIPE)) {
+      this.advance();
+      const pattern = this.eatIdent();
+      let bindings: string[] = [];
+      let deepArgs: DeepPattern[] | undefined;
+      if (this.check(TT.LPAREN)) {
+        this.advance();
+        if (!this.check(TT.RPAREN))
+          deepArgs = this.parseCommaList(() => this.parseDeepPattern());
+        this.eat(TT.RPAREN);
+      }
+      this.eat(TT.ARROW);
+      let body = this.parseProveExpr();
+      if (deepArgs) {
+        const flat = flattenDeepPatterns(deepArgs, body, this.deepPatternCounter);
+        bindings = flat.bindings;
+        body = flat.body;
+      }
+      cases.push({ pattern, bindings, body });
+    }
+    return cases;
+  }
+
   // ─── Prove (tactic sugar) ────────────────────────────────────────
 
   parseProveDecl(): AST.ProveDecl {
@@ -553,57 +623,16 @@ class Parser {
       this.eat(TT.LPAREN);
       measure = this.parseProveExpr();
       this.eat(TT.RPAREN);
-      // Parse case arms after measure annotation
-      while (this.check(TT.PIPE)) {
-        this.advance();
-        const pattern = this.eatIdent();
-        const bindings: string[] = [];
-        if (this.check(TT.LPAREN)) {
-          this.advance();
-          if (!this.check(TT.RPAREN))
-            bindings.push(...this.parseCommaList(() => this.eatIdent()));
-          this.eat(TT.RPAREN);
-        }
-        this.eat(TT.ARROW);
-        const body = this.parseProveExpr();
-        cases.push({ pattern, bindings, body });
-      }
+      cases.push(...this.parseCaseArms());
     } else if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
                this.check(TT.IDENT) && this.peek().value === "wf") {
       this.advance(); // eat 'wf'
       this.eat(TT.LPAREN);
       wf = this.eatIdent();
       this.eat(TT.RPAREN);
-      // Parse case arms after wf annotation
-      while (this.check(TT.PIPE)) {
-        this.advance();
-        const pattern = this.eatIdent();
-        const bindings: string[] = [];
-        if (this.check(TT.LPAREN)) {
-          this.advance();
-          if (!this.check(TT.RPAREN))
-            bindings.push(...this.parseCommaList(() => this.eatIdent()));
-          this.eat(TT.RPAREN);
-        }
-        this.eat(TT.ARROW);
-        const body = this.parseProveExpr();
-        cases.push({ pattern, bindings, body });
-      }
+      cases.push(...this.parseCaseArms());
     } else {
-      while (this.check(TT.PIPE)) {
-        this.advance(); // eat |
-        const pattern = this.eatIdent();
-        const bindings: string[] = [];
-        if (this.check(TT.LPAREN)) {
-          this.advance();
-          if (!this.check(TT.RPAREN))
-            bindings.push(...this.parseCommaList(() => this.eatIdent()));
-          this.eat(TT.RPAREN);
-        }
-        this.eat(TT.ARROW);
-        const body = this.parseProveExpr();
-        cases.push({ pattern, bindings, body });
-      }
+      cases.push(...this.parseCaseArms());
     }
     this.eat(TT.RBRACE);
     return { kind: "prove", name, params, returnType, cases, induction, measure, wf };
@@ -699,23 +728,24 @@ class Parser {
       const scrutinee = this.eatIdent();
       this.eat(TT.RPAREN);
       this.eat(TT.LBRACE);
-      const cases: AST.ProveCase[] = [];
-      while (this.check(TT.PIPE)) {
-        this.advance();
-        const pattern = this.eatIdent();
-        const bindings: string[] = [];
-        if (this.check(TT.LPAREN)) {
-          this.advance();
-          if (!this.check(TT.RPAREN))
-            bindings.push(...this.parseCommaList(() => this.eatIdent()));
-          this.eat(TT.RPAREN);
-        }
-        this.eat(TT.ARROW);
-        const body = this.parseProveExpr();
-        cases.push({ pattern, bindings, body });
-      }
+      const cases = this.parseCaseArms();
       this.eat(TT.RBRACE);
       return { kind: "match", scrutinee, cases };
+    }
+    if (name === "with") {
+      this.eat(TT.LPAREN);
+      const scrutineeExpr = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      this.eat(TT.LBRACE);
+      const withCases = this.parseCaseArms();
+      this.eat(TT.RBRACE);
+      const freshVar = `_with${this.deepPatternCounter.value++}`;
+      return {
+        kind: "let",
+        name: freshVar,
+        value: scrutineeExpr,
+        body: { kind: "match", scrutinee: freshVar, cases: withCases },
+      };
     }
     if (this.check(TT.LPAREN)) {
       this.advance();

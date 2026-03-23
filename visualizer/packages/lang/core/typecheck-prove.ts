@@ -1835,6 +1835,28 @@ function checkExhaustiveness(
   return [];
 }
 
+function checkOverlap(prove: AST.ProveDecl): string[] {
+  const errors: string[] = [];
+  // Collect constructors that have deep-pattern refinements (generated _dp bindings)
+  const refined = new Set<string>();
+  for (const arm of prove.cases) {
+    if (arm.bindings.some((b) => b.startsWith("_dp"))) refined.add(arm.pattern);
+  }
+  const seen = new Map<string, number>();
+  for (let i = 0; i < prove.cases.length; i++) {
+    const pat = prove.cases[i].pattern;
+    if (refined.has(pat)) continue; // skip deep-pattern-refined constructors
+    const prev = seen.get(pat);
+    if (prev !== undefined) {
+      errors.push(
+        `prove ${prove.name}: redundant case ${pat} (already covered by case ${prev + 1})`,
+      );
+    }
+    seen.set(pat, i + 1);
+  }
+  return errors;
+}
+
 // ─── Match expression type checker ─────────────────────────────────
 // Validates each arm individually, substituting the scrutinee variable
 // with the constructor expression in the expected type (dependent matching).
@@ -1853,6 +1875,21 @@ function typecheckMatchExpr(
   errors.push(...checkMatchExhaustiveness(
     scrutType, matchExpr.cases, ctx.constructorsByType, prefix,
   ));
+  // Overlap: detect redundant case arms (skip deep-pattern-refined constructors)
+  const refined = new Set<string>();
+  for (const arm of matchExpr.cases) {
+    if (arm.bindings.some((b) => b.startsWith("_dp"))) refined.add(arm.pattern);
+  }
+  const matchSeen = new Map<string, number>();
+  for (let i = 0; i < matchExpr.cases.length; i++) {
+    const pat = matchExpr.cases[i].pattern;
+    if (refined.has(pat)) continue;
+    const prev = matchSeen.get(pat);
+    if (prev !== undefined) {
+      errors.push(`${prefix}: redundant match case ${pat} (already covered by case ${prev + 1})`);
+    }
+    matchSeen.set(pat, i + 1);
+  }
 
   for (const arm of matchExpr.cases) {
     const consExpr: AST.ProveExpr = arm.bindings.length > 0
@@ -1904,6 +1941,7 @@ export function typecheckProve(
   const exhaustErrors = constructorsByType
     ? checkExhaustiveness(prove, constructorsByType)
     : [];
+  const overlapErrors = checkOverlap(prove);
   // For codata-returning proves, use productivity checking instead of termination
   const returnTypeName = prove.returnType
     ? (prove.returnType.kind === "ident" ? prove.returnType.name
@@ -2026,7 +2064,7 @@ export function typecheckProve(
     }
   }
 
-  return [...exhaustErrors, ...termErrors, ...errors];
+  return [...exhaustErrors, ...overlapErrors, ...termErrors, ...errors];
   }); // end withNormTable
 }
 
