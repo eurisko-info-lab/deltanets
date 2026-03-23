@@ -164,12 +164,19 @@ export type DataDecl = {
   kind: "data";
   name: string;
   params: string[];  // type parameters (e.g., ["A"] for List(A))
+  indices: DataIndex[];  // value indices (e.g., [{ name: "n", type: Nat }] for Vec(A, n : Nat))
   constructors: DataConstructor[];
+};
+
+export type DataIndex = {
+  name: string;
+  type: ProveExpr;
 };
 
 export type DataConstructor = {
   name: string;
   fields: DataField[];
+  returnIndices?: ProveExpr[];  // specific index values for this constructor (e.g., [Zero] for VNil)
 };
 
 export type DataField = {

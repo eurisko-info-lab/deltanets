@@ -24,11 +24,13 @@ export type ComputeRule = {
 };
 
 /** Constructor typing info derived from data declarations.
- *  Maps constructor name → { typeName, params, fields } */
+ *  Maps constructor name → { typeName, params, indices, fields, returnIndices } */
 export type ConstructorTyping = Map<string, {
   typeName: string;
   params: string[];
+  indices: AST.DataIndex[];
   fields: { name: string; type: AST.ProveExpr }[];
+  returnIndices?: AST.ProveExpr[];
 }>;
 
 // ─── Proof tree types ──────────────────────────────────────────────
@@ -59,6 +61,21 @@ function ident(name: string): AST.ProveExpr {
 
 function app(name: string, ...args: AST.ProveExpr[]): AST.ProveExpr {
   return { kind: "call", name, args };
+}
+
+/** Build the return type for a constructor, using index annotations when present.
+ *  Non-indexed: Nat. Indexed: Vec(A, Zero) for VNil. */
+function constructorReturnType(
+  info: { typeName: string; params: string[]; indices: AST.DataIndex[]; returnIndices?: AST.ProveExpr[] },
+): AST.ProveExpr {
+  if (info.returnIndices && info.returnIndices.length > 0) {
+    const paramArgs = info.params.map(ident);
+    return app(info.typeName, ...paramArgs, ...info.returnIndices);
+  }
+  if (info.params.length > 0) {
+    return app(info.typeName, ...info.params.map(ident));
+  }
+  return ident(info.typeName);
 }
 
 function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
@@ -405,7 +422,7 @@ function inferType(
     // Nullary constructor: infer type from data declaration
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
-      return { ok: true, type: ident(ctorInfo.typeName) };
+      return { ok: true, type: constructorReturnType(ctorInfo) };
     }
     return { ok: false, error: `unexpected identifier '${expr.name}' in proof position` };
   }
@@ -565,7 +582,7 @@ function inferType(
   // e.g., Succ(x) : Nat, Cons(h, t) : List, Zero : Nat (handled below for ident)
   const ctorInfo = ctx.constructorTyping.get(name);
   if (ctorInfo) {
-    return { ok: true, type: ident(ctorInfo.typeName) };
+    return { ok: true, type: constructorReturnType(ctorInfo) };
   }
 
   return { ok: false, error: `unknown proof combinator '${name}'` };

@@ -626,10 +626,22 @@ class Parser {
     this.eat(TT.DATA);
     const name = this.eatIdent();
     const params: string[] = [];
+    const indices: AST.DataIndex[] = [];
     if (this.check(TT.LPAREN)) {
       this.advance();
       if (!this.check(TT.RPAREN)) {
-        params.push(...this.parseCommaList(() => this.eatIdent()));
+        // Parse params and indices: bare ident = param, ident : Type = index
+        this.parseCommaList(() => {
+          const paramName = this.eatIdent();
+          if (this.check(TT.COLON)) {
+            this.advance();
+            const indexType = this.parseProveExpr();
+            indices.push({ name: paramName, type: indexType });
+          } else {
+            params.push(paramName);
+          }
+          return paramName; // unused return for parseCommaList
+        });
       }
       this.eat(TT.RPAREN);
     }
@@ -651,10 +663,21 @@ class Parser {
         }
         this.eat(TT.RPAREN);
       }
-      constructors.push({ name: consName, fields });
+      // Optional return index annotation: | VNil : Vec(A, Zero)
+      let returnIndices: AST.ProveExpr[] | undefined;
+      if (this.check(TT.COLON)) {
+        this.advance();
+        const retType = this.parseProveExpr();
+        // Extract index arguments from the return type call
+        if (retType.kind === "call" && retType.name === name) {
+          // Skip params, take only index positions
+          returnIndices = retType.args.slice(params.length);
+        }
+      }
+      constructors.push({ name: consName, fields, returnIndices });
     }
     this.eat(TT.RBRACE);
-    return { kind: "data", name, params, constructors };
+    return { kind: "data", name, params, indices, constructors };
   }
 
   // ─── Compute (type-level reduction rule) ─────────────────────────

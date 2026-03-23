@@ -359,5 +359,56 @@ Deno.test("data: non-parameterized data has empty params", () => {
   const sys = core.systems.get("Nat")!;
   const succInfo = sys.constructorTyping.get("Succ")!;
   assertEquals(succInfo.params, []);
+  assertEquals(succInfo.indices, []);
   assertEquals(succInfo.fields[0].type, { kind: "ident", name: "Nat" });
+});
+
+// ─── Indexed data types ────────────────────────────────────────────
+
+const DATA_VEC = `
+include "prelude"
+
+system "Vec" {
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+
+  data Vec(A, n : Nat) {
+    | VNil : Vec(A, Zero)
+    | VCons(head : A, tail : Vec(A, k)) : Vec(A, Succ(k))
+  }
+}
+`;
+
+Deno.test("data: indexed Vec(A, n : Nat) parses indices", () => {
+  const core = compileAndAssert(DATA_VEC);
+  const sys = core.systems.get("Vec")!;
+  const vnilInfo = sys.constructorTyping.get("VNil")!;
+  assertEquals(vnilInfo.typeName, "Vec");
+  assertEquals(vnilInfo.params, ["A"]);
+  assertEquals(vnilInfo.indices.length, 1);
+  assertEquals(vnilInfo.indices[0].name, "n");
+  assertEquals(vnilInfo.indices[0].type, { kind: "ident", name: "Nat" });
+  assertEquals(vnilInfo.returnIndices!, [{ kind: "ident", name: "Zero" }]);
+});
+
+Deno.test("data: indexed VCons has Succ(k) return index", () => {
+  const core = compileAndAssert(DATA_VEC);
+  const sys = core.systems.get("Vec")!;
+  const vconsInfo = sys.constructorTyping.get("VCons")!;
+  assertEquals(vconsInfo.typeName, "Vec");
+  assertEquals(vconsInfo.params, ["A"]);
+  assertEquals(vconsInfo.indices.length, 1);
+  assertEquals(vconsInfo.returnIndices!, [
+    { kind: "call", name: "Succ", args: [{ kind: "ident", name: "k" }] },
+  ]);
+});
+
+Deno.test("data: non-indexed data has empty indices", () => {
+  const core = compileAndAssert(DATA_NAT);
+  const sys = core.systems.get("Nat")!;
+  const zeroInfo = sys.constructorTyping.get("Zero")!;
+  assertEquals(zeroInfo.indices, []);
+  assertEquals(zeroInfo.returnIndices, undefined);
 });

@@ -49,7 +49,13 @@ export function evalBodyInto(
       constructorsByType.set(item.name, new Set(item.constructors.map((c) => c.name)));
       // Build constructor typing for the type checker
       for (const ctor of item.constructors) {
-        constructorTyping.set(ctor.name, { typeName: item.name, params: item.params, fields: ctor.fields });
+        constructorTyping.set(ctor.name, {
+          typeName: item.name,
+          params: item.params,
+          indices: item.indices,
+          fields: ctor.fields,
+          returnIndices: ctor.returnIndices,
+        });
       }
     } else if (item.kind === "prove") {
       const firstParam = item.params[0];
