@@ -428,6 +428,18 @@ function inferType(
     if (expr.name === "simp") {
       return { ok: false, error: "simp: could not resolve — no proof found" };
     }
+    // decide — ground term computation (resolved before type-checking)
+    if (expr.name === "decide") {
+      return { ok: false, error: "decide: could not resolve — terms may not be ground" };
+    }
+    // omega — linear arithmetic (resolved before type-checking)
+    if (expr.name === "omega") {
+      return { ok: false, error: "omega: could not resolve — not a linear arithmetic goal" };
+    }
+    // auto — depth-bounded proof search (resolved before type-checking)
+    if (expr.name === "auto") {
+      return { ok: false, error: "auto: could not resolve — no proof found" };
+    }
     // Nullary constructor: infer type from data declaration
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
@@ -785,6 +797,15 @@ function buildNode(
   if (expr.kind === "ident" && expr.name === "simp") {
     return { rule: "simp", term, conclusion, children: [] };
   }
+  if (expr.kind === "ident" && expr.name === "decide") {
+    return { rule: "decide", term, conclusion, children: [] };
+  }
+  if (expr.kind === "ident" && expr.name === "omega") {
+    return { rule: "omega", term, conclusion, children: [] };
+  }
+  if (expr.kind === "ident" && expr.name === "auto") {
+    return { rule: "auto", term, conclusion, children: [] };
+  }
   if (expr.kind === "ident") {
     return { rule: "?", term, conclusion, children: [] };
   }
@@ -1039,6 +1060,15 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "ident" && expr.name === "simp") {
     return { kind: "ident", name: "refl" };
   }
+  if (expr.kind === "ident" && expr.name === "decide") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "omega") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "auto") {
+    return { kind: "ident", name: "refl" };
+  }
   if (expr.kind !== "call") return expr;  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
@@ -1235,6 +1265,24 @@ export function typecheckProve(
     // Handle simp — should have been resolved before type checking; if still present, it failed
     if (rawBody.kind === "ident" && rawBody.name === "simp") {
       errors.push(`${prefix}: simp failed — could not find a proof\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle decide — should have been resolved before type checking; if still present, it failed
+    if (rawBody.kind === "ident" && rawBody.name === "decide") {
+      errors.push(`${prefix}: decide failed — terms may not be ground or not equal\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle omega — should have been resolved before type checking; if still present, it failed
+    if (rawBody.kind === "ident" && rawBody.name === "omega") {
+      errors.push(`${prefix}: omega failed — not a linear arithmetic goal\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle auto — should have been resolved before type checking; if still present, it failed
+    if (rawBody.kind === "ident" && rawBody.name === "auto") {
+      errors.push(`${prefix}: auto failed — could not find a proof\n  goal: ${exprToString(requiredType)}`);
       continue;
     }
 
@@ -1517,5 +1565,340 @@ function trySimpRewrite(
     }
   }
 
+  return null;
+}
+
+// ─── Decide tactic ─────────────────────────────────────────────────
+// Proves Eq(a, b) when both sides are ground (no free variables) and
+// normalize to structurally identical terms.
+
+export function resolveDecide(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[] = [],
+): AST.ProveDecl {
+  if (!prove.returnType) return prove;
+
+  let changed = false;
+  const newCases = prove.cases.map((caseArm) => {
+    const resolved = resolveDecideExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
+    if (resolved !== caseArm.body) {
+      changed = true;
+      return { ...caseArm, body: resolved };
+    }
+    return caseArm;
+  });
+  return changed ? { ...prove, cases: newCases } : prove;
+}
+
+function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveExpr>): boolean {
+  if (expr.kind === "ident") return !caseBindings.has(expr.name);
+  if (expr.kind === "call") return expr.args.every(a => isGroundTerm(a, caseBindings));
+  return false;
+}
+
+function resolveDecideExpr(
+  expr: AST.ProveExpr,
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
+): AST.ProveExpr {
+  if (expr.kind === "ident" && expr.name === "decide") {
+    return withNormTable(computeRules, () => {
+      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+      const goalEq = extractEq(normalize(goal));
+      if (goalEq) {
+        const lhs = normalize(goalEq.left);
+        const rhs = normalize(goalEq.right);
+        if (isGroundTerm(lhs, ctx.caseBindings) && isGroundTerm(rhs, ctx.caseBindings) && exprEqual(lhs, rhs)) {
+          return ident("refl") as AST.ProveExpr;
+        }
+      }
+      return expr;
+    });
+  }
+  if (expr.kind === "match") {
+    let changed = false;
+    const newCases = expr.cases.map((c) => {
+      const r = resolveDecideExpr(c.body, prove, caseArm, provedCtx, computeRules);
+      if (r !== c.body) changed = true;
+      return { ...c, body: r };
+    });
+    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
+  }
+  if (expr.kind === "call") {
+    let changed = false;
+    const newArgs = expr.args.map((a) => {
+      const r = resolveDecideExpr(a, prove, caseArm, provedCtx, computeRules);
+      if (r !== a) changed = true;
+      return r;
+    });
+    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
+  }
+  return expr;
+}
+
+// ─── Omega tactic ──────────────────────────────────────────────────
+// Proves Eq goals over Nat by normalizing both sides and checking if
+// they match after compute-rule reduction. Falls back to congruence
+// (cong_succ) with IH when direct normalization is insufficient.
+
+export function resolveOmega(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[] = [],
+): AST.ProveDecl {
+  if (!prove.returnType) return prove;
+
+  let changed = false;
+  const newCases = prove.cases.map((caseArm) => {
+    const resolved = resolveOmegaExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
+    if (resolved !== caseArm.body) {
+      changed = true;
+      return { ...caseArm, body: resolved };
+    }
+    return caseArm;
+  });
+  return changed ? { ...prove, cases: newCases } : prove;
+}
+
+function resolveOmegaExpr(
+  expr: AST.ProveExpr,
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
+): AST.ProveExpr {
+  if (expr.kind === "ident" && expr.name === "omega") {
+    return withNormTable(computeRules, () => {
+      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+      const goalEq = extractEq(normalize(goal));
+      if (!goalEq) return expr;
+
+      const lhs = normalize(goalEq.left);
+      const rhs = normalize(goalEq.right);
+
+      // 1. Direct normalization equality → refl
+      if (exprEqual(lhs, rhs)) return ident("refl") as AST.ProveExpr;
+
+      // 2. Try congruence: if both sides are Succ(X) and Succ(Y),
+      //    try to prove Eq(X, Y) recursively
+      const congResult = tryCongSucc(lhs, rhs, ctx);
+      if (congResult) return congResult;
+
+      // 3. Try IH application + rewrite
+      const rwResult = trySimpRewrite(ctx, goalEq);
+      if (rwResult) return rwResult;
+
+      // 4. Try cong_succ(IH)
+      if (lhs.kind === "call" && lhs.name === "Succ" && lhs.args.length === 1 &&
+          rhs.kind === "call" && rhs.name === "Succ" && rhs.args.length === 1) {
+        const innerGoal = app("Eq", lhs.args[0], rhs.args[0]);
+        const innerRw = trySimpRewrite(ctx, { left: lhs.args[0], right: rhs.args[0] });
+        if (innerRw) return app("cong_succ", innerRw);
+      }
+
+      return expr;
+    });
+  }
+  if (expr.kind === "match") {
+    let changed = false;
+    const newCases = expr.cases.map((c) => {
+      const r = resolveOmegaExpr(c.body, prove, caseArm, provedCtx, computeRules);
+      if (r !== c.body) changed = true;
+      return { ...c, body: r };
+    });
+    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
+  }
+  if (expr.kind === "call") {
+    let changed = false;
+    const newArgs = expr.args.map((a) => {
+      const r = resolveOmegaExpr(a, prove, caseArm, provedCtx, computeRules);
+      if (r !== a) changed = true;
+      return r;
+    });
+    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
+  }
+  return expr;
+}
+
+/** Try congruence on Succ: if Succ(a) = Succ(b) and IH gives a = b, return cong_succ(IH) */
+function tryCongSucc(
+  lhs: AST.ProveExpr,
+  rhs: AST.ProveExpr,
+  ctx: ProveCtx,
+): AST.ProveExpr | null {
+  if (lhs.kind !== "call" || lhs.name !== "Succ" || lhs.args.length !== 1) return null;
+  if (rhs.kind !== "call" || rhs.name !== "Succ" || rhs.args.length !== 1) return null;
+  const innerLhs = normalize(lhs.args[0]);
+  const innerRhs = normalize(rhs.args[0]);
+  if (exprEqual(innerLhs, innerRhs)) return app("cong_succ", ident("refl"));
+  // Try IH: call prove with each binding variable
+  const auxArgs = auxParams(ctx.prove.params).map((p) => ident(p.name));
+  for (const b of ctx.caseBindings.keys()) {
+    const ihCall = app(ctx.prove.name, ident(b), ...auxArgs);
+    const r = inferType(ihCall, ctx);
+    if (r.ok) {
+      const eq = extractEq(normalize(r.type));
+      if (eq && exprEqual(normalize(eq.left), innerLhs) && exprEqual(normalize(eq.right), innerRhs)) {
+        return app("cong_succ", ihCall);
+      }
+      // Also try with sym
+      if (eq && exprEqual(normalize(eq.left), innerRhs) && exprEqual(normalize(eq.right), innerLhs)) {
+        return app("cong_succ", app("sym", ihCall));
+      }
+    }
+  }
+  return null;
+}
+
+// ─── Auto tactic ───────────────────────────────────────────────────
+// Depth-bounded proof search combining conv, assumption, simp, and
+// congruence reasoning. Tries progressively deeper strategies.
+
+export function resolveAuto(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[] = [],
+): AST.ProveDecl {
+  if (!prove.returnType) return prove;
+
+  let changed = false;
+  const newCases = prove.cases.map((caseArm) => {
+    const resolved = resolveAutoExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
+    if (resolved !== caseArm.body) {
+      changed = true;
+      return { ...caseArm, body: resolved };
+    }
+    return caseArm;
+  });
+  return changed ? { ...prove, cases: newCases } : prove;
+}
+
+function resolveAutoExpr(
+  expr: AST.ProveExpr,
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
+): AST.ProveExpr {
+  if (expr.kind === "ident" && expr.name === "auto") {
+    return withNormTable(computeRules, () => {
+      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+      const result = autoSearch(goal, ctx, 3);
+      return result ?? expr;
+    });
+  }
+  if (expr.kind === "match") {
+    let changed = false;
+    const newCases = expr.cases.map((c) => {
+      const r = resolveAutoExpr(c.body, prove, caseArm, provedCtx, computeRules);
+      if (r !== c.body) changed = true;
+      return { ...c, body: r };
+    });
+    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
+  }
+  if (expr.kind === "call") {
+    let changed = false;
+    const newArgs = expr.args.map((a) => {
+      const r = resolveAutoExpr(a, prove, caseArm, provedCtx, computeRules);
+      if (r !== a) changed = true;
+      return r;
+    });
+    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
+  }
+  return expr;
+}
+
+function autoSearch(
+  goal: AST.ProveExpr,
+  ctx: ProveCtx,
+  depth: number,
+): AST.ProveExpr | null {
+  if (depth <= 0) return null;
+
+  const normGoal = normalize(goal);
+  const goalEq = extractEq(normGoal);
+
+  // 1. conv: definitional equality → refl
+  if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+    return ident("refl");
+  }
+
+  // 2. assumption search
+  const candidates = searchCandidates(ctx, goal);
+  if (candidates.length > 0) return parseProofString(candidates[0]);
+
+  // 3. one-step rewrite (simp strategy)
+  if (goalEq) {
+    const rw = trySimpRewrite(ctx, goalEq);
+    if (rw) return rw;
+  }
+
+  // 4. congruence: if Eq(F(a), F(b)), try cong_F(proof of Eq(a, b))
+  if (goalEq && depth >= 2) {
+    const congResult = tryCongAuto(goalEq.left, goalEq.right, ctx, depth);
+    if (congResult) return congResult;
+  }
+
+  // 5. trans chaining at depth-1: try to split the goal via available lemmas
+  if (goalEq && depth >= 2) {
+    const lhs = normalize(goalEq.left);
+    const rhs = normalize(goalEq.right);
+    const auxArgs = auxParams(ctx.prove.params).map((p) => ident(p.name));
+    // Try IH as first step, then recurse
+    for (const b of ctx.caseBindings.keys()) {
+      const ihCall = app(ctx.prove.name, ident(b), ...auxArgs);
+      const r = inferType(ihCall, ctx);
+      if (!r.ok) continue;
+      const eq = extractEq(normalize(r.type));
+      if (!eq) continue;
+      // If IH proves Eq(A, B), and our goal is Eq(A, C), try trans(IH, Eq(B, C))
+      const ihLhs = normalize(eq.left);
+      const ihRhs = normalize(eq.right);
+      if (exprEqual(ihLhs, lhs)) {
+        const rest = autoSearch(app("Eq", ihRhs, rhs), ctx, depth - 1);
+        if (rest) return app("trans", ihCall, rest);
+      }
+      if (exprEqual(ihRhs, rhs)) {
+        const rest = autoSearch(app("Eq", lhs, ihLhs), ctx, depth - 1);
+        if (rest) return app("trans", rest, ihCall);
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Try congruence reasoning: if goal is Eq(F(a1,...), F(b1,...)), try cong_F for each differing argument. */
+function tryCongAuto(
+  lhs: AST.ProveExpr,
+  rhs: AST.ProveExpr,
+  ctx: ProveCtx,
+  depth: number,
+): AST.ProveExpr | null {
+  const nlhs = normalize(lhs);
+  const nrhs = normalize(rhs);
+  if (nlhs.kind !== "call" || nrhs.kind !== "call") return null;
+  if (nlhs.name !== nrhs.name || nlhs.args.length !== nrhs.args.length) return null;
+  // Find the one differing argument position
+  const diffs: number[] = [];
+  for (let i = 0; i < nlhs.args.length; i++) {
+    if (!exprEqual(normalize(nlhs.args[i]), normalize(nrhs.args[i]))) diffs.push(i);
+  }
+  // Standard cong applies to last differing argument
+  if (diffs.length === 1 && diffs[0] === nlhs.args.length - 1) {
+    const inner = autoSearch(
+      app("Eq", nlhs.args[diffs[0]], nrhs.args[diffs[0]]),
+      ctx,
+      depth - 1,
+    );
+    if (inner) {
+      const congName = `cong_${nlhs.name.toLowerCase()}`;
+      const constArgs = nlhs.args.slice(0, -1);
+      return app(congName, inner, ...constArgs);
+    }
+  }
   return null;
 }

@@ -7,7 +7,7 @@ import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, typecheckProve, withNormTable } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, resolveDecide, resolveOmega, resolveAuto, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
@@ -181,6 +181,12 @@ export function evalBodyInto(
         prove = withNormTable(computeRules, () => resolveAssumptions(prove, provedCtx));
         // Resolve simp tactic to concrete proof terms
         prove = withNormTable(computeRules, () => resolveSimp(prove, provedCtx, computeRules));
+        // Resolve decide tactic (ground-term equality)
+        prove = withNormTable(computeRules, () => resolveDecide(prove, provedCtx, computeRules));
+        // Resolve omega tactic (linear arithmetic)
+        prove = withNormTable(computeRules, () => resolveOmega(prove, provedCtx, computeRules));
+        // Resolve auto tactic (depth-bounded proof search)
+        prove = withNormTable(computeRules, () => resolveAuto(prove, provedCtx, computeRules));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
@@ -673,6 +679,15 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
     return { kind: "ident", name: "refl" };
   }
   if (expr.kind === "ident" && expr.name === "simp") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "decide") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "omega") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "auto") {
     return { kind: "ident", name: "refl" };
   }
   if (expr.kind !== "call") return expr;
