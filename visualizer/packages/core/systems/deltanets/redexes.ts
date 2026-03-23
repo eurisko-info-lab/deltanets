@@ -250,6 +250,13 @@ export function getRedexes(
               createRedex(node, other, false, () => {
                 reduceCustomRule(left, right, graph, rule, agentPorts);
               });
+            } else if (rule.action.kind === "meta") {
+              const handler = rule.action.handler;
+              const left = node.type === rule.agentA ? node : other;
+              const right = left === node ? other : node;
+              createRedex(node, other, false, () => {
+                handler(left, right, graph, agentPorts ?? new Map());
+              });
             }
           } else if (
             node.type.startsWith("rep") &&

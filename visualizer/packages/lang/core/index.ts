@@ -31,6 +31,13 @@ export {
   Q_GOAL, CTX_NIL, CTX_CONS,
 } from "./quotation.ts";
 export type { QuoteResult } from "./quotation.ts";
+export {
+  registerMetaAgents, createNormalizeHandler, createApplyRuleHandler,
+  readTermFromGraph, writeTermToGraph, collectTermTree,
+  META_AGENTS, META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
+  META_AGENT_DECLS,
+} from "./meta-agents.ts";
+export { normalize } from "./typecheck-prove.ts";
 export type * from "./types.ts";
 
 export function compile(

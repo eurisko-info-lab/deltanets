@@ -128,9 +128,15 @@ export type RuleDecl = {
   action: RuleAction;
 };
 
+export type MetaAction = {
+  kind: "meta";
+  handler: import("@deltanets/core").MetaHandler;
+};
+
 export type RuleAction =
   | BuiltinAction
-  | CustomAction;
+  | CustomAction
+  | MetaAction;
 
 export type BuiltinAction = {
   kind: "builtin";

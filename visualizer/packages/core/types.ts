@@ -83,12 +83,21 @@ export type RuleStmt =
   | { kind: "erase-stmt"; port: RulePortRef };
 
 /** A declared interaction rule between two agent types. */
+/** A procedural handler invoked during INet reduction for meta-agents. */
+export type MetaHandler = (
+  left: Node,
+  right: Node,
+  graph: Graph,
+  agentPorts: AgentPortDefs,
+) => void;
+
 export type InteractionRule = {
   agentA: string;
   agentB: string;
   action:
     | { kind: "builtin"; name: "annihilate" | "erase" | "commute" | "aux-fan" }
-    | { kind: "custom"; body: RuleStmt[] };
+    | { kind: "custom"; body: RuleStmt[] }
+    | { kind: "meta"; handler: MetaHandler };
 };
 
 /**

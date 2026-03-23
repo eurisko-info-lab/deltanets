@@ -524,7 +524,7 @@ export function withNormTable<T>(rules: ComputeRule[], fn: () => T): T {
   finally { activeNormTable = prev; }
 }
 
-function normalize(expr: AST.ProveExpr): AST.ProveExpr {
+export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   // Universe level normalization: Type → Type(0), Type1 → Type(1), etc.
   if (expr.kind === "ident") {
     if (expr.name === "Type") return app("Type", ident("0"));

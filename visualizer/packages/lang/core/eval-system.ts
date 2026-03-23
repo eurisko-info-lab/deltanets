@@ -10,6 +10,7 @@ import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, resolveDecide, resolveOmega, resolveAuto, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 import { registerQuotationAgents, quoteExpr, containsQuote, QUOTE_AGENTS } from "./quotation.ts";
+import { registerMetaAgents, META_AGENTS } from "./meta-agents.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
@@ -101,6 +102,9 @@ export function evalBodyInto(
     }
     if (item.kind === "open" && item.system === "Quote") {
       for (const name of QUOTE_AGENTS) knownAgents.add(name);
+    }
+    if (item.kind === "open" && item.system === "Meta") {
+      for (const name of META_AGENTS) knownAgents.add(name);
     }
     if (item.kind === "open" && systems) {
       const source = systems.get(item.system);
@@ -232,6 +236,11 @@ export function evalBodyInto(
         // Built-in "Quote" system: register quotation agents
         if (item.system === "Quote") {
           registerQuotationAgents(agents, rules);
+          break;
+        }
+        // Built-in "Meta" system: register meta-agents with handlers
+        if (item.system === "Meta") {
+          registerMetaAgents(agents, rules, computeRules);
           break;
         }
         // Import agents/rules/etc from another system

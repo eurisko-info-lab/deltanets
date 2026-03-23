@@ -27,6 +27,7 @@
 | 15 | Unification engine | `a7b33a5` |
 | 16 | Universe polymorphism | `fbbbad7` |
 | 17 | Quotation & reflection | `97d6aaf` |
+| 18 | Meta-agents | `c3cc341` |
 
 ---
 
