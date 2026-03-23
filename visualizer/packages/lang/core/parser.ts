@@ -219,6 +219,8 @@ class Parser {
         return this.parseClassDecl();
       case TT.INSTANCE:
         return this.parseInstanceDecl();
+      case TT.HINT:
+        return this.parseHintDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -384,8 +386,9 @@ class Parser {
       else if (tok.type === TT.RING) body.push(this.parseRingDecl());
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
+      else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1106,6 +1109,7 @@ class Parser {
       else if (tok.type === TT.RING) body.push(this.parseRingDecl());
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
+      else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1293,6 +1297,15 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "instance", className, args, methods };
+  }
+
+  // hint auto : lemmaName
+  parseHintDecl(): AST.HintDecl {
+    this.eat(TT.HINT);
+    const db = this.eatIdent();
+    this.eat(TT.COLON);
+    const lemma = this.eatIdent();
+    return { kind: "hint", db, lemma };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

@@ -29,7 +29,8 @@ export type Statement =
   | SetoidDecl
   | RingDecl
   | ClassDecl
-  | InstanceDecl;
+  | InstanceDecl
+  | HintDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -56,7 +57,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -144,6 +145,15 @@ export type InstanceDecl = {
   className: string;      // which class (e.g., "Show")
   args: string[];         // type arguments (e.g., ["Nat"])
   methods: { name: string; value: string }[]; // method implementations
+};
+
+// hint auto : lemmaName
+// hint simp : lemmaName
+// Registers a proved lemma as a hint in a named database (auto, simp, etc.).
+export type HintDecl = {
+  kind: "hint";
+  db: string;    // database name (e.g., "auto", "simp")
+  lemma: string; // lemma/prove name to add as hint
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

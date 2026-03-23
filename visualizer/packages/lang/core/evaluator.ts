@@ -53,6 +53,7 @@ export type SystemDef = {
   rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; // registered ring structures
   classes?: Map<string, ClassDef>; // typeclass declarations
   instances?: InstanceDef[]; // typeclass instances
+  hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
 };
 
 export type ClassDef = {

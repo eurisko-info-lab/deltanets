@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
-import type { AgentDef, RuleDef, TacticDef } from "./evaluator.ts";
+import type { AgentDef, RuleDef, TacticDef, InstanceDef } from "./evaluator.ts";
 import { evalAgent } from "./eval-system.ts";
 import type { ComputeRule, ProvedContext } from "./typecheck-prove.ts";
 import {
@@ -51,6 +51,8 @@ type BuiltinResolver = (
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: InstanceDef[],
 ) => AST.ProveExpr | null;
 
 const BUILTIN_RESOLVERS = new Map<string, BuiltinResolver>([
@@ -318,13 +320,15 @@ export function resolveAllTactics(
   tactics: Map<string, TacticDef>,
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
+  hints?: Map<string, Set<string>>,
+  instances?: InstanceDef[],
 ): AST.ProveDecl {
   if (!prove.returnType) return prove;
 
   let changed = false;
   const newCases = prove.cases.map((caseArm) => {
     const resolved = resolveUserTacticExpr(
-      caseArm.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules,
+      caseArm.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances,
     );
     if (resolved !== caseArm.body) {
       changed = true;
@@ -344,12 +348,14 @@ function resolveUserTacticExpr(
   tactics: Map<string, TacticDef>,
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
+  hints?: Map<string, Set<string>>,
+  instances?: InstanceDef[],
 ): AST.ProveExpr {
   if (expr.kind === "ident") {
     // Built-in tactic resolvers (assumption, simp, decide, omega, auto)
     const builtinResolver = BUILTIN_RESOLVERS.get(expr.name);
     if (builtinResolver) {
-      const result = builtinResolver(prove, caseArm, provedCtx);
+      const result = builtinResolver(prove, caseArm, provedCtx, hints, instances);
       return result ?? expr;
     }
     // User-defined tactics
@@ -363,20 +369,20 @@ function resolveUserTacticExpr(
     }
   }
   if (expr.kind === "let") {
-    const nv = resolveUserTacticExpr(expr.value, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);
-    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);
+    const nv = resolveUserTacticExpr(expr.value, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
     if (nv !== expr.value || nb !== expr.body) return { kind: "let", name: expr.name, value: nv, body: nb };
     return expr;
   }
   if (expr.kind === "lambda") {
-    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);
+    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
     if (nb !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: nb };
     return expr;
   }
   if (expr.kind === "match") {
     let ch = false;
     const nc = expr.cases.map((c) => {
-      const r = resolveUserTacticExpr(c.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);
+      const r = resolveUserTacticExpr(c.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
       if (r !== c.body) ch = true;
       return { ...c, body: r };
     });
@@ -385,7 +391,7 @@ function resolveUserTacticExpr(
   if (expr.kind === "call") {
     let ch = false;
     const na = expr.args.map((a) => {
-      const r = resolveUserTacticExpr(a, prove, caseArm, provedCtx, computeRules, tactics, agents, rules);
+      const r = resolveUserTacticExpr(a, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
       if (r !== a) ch = true;
       return r;
     });

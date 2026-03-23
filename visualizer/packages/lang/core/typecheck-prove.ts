@@ -700,6 +700,8 @@ type ProveCtx = {
   constructorTyping: ConstructorTyping; // constructor → type info from data decls
   constructorsByType?: Map<string, Set<string>>; // type name → constructor names
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // relation → setoid def
+  hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
+  instances?: import("./evaluator.ts").InstanceDef[]; // typeclass instances
 };
 
 type TypeResult =
@@ -1198,13 +1200,28 @@ function searchCandidates(
     : [];
   allIHs.forEach(tryAdd);
 
-  // 3. Cross-lemma calls
+  // 3. Hint-DB lemmas (auto DB) — tried before general cross-lemma calls
   const availableVars = [
     ...[...ctx.caseBindings.keys()].map(ident),
     ...auxParams(ctx.prove.params).map((p) => ident(p.name)),
   ];
   const allLemmaCalls: AST.ProveExpr[] = [];
+  const hintAutoNames = ctx.hints?.get("auto");
+  if (hintAutoNames) {
+    for (const lemmaName of hintAutoNames) {
+      const lemma = ctx.provedCtx.get(lemmaName);
+      if (!lemma) continue;
+      if (lemma.params.length <= availableVars.length) {
+        const call = app(lemmaName, ...availableVars.slice(0, lemma.params.length));
+        allLemmaCalls.push(call);
+        tryAdd(call);
+      }
+    }
+  }
+
+  // 4. Cross-lemma calls (remaining lemmas not already tried via hints)
   for (const [lemmaName, lemma] of ctx.provedCtx) {
+    if (hintAutoNames?.has(lemmaName)) continue; // already tried above
     if (lemma.params.length <= availableVars.length) {
       const call = app(lemmaName, ...availableVars.slice(0, lemma.params.length));
       allLemmaCalls.push(call);
@@ -1212,10 +1229,10 @@ function searchCandidates(
     }
   }
 
-  // 4. sym wrappers
+  // 5. sym wrappers
   for (const inner of [...allIHs, ...allLemmaCalls]) tryAdd(app("sym", inner));
 
-  // 5. cong_X wrapping — if goal is Eq(X(...,a), X(...,b))
+  // 6. cong_X wrapping — if goal is Eq(X(...,a), X(...,b))
   if (goalEq.left.kind === "call" && goalEq.right.kind === "call" &&
       goalEq.left.name === goalEq.right.name &&
       goalEq.left.args.length === goalEq.right.args.length) {
@@ -1520,6 +1537,8 @@ function caseCtx(
   provedCtx: ProvedContext,
   constructorTyping: ConstructorTyping = new Map(),
   constructorsByType?: Map<string, Set<string>>,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): { ctx: ProveCtx; expectedType: AST.ProveExpr } {
   const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
     ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
@@ -1534,6 +1553,8 @@ function caseCtx(
       provedCtx,
       constructorTyping,
       constructorsByType,
+      hints,
+      instances,
     },
     expectedType: normalize(substitute(prove.returnType!, inductionParam(prove.params)!.name, consExpr)),
   };
@@ -1572,8 +1593,10 @@ export function tryResolveAssumption(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): AST.ProveExpr | null {
-  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   const candidates = searchCandidates(ctx, goal);
   return candidates.length > 0 ? parseProofString(candidates[0]) : null;
 }
@@ -1582,8 +1605,10 @@ export function tryResolveSimp(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): AST.ProveExpr | null {
-  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   const goalEq = extractEq(normalize(goal));
   if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
     return ident("refl");
@@ -1601,8 +1626,10 @@ export function tryResolveDecide(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): AST.ProveExpr | null {
-  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   const goalEq = extractEq(normalize(goal));
   if (goalEq) {
     const lhs = normalize(goalEq.left);
@@ -1618,8 +1645,10 @@ export function tryResolveOmega(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): AST.ProveExpr | null {
-  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   const goalEq = extractEq(normalize(goal));
   if (!goalEq) return null;
   const lhs = normalize(goalEq.left);
@@ -1641,8 +1670,10 @@ export function tryResolveAuto(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): AST.ProveExpr | null {
-  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   return autoSearch(goal, ctx, 3);
 }
 
@@ -2068,6 +2099,8 @@ export function typecheckProve(
   coercions?: Map<string, Map<string, string>>,
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>,
   rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -2095,7 +2128,10 @@ export function typecheckProve(
 
   for (const caseArm of prove.cases) {
     const { ctx: baseCtx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
-    const ctx: ProveCtx = setoids ? { ...baseCtx, setoids } : baseCtx;
+    let ctx: ProveCtx = baseCtx;
+    if (setoids) ctx = { ...ctx, setoids };
+    if (hints) ctx = { ...ctx, hints };
+    if (instances) ctx = { ...ctx, instances };
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
     const rawBody = caseArm.body;
     const reqEq = extractEq(requiredType);
@@ -2483,12 +2519,31 @@ function trySimpRewrite(
     }
   }
 
-  // Cross-lemma calls
+  // Hint-DB lemmas (simp DB) — tried before general cross-lemma calls
   const availableVars = [
     ...[...ctx.caseBindings.keys()].map(ident),
     ...auxParams(ctx.prove.params).map((p) => ident(p.name)),
   ];
+  const hintSimpNames = ctx.hints?.get("simp");
+  if (hintSimpNames) {
+    for (const lemmaName of hintSimpNames) {
+      const lemma = ctx.provedCtx.get(lemmaName);
+      if (!lemma) continue;
+      const explicitParams = lemma.params.filter((p) => !p.implicit);
+      if (explicitParams.length <= availableVars.length) {
+        const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
+        const r = inferType(call, ctx);
+        if (r.ok) {
+          const equiv = extractEquiv(normalize(r.type));
+          if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
+        }
+      }
+    }
+  }
+
+  // Cross-lemma calls (remaining lemmas not already tried via hints)
   for (const [lemmaName, lemma] of ctx.provedCtx) {
+    if (hintSimpNames?.has(lemmaName)) continue;
     const explicitParams = lemma.params.filter((p) => !p.implicit);
     if (explicitParams.length <= availableVars.length) {
       const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
