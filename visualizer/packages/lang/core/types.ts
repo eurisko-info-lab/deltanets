@@ -16,7 +16,9 @@ export type Statement =
   | DefDecl
   | IncludeDecl
   | LanesDecl
-  | ProveDecl;
+  | ProveDecl
+  | DataDecl
+  | ComputeDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -43,7 +45,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | ComputeDecl;
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }
 // Desugars into an AgentDecl + RuleDecl[] during evaluation.
@@ -148,6 +150,47 @@ export type ModeDecl = {
   name: string;
   exclude: string[];
 };
+
+// ─── Data declaration (syntactic sugar) ────────────────────────────
+// Desugars into constructor AgentDecl[] + duplicator AgentDecl + RuleDecl[].
+//
+//   data Nat {
+//     | Zero
+//     | Succ(pred : Nat)
+//   }
+
+export type DataDecl = {
+  kind: "data";
+  name: string;
+  constructors: DataConstructor[];
+};
+
+export type DataConstructor = {
+  name: string;
+  fields: DataField[];
+};
+
+export type DataField = {
+  name: string;
+  type: string;
+};
+
+// ─── Compute declaration (type-level reduction rules) ──────────────
+// Declares a computational equation for the type checker's normalizer.
+//
+//   compute add(Zero, y) = y
+//   compute add(Succ(k), y) = Succ(add(k, y))
+
+export type ComputeDecl = {
+  kind: "compute";
+  funcName: string;
+  args: ComputePattern[];
+  result: ProveExpr;
+};
+
+export type ComputePattern =
+  | { kind: "var"; name: string }
+  | { kind: "ctor"; name: string; args: string[] };
 
 // graph name = term <lambda-expr>
 // graph name { let..., wire... }

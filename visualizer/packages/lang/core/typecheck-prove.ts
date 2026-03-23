@@ -13,6 +13,23 @@ export type ProvedContext = Map<
   { params: AST.ProveParam[]; returnType: AST.ProveExpr }
 >;
 
+// ─── Compute rules (user-declared reduction equations) ─────────────
+
+/** A user-declared reduction equation for the normalizer.
+ *  Mirrors AST.ComputeDecl but may be inherited across system boundaries. */
+export type ComputeRule = {
+  funcName: string;
+  args: AST.ComputePattern[];
+  result: AST.ProveExpr;
+};
+
+/** Constructor typing info derived from data declarations.
+ *  Maps constructor name → { typeName, fields } */
+export type ConstructorTyping = Map<string, {
+  typeName: string;
+  fields: { name: string; type: string }[];
+}>;
+
 // ─── Proof tree types ──────────────────────────────────────────────
 
 /** A node in a natural-deduction proof derivation tree. */
@@ -114,6 +131,9 @@ function substituteAll(
 // Reduces type expressions using computational rules.
 // Rules are table-driven: each entry matches on the function name and
 // first-argument shape, producing a result from the normalized args.
+//
+// Built-in rules provide defaults (fst/snd for Sigma projections).
+// User-declared `compute` rules extend/override the table dynamically.
 
 type NormRule = {
   arity: number;
@@ -123,42 +143,101 @@ type NormRule = {
   step?: Record<string, (inner: AST.ProveExpr[], rest: AST.ProveExpr[]) => AST.ProveExpr>;
 };
 
-const NORM_RULES: Record<string, NormRule> = {
-  // Nat: add(Zero, y) → y, add(Succ(k), y) → Succ(add(k, y))
-  add: {
-    arity: 2,
-    base: { Zero: (a) => a[1] },
-    step: { Succ: (i, r) => app("Succ", app("add", i[0], r[0])) },
-  },
-  // Bool
-  not: {
-    arity: 1,
-    base: { True: () => ident("False"), False: () => ident("True") },
-  },
-  and: {
-    arity: 2,
-    base: { True: (a) => a[1], False: () => ident("False") },
-  },
-  or: {
-    arity: 2,
-    base: { True: () => ident("True"), False: (a) => a[1] },
-  },
-  // List: append(Nil, ys) → ys, append(Cons(h,t), ys) → Cons(h, append(t, ys))
-  append: {
-    arity: 2,
-    base: { Nil: (a) => a[1] },
-    step: { Cons: (i, r) => app("Cons", i[0], app("append", i[1], r[0])) },
-  },
-  // length(Nil) → Zero, length(Cons(h,t)) → Succ(length(t))
-  length: {
-    arity: 1,
-    base: { Nil: () => ident("Zero") },
-    step: { Cons: (i) => app("Succ", app("length", i[1])) },
-  },
-  // Sigma projections: fst(pair(a,b)) → a, snd(pair(a,b)) → b
+type NormTable = Record<string, NormRule>;
+
+// Built-in rules that are always available (Sigma projections).
+const BUILTIN_NORM_RULES: NormTable = {
   fst: { arity: 1, step: { pair: (i) => i[0] } },
   snd: { arity: 1, step: { pair: (i) => i[1] } },
 };
+
+// ─── Dynamic norm-table building from ComputeRule[] ────────────────
+
+function substituteComputeResult(
+  expr: AST.ProveExpr,
+  bindings: Map<string, AST.ProveExpr>,
+): AST.ProveExpr {
+  if (expr.kind === "hole") return expr;
+  if (expr.kind === "ident") return bindings.get(expr.name) ?? expr;
+  const newArgs = expr.args.map((a) => substituteComputeResult(a, bindings));
+  const replacement = bindings.get(expr.name);
+  const newName = replacement?.kind === "ident" ? replacement.name : expr.name;
+  return { kind: "call", name: newName, args: newArgs };
+}
+
+function buildNormTable(computeRules: ComputeRule[]): NormTable {
+  const table: NormTable = { ...BUILTIN_NORM_RULES };
+
+  // Group equations by function name
+  const groups = new Map<string, ComputeRule[]>();
+  for (const r of computeRules) {
+    if (!groups.has(r.funcName)) groups.set(r.funcName, []);
+    groups.get(r.funcName)!.push(r);
+  }
+
+  for (const [funcName, equations] of groups) {
+    const arity = equations[0].args.length;
+    const base: Record<string, (args: AST.ProveExpr[]) => AST.ProveExpr> = {};
+    const step: Record<string, (inner: AST.ProveExpr[], rest: AST.ProveExpr[]) => AST.ProveExpr> = {};
+
+    for (const eq of equations) {
+      const firstArg = eq.args[0];
+      if (firstArg.kind === "ctor") {
+        if (firstArg.args.length === 0) {
+          // Base case: nullary constructor (e.g., Zero, True, Nil)
+          base[firstArg.name] = (matchedArgs: AST.ProveExpr[]) => {
+            const bindings = new Map<string, AST.ProveExpr>();
+            for (let i = 1; i < eq.args.length; i++) {
+              if (eq.args[i].kind === "var") {
+                bindings.set(eq.args[i].name, matchedArgs[i]);
+              }
+            }
+            return substituteComputeResult(eq.result, bindings);
+          };
+        } else {
+          // Step case: constructor with subcomponents (e.g., Succ(k), Cons(h,t))
+          step[firstArg.name] = (inner: AST.ProveExpr[], rest: AST.ProveExpr[]) => {
+            const bindings = new Map<string, AST.ProveExpr>();
+            for (let i = 0; i < firstArg.args.length; i++) {
+              bindings.set(firstArg.args[i], inner[i]);
+            }
+            for (let i = 1; i < eq.args.length; i++) {
+              if (eq.args[i].kind === "var") {
+                bindings.set(eq.args[i].name, rest[i - 1]);
+              }
+            }
+            return substituteComputeResult(eq.result, bindings);
+          };
+        }
+      }
+    }
+
+    // Merge with existing entry if present (e.g., user extending a built-in)
+    const existing = table[funcName];
+    if (existing) {
+      table[funcName] = {
+        arity: existing.arity,
+        base: { ...existing.base, ...base },
+        step: { ...existing.step, ...step },
+      };
+    } else {
+      table[funcName] = { arity, base, step };
+    }
+  }
+
+  return table;
+}
+
+// Module-level active norm table — set by entry points before type-checking.
+// Safe because all type-checking is synchronous and single-threaded.
+let activeNormTable: NormTable = BUILTIN_NORM_RULES;
+
+export function withNormTable<T>(rules: ComputeRule[], fn: () => T): T {
+  const prev = activeNormTable;
+  activeNormTable = rules.length > 0 ? buildNormTable(rules) : BUILTIN_NORM_RULES;
+  try { return fn(); }
+  finally { activeNormTable = prev; }
+}
 
 function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   // Universe level normalization: Type → Type(0), Type1 → Type(1), etc.
@@ -173,8 +252,8 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
   const args = expr.args.map(normalize);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
 
-  // Table-driven reduction
-  const rule = NORM_RULES[e.name];
+  // Table-driven reduction (uses active norm table)
+  const rule = activeNormTable[e.name];
   if (rule && e.args.length === rule.arity) {
     const a0 = e.args[0];
     if (a0.kind === "ident" && rule.base?.[a0.name]) {
@@ -252,6 +331,7 @@ type ProveCtx = {
   prove: AST.ProveDecl;
   caseBindings: Map<string, AST.ProveExpr>; // binding name → type var
   provedCtx: ProvedContext; // previously proved propositions
+  constructorTyping: ConstructorTyping; // constructor → type info from data decls
 };
 
 type TypeResult =
@@ -275,6 +355,11 @@ function inferType(
   if (expr.kind === "ident") {
     if (expr.name === "assumption") {
       return { ok: false, error: "assumption: no matching hypothesis found in context" };
+    }
+    // Nullary constructor: infer type from data declaration
+    const ctorInfo = ctx.constructorTyping.get(expr.name);
+    if (ctorInfo) {
+      return { ok: true, type: ident(ctorInfo.typeName) };
     }
     return { ok: false, error: `unexpected identifier '${expr.name}' in proof position` };
   }
@@ -428,6 +513,13 @@ function inferType(
       bindings.set(paramNames[i], args[i]);
     }
     return { ok: true, type: normalize(substituteAll(proved.returnType, bindings)) };
+  }
+
+  // Constructor application: infer type from data declaration
+  // e.g., Succ(x) : Nat, Cons(h, t) : List, Zero : Nat (handled below for ident)
+  const ctorInfo = ctx.constructorTyping.get(name);
+  if (ctorInfo) {
+    return { ok: true, type: ident(ctorInfo.typeName) };
   }
 
   return { ok: false, error: `unknown proof combinator '${name}'` };
@@ -698,6 +790,7 @@ function caseCtx(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
+  constructorTyping: ConstructorTyping = new Map(),
 ): { ctx: ProveCtx; expectedType: AST.ProveExpr } {
   const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
     ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
@@ -707,6 +800,7 @@ function caseCtx(
       prove,
       caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
       provedCtx,
+      constructorTyping,
     },
     expectedType: normalize(substitute(prove.returnType!, prove.params[0].name, consExpr)),
   };
@@ -716,11 +810,15 @@ function caseCtx(
 export function buildProofTree(
   prove: AST.ProveDecl,
   provedCtx: ProvedContext = new Map(),
+  computeRules?: ComputeRule[],
+  constructorTyping?: ConstructorTyping,
 ): ProofTree | null {
   if (!prove.returnType) return null;
 
+  return withNormTable(computeRules ?? [], () => {
+  const ctorTyping = constructorTyping ?? new Map();
   const cases: ProofTree["cases"] = prove.cases.map((caseArm) => {
-    const { ctx, expectedType } = caseCtx(prove, caseArm, provedCtx);
+    const { ctx, expectedType } = caseCtx(prove, caseArm, provedCtx, ctorTyping);
     return {
       pattern: caseArm.pattern,
       bindings: caseArm.bindings,
@@ -730,10 +828,11 @@ export function buildProofTree(
 
   return {
     name: prove.name,
-    proposition: exprToString(prove.returnType),
+    proposition: exprToString(prove.returnType!),
     cases,
     hasHoles: cases.some((c) => nodeHasHoles(c.tree)),
   };
+  }); // end withNormTable
 }
 
 // ─── Tactic sugar stripping ────────────────────────────────────────
@@ -786,7 +885,11 @@ export function typecheckProve(
   prove: AST.ProveDecl,
   provedCtx: ProvedContext = new Map(),
   constructorsByType?: Map<string, Set<string>>,
+  computeRules?: ComputeRule[],
+  constructorTyping?: ConstructorTyping,
 ): string[] {
+  return withNormTable(computeRules ?? [], () => {
+  const ctorTyping = constructorTyping ?? new Map();
   const exhaustErrors = constructorsByType
     ? checkExhaustiveness(prove, constructorsByType)
     : [];
@@ -795,7 +898,7 @@ export function typecheckProve(
   const errors: string[] = [];
 
   for (const caseArm of prove.cases) {
-    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx);
+    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping);
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
     const body = stripTacticSugar(caseArm.body);
     const reqEq = extractEq(requiredType);
@@ -858,6 +961,7 @@ export function typecheckProve(
   }
 
   return [...exhaustErrors, ...errors];
+  }); // end withNormTable
 }
 
 // ─── Assumption resolution ─────────────────────────────────────────

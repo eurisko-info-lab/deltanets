@@ -45,6 +45,8 @@ export type SystemDef = {
   modes: Map<string, ModeDef>;
   provedCtx: import("./typecheck-prove.ts").ProvedContext;
   constructorsByType: Map<string, Set<string>>;
+  computeRules: import("./typecheck-prove.ts").ComputeRule[];
+  constructorTyping: import("./typecheck-prove.ts").ConstructorTyping;
 };
 
 export type GraphDef =
@@ -147,6 +149,8 @@ export function evaluate(
   const ambientAgents = new Map<string, AgentDef>();
   const ambientRules: RuleDef[] = [];
   const ambientModes = new Map<string, ModeDef>();
+  const ambientComputeRules: import("./typecheck-prove.ts").ComputeRule[] = [];
+  const ambientCtorTyping: import("./typecheck-prove.ts").ConstructorTyping = new Map();
 
   for (const stmt of stmts) {
     try {
@@ -189,6 +193,31 @@ export function evaluate(
           });
           break;
         }
+        case "compute": {
+          // Top-level compute: collect for ambient system
+          // Resolve var patterns that match known agents to ctor patterns
+          const resolvedArgs = stmt.args.map((pat: import("./types.ts").ComputePattern): import("./types.ts").ComputePattern => {
+            if (pat.kind === "var" && ambientAgents.has(pat.name)) {
+              return { kind: "ctor", name: pat.name, args: [] };
+            }
+            return pat;
+          });
+          ambientComputeRules.push({
+            funcName: stmt.funcName,
+            args: resolvedArgs,
+            result: stmt.result,
+          });
+          break;
+        }
+        case "data": {
+          // Top-level data: desugar into agents/rules and populate ctor typing
+          const result = evalBodyInto([stmt], ambientAgents, ambientRules, ambientModes);
+          // Merge constructorTyping from the desugared data decl
+          for (const [k, v] of result.constructorTyping) {
+            ambientCtorTyping.set(k, v);
+          }
+          break;
+        }
         case "prove": {
           // Top-level prove: desugar using ambient + system agents
           const allAgents = new Map(ambientAgents);
@@ -197,7 +226,7 @@ export function evaluate(
               if (!allAgents.has(name)) allAgents.set(name, agent);
             }
           }
-          const result = evalBodyInto([stmt], allAgents, ambientRules, ambientModes);
+          const result = evalBodyInto([stmt], allAgents, ambientRules, ambientModes, undefined, undefined, ambientComputeRules, ambientCtorTyping);
           for (const t of result.proofTrees) proofTrees.set(t.name, t);
           // Copy back newly created agents
           for (const [name, agent] of allAgents) {
@@ -242,6 +271,8 @@ export function evaluate(
       modes: ambientModes,
       provedCtx: new Map(),
       constructorsByType: new Map(),
+      computeRules: ambientComputeRules,
+      constructorTyping: ambientCtorTyping,
     });
   }
 

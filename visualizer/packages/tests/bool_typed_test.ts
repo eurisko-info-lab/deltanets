@@ -24,6 +24,13 @@ system "Bool" extend "Prelude" {
   rule and <> False -> { let f = False  relink left.result f.principal  erase left.b }
   rule or <> True -> { let t = True  relink left.result t.principal  erase left.b }
   rule or <> False -> { relink left.result left.b }
+
+  compute not(True) = False
+  compute not(False) = True
+  compute and(True, y) = y
+  compute and(False, y) = False
+  compute or(True, y) = True
+  compute or(False, y) = y
 }
 
 system "Eq" extend "Bool" {

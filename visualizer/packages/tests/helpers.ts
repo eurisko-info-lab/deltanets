@@ -25,6 +25,9 @@ system "Nat" extend "Prelude" {
     relink left.accum a.accum
     relink right.pred a.principal
   }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
 }
 `;
 

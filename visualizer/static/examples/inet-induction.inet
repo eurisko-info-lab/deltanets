@@ -21,8 +21,10 @@ include "prelude"
 # ─── Nat system (Peano arithmetic) ────────────────────────────────
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
 
   agent add(principal, result, accum)
 
@@ -137,33 +139,6 @@ system "Induction" extend "NatEq" {
     wire cs.principal -- psr.result
     relink right.pred psr.principal
     relink left.m psr.m
-  }
-
-  # ─── dup_nat: duplicate a natural number ───────────────────────
-  #
-  #   Consumes a Nat on its principal port and produces two
-  #   identical copies on copy1 and copy2.  Needed because
-  #   interaction nets are linear: each wire can only be
-  #   consumed once.  The step case of plus_comm needs both
-  #   m and k twice (for the recursive call and for the lemma).
-  agent dup_nat(principal, copy1, copy2)
-
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-
-  rule dup_nat <> Succ -> {
-    let d  = dup_nat
-    let s1 = Succ
-    let s2 = Succ
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    relink right.pred d.principal
-    wire d.copy1 -- s1.pred
-    wire d.copy2 -- s2.pred
   }
 
   # ─── plus_comm: ∀ n m. n + m = m + n ──────────────────────────

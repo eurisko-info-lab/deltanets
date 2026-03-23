@@ -20,8 +20,11 @@
 include "prelude"
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+
   agent add(principal, result, accum)
 
   rule add <> Zero -> { relink left.result left.accum }
@@ -33,6 +36,9 @@ system "Nat" extend "Prelude" {
     relink left.accum a.accum
     relink right.pred a.principal
   }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
 }
 
 system "Eq" extend "Nat" {
@@ -62,23 +68,6 @@ system "NatEq" extend "Eq" {
 #                  = Eq(Succ(add(k, Zero)), Succ(k))
 
 system "Step1" extend "NatEq" {
-  agent dup_nat(principal, copy1, copy2)
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-  rule dup_nat <> Succ -> {
-    let s1 = Succ
-    let s2 = Succ
-    let d  = dup_nat
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    wire s1.pred -- d.copy1
-    wire s2.pred -- d.copy2
-    relink right.pred d.principal
-  }
 
   prove pzr_step1(n : Nat) -> Eq(add(n, Zero), n) {
     | Zero -> ?
@@ -97,23 +86,6 @@ system "Step1" extend "NatEq" {
 #             This is exactly the inductive hypothesis!
 
 system "Step2" extend "NatEq" {
-  agent dup_nat(principal, copy1, copy2)
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-  rule dup_nat <> Succ -> {
-    let s1 = Succ
-    let s2 = Succ
-    let d  = dup_nat
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    wire s1.pred -- d.copy1
-    wire s2.pred -- d.copy2
-    relink right.pred d.principal
-  }
 
   prove pzr_step2(n : Nat) -> Eq(add(n, Zero), n) {
     | Zero -> refl
@@ -129,23 +101,6 @@ system "Step2" extend "NatEq" {
 # The proof tree now has no amber goals — fully checked. ✓
 
 system "Step3" extend "NatEq" {
-  agent dup_nat(principal, copy1, copy2)
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-  rule dup_nat <> Succ -> {
-    let s1 = Succ
-    let s2 = Succ
-    let d  = dup_nat
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    wire s1.pred -- d.copy1
-    wire s2.pred -- d.copy2
-    relink right.pred d.principal
-  }
 
   prove pzr_step3(n : Nat) -> Eq(add(n, Zero), n) {
     | Zero -> refl
@@ -169,23 +124,6 @@ system "Step3" extend "NatEq" {
 #   The ? gets goal:  determined from overall equation
 
 system "Bonus" extend "NatEq" {
-  agent dup_nat(principal, copy1, copy2)
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-  rule dup_nat <> Succ -> {
-    let s1 = Succ
-    let s2 = Succ
-    let d  = dup_nat
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    wire s1.pred -- d.copy1
-    wire s2.pred -- d.copy2
-    relink right.pred d.principal
-  }
 
   prove plus_succ_right(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
     | Zero -> refl

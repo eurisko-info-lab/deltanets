@@ -8,12 +8,11 @@ include "prelude"
 
 system "Nat" extend "Prelude" {
 
-  # ─── Agents ──────────────────────────────────────────────────────
-  # Zero: a nullary constructor (only principal port)
-  agent Zero(principal)
-
-  # Succ: unary constructor, pred is the predecessor
-  agent Succ(principal, pred)
+  # ─── Data type (sugar: generates Zero, Succ, dup_nat) ────────────
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
 
   # add: binary operation
   #   principal = first argument (connects to a Nat)

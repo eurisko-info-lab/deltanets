@@ -6,16 +6,17 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, typecheckProve } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, typecheckProve, withNormTable } from "./typecheck-prove.ts";
+import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
 }
 
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
@@ -28,19 +29,29 @@ export function evalBodyInto(
   modes: Map<string, ModeDef>,
   initialCtx?: ProvedContext,
   inheritedConstructors?: Map<string, Set<string>>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>> } {
+  inheritedCompute?: ComputeRule[],
+  inheritedCtorTyping?: ConstructorTyping,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping } {
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
-  // Pre-scan: collect constructor families from ALL prove blocks before processing
+  const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
+  // Pre-scan: collect constructor families and compute rules before processing
   // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
+  const constructorTyping: ConstructorTyping = new Map(inheritedCtorTyping);
   if (inheritedConstructors) {
     for (const [type, ctors] of inheritedConstructors) {
       constructorsByType.set(type, new Set(ctors));
     }
   }
   for (const item of body) {
-    if (item.kind === "prove") {
+    if (item.kind === "data") {
+      constructorsByType.set(item.name, new Set(item.constructors.map((c) => c.name)));
+      // Build constructor typing for the type checker
+      for (const ctor of item.constructors) {
+        constructorTyping.set(ctor.name, { typeName: item.name, fields: ctor.fields });
+      }
+    } else if (item.kind === "prove") {
       const firstParam = item.params[0];
       if (firstParam?.type) {
         const typeName = firstParam.type.kind === "ident"
@@ -56,6 +67,20 @@ export function evalBodyInto(
           for (const c of item.cases) set.add(c.pattern);
         }
       }
+    }
+  }
+  // Pre-scan: collect all agent names (both explicit and from data) + inherited
+  const knownAgents = new Set(agents.keys());
+  for (const item of body) {
+    if (item.kind === "agent") knownAgents.add(item.name);
+    if (item.kind === "data") {
+      for (const ctor of item.constructors) knownAgents.add(ctor.name);
+    }
+  }
+  // Pre-scan: collect compute rules so they're available for type checking
+  for (const item of body) {
+    if (item.kind === "compute") {
+      computeRules.push(astComputeToRule(item, knownAgents));
     }
   }
 
@@ -81,6 +106,12 @@ export function evalBodyInto(
         });
         break;
       }
+      case "data": {
+        // Sugar: desugar data declaration into constructor agents +
+        // duplicator agent + duplicator rules, and register constructors.
+        desugarData(item, agents, rules, constructorsByType);
+        break;
+      }
       case "prove": {
         // Expand induction(var) tactic into case arms with ? holes
         let prove = item;
@@ -88,7 +119,7 @@ export function evalBodyInto(
           prove = expandInduction(item, agents, constructorsByType);
         }
         // Resolve assumption tactic to concrete proof terms
-        prove = resolveAssumptions(prove, provedCtx);
+        prove = withNormTable(computeRules, () => resolveAssumptions(prove, provedCtx));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         // Only generate agent + rules for complete proofs (no ? holes or rewrites)
@@ -104,26 +135,30 @@ export function evalBodyInto(
         // Mode-aware linearity check: error if prove needs erase/dup incompatible with modes
         const linearityErrors = checkProveLinearity(prove, agents, modes);
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType);
+        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping);
         const allErrors = [...linearityErrors, ...typeErrors];
         if (allErrors.length > 0) {
           throw new EvalError(allErrors.join("\n"));
         }
         // Build proof derivation tree
-        const tree = buildProofTree(prove, provedCtx);
+        const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
         if (tree) proofTrees.push(tree);
         // Register this prove's type for cross-lemma resolution
         if (prove.returnType) {
           provedCtx.set(prove.name, {
             params: item.params,
-            returnType: item.returnType,
+            returnType: item.returnType!,
           });
         }
         break;
       }
+      case "compute": {
+        // Already pre-scanned into computeRules above
+        break;
+      }
     }
   }
-  return { proofTrees, provedCtx, constructorsByType };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -141,9 +176,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -157,6 +192,8 @@ export function evalCompose(
   const modes = new Map<string, ModeDef>();
   const mergedCtx: ProvedContext = new Map();
   const mergedConstructors = new Map<string, Set<string>>();
+  const mergedCompute: ComputeRule[] = [];
+  const mergedCtorTyping: ConstructorTyping = new Map();
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -195,12 +232,20 @@ export function evalCompose(
       if (!mergedConstructors.has(type)) mergedConstructors.set(type, new Set());
       for (const c of ctors) mergedConstructors.get(type)!.add(c);
     }
+
+    // Compute rules: merge
+    mergedCompute.push(...comp.computeRules);
+
+    // Constructor typing: merge
+    for (const [name, info] of comp.constructorTyping) {
+      mergedCtorTyping.set(name, info);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────
@@ -503,4 +548,97 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripExprTactics) };
   }
   return { kind: "call", name: expr.name, args: expr.args.map(stripExprTactics) };
+}
+
+// ─── Data desugaring (syntactic sugar) ─────────────────────────────
+// Expands a `data` declaration into constructor agents, a duplicator
+// agent, and one duplicator rule per constructor.
+//
+// Example:  data Nat { | Zero | Succ(pred : Nat) }
+// Produces:
+//   agent Zero(principal)
+//   agent Succ(principal, pred)
+//   agent dup_nat(principal, copy1, copy2)
+//   rule dup_nat <> Zero -> { ... }
+//   rule dup_nat <> Succ -> { ... }
+
+function desugarData(
+  decl: AST.DataDecl,
+  agents: Map<string, AgentDef>,
+  rules: RuleDef[],
+  constructorsByType: Map<string, Set<string>>,
+): void {
+  // 1. Register constructor families
+  constructorsByType.set(decl.name, new Set(decl.constructors.map((c) => c.name)));
+
+  // 2. Emit constructor agents
+  for (const ctor of decl.constructors) {
+    const ports: AST.PortDef[] = [
+      { name: "principal", variadic: false },
+      ...ctor.fields.map((f) => ({ name: f.name, variadic: false })),
+    ];
+    const agentDecl: AST.AgentDecl = { kind: "agent", name: ctor.name, ports };
+    agents.set(ctor.name, evalAgent(agentDecl));
+  }
+
+  // 3. Emit dup_<type> agent + one rule per constructor
+  const dupName = `dup_${decl.name.toLowerCase()}`;
+  const dupPorts: AST.PortDef[] = [
+    { name: "principal", variadic: false },
+    { name: "copy1", variadic: false },
+    { name: "copy2", variadic: false },
+  ];
+  agents.set(dupName, evalAgent({ kind: "agent", name: dupName, ports: dupPorts }));
+
+  for (const ctor of decl.constructors) {
+    rules.push({
+      agentA: dupName,
+      agentB: ctor.name,
+      action: buildDupRule(ctor, decl.name),
+    });
+  }
+}
+
+/** Build the custom rule body for `dup_<type> <> Constructor`. */
+function buildDupRule(ctor: AST.DataConstructor, typeName: string): AST.CustomAction {
+  const stmts: AST.RuleStmt[] = [];
+  // Let: create two fresh copies of the constructor
+  stmts.push({ kind: "let", varName: "_c1", agentType: ctor.name });
+  stmts.push({ kind: "let", varName: "_c2", agentType: ctor.name });
+  // Relink: copy1 ← _c1.principal, copy2 ← _c2.principal
+  stmts.push({ kind: "relink", portA: { node: "left", port: "copy1" }, portB: { node: "_c1", port: "principal" } });
+  stmts.push({ kind: "relink", portA: { node: "left", port: "copy2" }, portB: { node: "_c2", port: "principal" } });
+
+  // For each field: create a sub-duplicator and wire it through
+  for (let i = 0; i < ctor.fields.length; i++) {
+    const field = ctor.fields[i];
+    const subDup = `dup_${field.type.toLowerCase()}`;
+    const varName = `_d${i}`;
+    stmts.push({ kind: "let", varName, agentType: subDup });
+    stmts.push({ kind: "relink", portA: { node: "right", port: field.name }, portB: { node: varName, port: "principal" } });
+    stmts.push({ kind: "wire", portA: { node: varName, port: "copy1" }, portB: { node: "_c1", port: field.name } });
+    stmts.push({ kind: "wire", portA: { node: varName, port: "copy2" }, portB: { node: "_c2", port: field.name } });
+  }
+
+  return { kind: "custom", body: stmts };
+}
+
+// ─── Compute rule conversion ───────────────────────────────────────
+// Converts an AST ComputeDecl into the internal ComputeRule format
+// used by the type checker's normalizer.
+
+function astComputeToRule(decl: AST.ComputeDecl, knownAgents: Set<string>): ComputeRule {
+  // Resolve var patterns: if a "var" pattern name matches a known agent,
+  // upgrade it to a nullary ctor pattern (e.g., Zero, True, Nil).
+  const resolvedArgs = decl.args.map((pat): AST.ComputePattern => {
+    if (pat.kind === "var" && knownAgents.has(pat.name)) {
+      return { kind: "ctor", name: pat.name, args: [] };
+    }
+    return pat;
+  });
+  return {
+    funcName: decl.funcName,
+    args: resolvedArgs,
+    result: decl.result,
+  };
 }

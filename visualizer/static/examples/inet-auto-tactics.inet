@@ -24,8 +24,11 @@
 include "prelude"
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+
   agent add(principal, result, accum)
 
   rule add <> Zero -> { relink left.result left.accum }
@@ -37,6 +40,9 @@ system "Nat" extend "Prelude" {
     relink left.accum a.accum
     relink right.pred a.principal
   }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
 }
 
 system "Eq" extend "Nat" {

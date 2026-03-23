@@ -17,7 +17,7 @@ import type { Graph } from "@deltanets/core";
 
 // Keywords that indicate .inet format (as first non-comment token)
 const INET_KEYWORDS =
-  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def|include|lanes)\b/;
+  /^(?:\s*(?:#[^\n]*)?\n)*\s*(?:system|agent|rule|mode|graph|def|include|lanes|data|compute)\b/;
 
 /** Returns true if the source looks like .inet format rather than raw lambda calculus. */
 export function isINetSource(source: string): boolean {

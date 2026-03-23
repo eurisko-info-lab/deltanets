@@ -29,8 +29,10 @@ include "prelude"
 # ─── Nat system ───────────────────────────────────────────────────
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
 
   agent add(principal, result, accum)
 

@@ -27,6 +27,8 @@ export const TT = {
   LANES: "LANES",
   LANE: "LANE",
   PROVE: "PROVE",
+  DATA: "DATA",
+  COMPUTE: "COMPUTE",
   PIPE: "PIPE",
   // Operators
   INTERACT: "INTERACT", // <>
@@ -88,6 +90,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   lanes: TT.LANES,
   lane: TT.LANE,
   prove: TT.PROVE,
+  data: TT.DATA,
+  compute: TT.COMPUTE,
 };
 
 export class LexError extends Error {

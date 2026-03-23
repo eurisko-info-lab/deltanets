@@ -24,8 +24,11 @@
 include "prelude"
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+
   agent add(principal, result, accum)
 
   rule add <> Zero -> { relink left.result left.accum }
@@ -37,6 +40,9 @@ system "Nat" extend "Prelude" {
     relink left.accum a.accum
     relink right.pred a.principal
   }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
 }
 
 system "Eq" extend "Nat" {
@@ -65,28 +71,6 @@ system "NatEq" extend "Eq" {
 # ═══════════════════════════════════════════════════════════════════
 
 system "DepTypedProofs" extend "NatEq" {
-  # Infrastructure: duplicator for natural numbers
-  # Needed because interaction nets are linear — each wire connects
-  # exactly two ports. When a proof term uses a variable twice
-  # (like plus_comm uses k and m twice), we need to duplicate it.
-  # The `prove` keyword auto-inserts dup_nat when it detects multi-use.
-  agent dup_nat(principal, copy1, copy2)
-  rule dup_nat <> Zero -> {
-    let z1 = Zero
-    let z2 = Zero
-    relink left.copy1 z1.principal
-    relink left.copy2 z2.principal
-  }
-  rule dup_nat <> Succ -> {
-    let s1 = Succ
-    let s2 = Succ
-    let d  = dup_nat
-    relink left.copy1 s1.principal
-    relink left.copy2 s2.principal
-    wire s1.pred -- d.copy1
-    wire s2.pred -- d.copy2
-    relink right.pred d.principal
-  }
 
   # ∀n. add(n, 0) = n
   prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {

@@ -24,8 +24,10 @@ include "prelude"
 # ─── Nat system (needed for list elements) ────────────────────────
 
 system "Nat" extend "Prelude" {
-  agent Zero(principal)
-  agent Succ(principal, pred)
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
 
   agent add(principal, result, accum)
 
@@ -40,13 +42,18 @@ system "Nat" extend "Prelude" {
     relink left.accum a.accum
     relink right.pred a.principal
   }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
 }
 
 # ─── List system (lists of Nats) ─────────────────────────────────
 
 system "List" extend "Nat" {
-  agent Nil(principal)
-  agent Cons(principal, head, tail)
+  data List {
+    | Nil
+    | Cons(head : Nat, tail : List)
+  }
 
   agent length(principal, result)
   agent append(principal, result, ys)
@@ -76,6 +83,11 @@ system "List" extend "Nat" {
     relink right.tail a.principal
     relink left.ys a.ys
   }
+
+  compute length(Nil) = Zero
+  compute length(Cons(h, t)) = Succ(length(t))
+  compute append(Nil, ys) = ys
+  compute append(Cons(h, t), ys) = Cons(h, append(t, ys))
 }
 
 # ─── Eq system (propositional equality) ───────────────────────────

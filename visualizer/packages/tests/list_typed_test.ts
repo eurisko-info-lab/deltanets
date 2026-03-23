@@ -32,6 +32,11 @@ system "List" extend "Nat" {
     relink right.tail a.principal
     relink left.ys a.ys
   }
+
+  compute length(Nil) = Zero
+  compute length(Cons(h, t)) = Succ(length(t))
+  compute append(Nil, ys) = ys
+  compute append(Cons(h, t), ys) = Cons(h, append(t, ys))
 }
 
 system "Eq" extend "List" {

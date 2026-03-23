@@ -25,8 +25,10 @@ include "prelude"
 # ─── Bool system (Boolean algebra) ────────────────────────────────
 
 system "Bool" extend "Prelude" {
-  agent True(principal)
-  agent False(principal)
+  data Bool {
+    | True
+    | False
+  }
 
   agent not(principal, result)
   agent and(principal, result, b)
@@ -58,6 +60,13 @@ system "Bool" extend "Prelude" {
   rule or <> False -> {
     relink left.result left.b
   }
+
+  compute not(True) = False
+  compute not(False) = True
+  compute and(True, y) = y
+  compute and(False, y) = False
+  compute or(True, y) = True
+  compute or(False, y) = y
 }
 
 # ─── Eq system (propositional equality) ───────────────────────────
@@ -90,27 +99,6 @@ system "Eq" extend "Bool" {
 # ─── BoolProofs: proof agents over Bool ───────────────────────────
 
 system "BoolProofs" extend "Eq" {
-
-  # dup_bool: duplicate a boolean value
-  #
-  #   Consumes a Bool on its principal port and produces two
-  #   identical copies on copy1 and copy2.  Same idea as
-  #   dup_nat — interaction nets are linear, so explicit
-  #   duplication is needed when a value is used twice.
-  agent dup_bool(principal, copy1, copy2)
-
-  rule dup_bool <> True -> {
-    let t1 = True
-    let t2 = True
-    relink left.copy1 t1.principal
-    relink left.copy2 t2.principal
-  }
-  rule dup_bool <> False -> {
-    let f1 = False
-    let f2 = False
-    relink left.copy1 f1.principal
-    relink left.copy2 f2.principal
-  }
 
   # not_not: ∀ b. not(not(b)) = b
   #

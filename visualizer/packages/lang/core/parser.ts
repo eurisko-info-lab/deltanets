@@ -6,7 +6,8 @@
 //   program      = statement*
 //   statement    = systemDecl | extendDecl | composeDecl | agentDecl
 //                | ruleDecl | modeDecl | graphDecl | defDecl | includeDecl
-//                | lanesDecl
+//                | lanesDecl | dataDecl
+//   dataDecl     = "data" IDENT "{" ("|" IDENT ["(" field ("," field)* ")"])* "}"  (sugar)
 //   lanesDecl    = "lanes" STRING "{" laneStmt* "}"
 //   laneStmt     = laneDef | laneItem | laneMarker | laneLink
 //   laneDef      = "lane" STRING ["{" (IDENT ":" (NUMBER | STRING) ","?)* "}"]
@@ -161,6 +162,10 @@ class Parser {
         return this.parseLanesDecl();
       case TT.PROVE:
         return this.parseProveDecl();
+      case TT.DATA:
+        return this.parseDataDecl();
+      case TT.COMPUTE:
+        return this.parseComputeDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -311,8 +316,10 @@ class Parser {
       else if (tok.type === TT.RULE) body.push(...this.parseRuleDecl());
       else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
       else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
+      else if (tok.type === TT.DATA) body.push(this.parseDataDecl());
+      else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/compute, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -585,6 +592,64 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "mode", name, exclude };
+  }
+
+  // ─── Data (sugar) ────────────────────────────────────────────────
+  // data Name { | Con(field : Type, ...) | Con2 ... }
+  // Syntactic sugar — desugars into constructor agents + duplicator.
+
+  parseDataDecl(): AST.DataDecl {
+    this.eat(TT.DATA);
+    const name = this.eatIdent();
+    this.eat(TT.LBRACE);
+    const constructors: AST.DataConstructor[] = [];
+    while (this.check(TT.PIPE)) {
+      this.advance(); // eat |
+      const consName = this.eatIdent();
+      const fields: AST.DataField[] = [];
+      if (this.check(TT.LPAREN)) {
+        this.advance();
+        if (!this.check(TT.RPAREN)) {
+          fields.push(...this.parseCommaList(() => {
+            const fieldName = this.eatIdent();
+            this.eat(TT.COLON);
+            const fieldType = this.eatIdent();
+            return { name: fieldName, type: fieldType };
+          }));
+        }
+        this.eat(TT.RPAREN);
+      }
+      constructors.push({ name: consName, fields });
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "data", name, constructors };
+  }
+
+  // ─── Compute (type-level reduction rule) ─────────────────────────
+  // compute funcName(pattern, ...) = result
+  // Patterns: variable (ident) or constructor application (Ctor(v1, v2))
+
+  parseComputeDecl(): AST.ComputeDecl {
+    this.eat(TT.COMPUTE);
+    const funcName = this.eatIdent();
+    this.eat(TT.LPAREN);
+    const args = this.parseCommaList(() => this.parseComputePattern());
+    this.eat(TT.RPAREN);
+    this.eat(TT.EQ);
+    const result = this.parseProveExpr();
+    return { kind: "compute", funcName, args, result };
+  }
+
+  parseComputePattern(): AST.ComputePattern {
+    const name = this.eatIdent();
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      const args = this.check(TT.RPAREN)
+        ? [] : this.parseCommaList(() => this.eatIdent());
+      this.eat(TT.RPAREN);
+      return { kind: "ctor", name, args };
+    }
+    return { kind: "var", name };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────
