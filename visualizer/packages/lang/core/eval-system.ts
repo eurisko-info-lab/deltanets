@@ -89,6 +89,12 @@ export function evalBodyInto(
       computeRules.push(astComputeToRule(item, knownAgents));
     }
   }
+  // Auto-generate eliminators after explicit compute rules
+  for (const item of body) {
+    if (item.kind === "data") {
+      computeRules.push(...generateEliminatorRules(item));
+    }
+  }
 
   for (const item of body) {
     switch (item.kind) {
@@ -657,6 +663,66 @@ function buildDupRule(ctor: AST.DataConstructor, typeName: string): AST.CustomAc
   }
 
   return { kind: "custom", body: stmts };
+}
+
+// ─── Auto-generated eliminators ────────────────────────────────────
+// For each data declaration, generate compute rules that define the
+// recursor (e.g., Nat_rec) as reduction equations — scrutinee first:
+//   compute Nat_rec(Zero, base, step) = base
+//   compute Nat_rec(Succ(k), base, step) = step(k, Nat_rec(k, base, step))
+
+function generateEliminatorRules(decl: AST.DataDecl): ComputeRule[] {
+  const rules: ComputeRule[] = [];
+  const recName = `${decl.name}_rec`;
+  const methodNames = decl.constructors.map((_, i) => `_m${i}`);
+
+  for (let ci = 0; ci < decl.constructors.length; ci++) {
+    const ctor = decl.constructors[ci];
+    const fieldVars = ctor.fields.map((f, fi) => `_f${fi}`);
+    const isRecursive = ctor.fields.map((f) => {
+      const baseName = f.type.kind === "ident" ? f.type.name : f.type.kind === "call" ? f.type.name : "";
+      return baseName === decl.name;
+    });
+
+    // Args: Constructor(f0, f1, ...), method0, method1, ...
+    const scrutineePattern: AST.ComputePattern = {
+      kind: "ctor" as const,
+      name: ctor.name,
+      args: fieldVars,
+    };
+    const methodPatterns: AST.ComputePattern[] = methodNames.map((n) => ({
+      kind: "var" as const,
+      name: n,
+    }));
+    const args = [scrutineePattern, ...methodPatterns];
+
+    // Result: method_i(f0, ..., Nat_rec(fk_recursive, m0, m1, ...), ...)
+    // For nullary constructors with no fields: result = method_i
+    const resultArgs: AST.ProveExpr[] = [];
+    for (let fi = 0; fi < ctor.fields.length; fi++) {
+      if (isRecursive[fi]) {
+        // Induction hypothesis: recursive call on the recursive field
+        const recCall: AST.ProveExpr = {
+          kind: "call",
+          name: recName,
+          args: [
+            { kind: "ident", name: fieldVars[fi] },
+            ...methodNames.map((n): AST.ProveExpr => ({ kind: "ident", name: n })),
+          ],
+        };
+        resultArgs.push(recCall);
+      } else {
+        resultArgs.push({ kind: "ident", name: fieldVars[fi] });
+      }
+    }
+
+    const result: AST.ProveExpr = resultArgs.length > 0
+      ? { kind: "call", name: methodNames[ci], args: resultArgs }
+      : { kind: "ident", name: methodNames[ci] };
+
+    rules.push({ funcName: recName, args, result });
+  }
+  return rules;
 }
 
 // ─── Compute rule conversion ───────────────────────────────────────

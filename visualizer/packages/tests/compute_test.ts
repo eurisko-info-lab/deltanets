@@ -35,7 +35,8 @@ system "Nat" extend "Prelude" {
 Deno.test("compute: parses without errors", () => {
   const core = compileAndAssert(COMPUTE_NAT);
   const nat = core.systems.get("Nat")!;
-  assertEquals(nat.computeRules.length, 2);
+  // 2 explicit add rules + 2 auto-generated Nat_rec rules
+  assertEquals(nat.computeRules.length, 4);
 });
 
 Deno.test("compute: rule funcName is correct", () => {
@@ -97,7 +98,8 @@ system "Eq" extend "Nat" {
 Deno.test("compute: extend inherits compute rules from base", () => {
   const core = compileAndAssert(EXTEND_SOURCE);
   const eq = core.systems.get("Eq")!;
-  assertEquals(eq.computeRules.length, 2, "Eq inherits 2 compute rules from Nat");
+  // 2 add + 2 Nat_rec inherited from Nat
+  assertEquals(eq.computeRules.length, 4, "Eq inherits 4 compute rules from Nat");
   assertEquals(eq.computeRules[0].funcName, "add");
   assertEquals(eq.computeRules[1].funcName, "add");
 });
@@ -155,8 +157,8 @@ system "Combined" = compose "Nat" + "Bool" {}
 Deno.test("compute: compose merges compute rules from components", () => {
   const core = compileAndAssert(COMPOSE_SOURCE);
   const combined = core.systems.get("Combined")!;
-  // 2 from Nat (add) + 2 from Bool (not)
-  assertEquals(combined.computeRules.length, 4);
+  // 2 add + 2 Nat_rec + 2 not + 2 Bool_rec
+  assertEquals(combined.computeRules.length, 8);
   const funcNames = new Set(combined.computeRules.map((r) => r.funcName));
   assertEquals(funcNames.has("add"), true);
   assertEquals(funcNames.has("not"), true);
@@ -368,10 +370,12 @@ system "Nat" extend "Prelude" {
 Deno.test("compute: multiple functions in one system", () => {
   const core = compileAndAssert(MULTI_COMPUTE);
   const nat = core.systems.get("Nat")!;
-  assertEquals(nat.computeRules.length, 4);
+  // 2 add + 2 mul + 2 Nat_rec
+  assertEquals(nat.computeRules.length, 6);
   const funcNames = nat.computeRules.map((r) => r.funcName);
   assertEquals(funcNames.filter((n) => n === "add").length, 2);
   assertEquals(funcNames.filter((n) => n === "mul").length, 2);
+  assertEquals(funcNames.filter((n) => n === "Nat_rec").length, 2);
 });
 
 // ─── Compute extend adds new rules to inherited ones ───────────────
@@ -397,11 +401,12 @@ system "NatExt" extend "Nat" {
 Deno.test("compute: extending system adds new compute rules to inherited", () => {
   const core = compileAndAssert(EXTEND_NEW_COMPUTE);
   const ext = core.systems.get("NatExt")!;
-  // 2 inherited from Nat (add) + 2 new (mul)
-  assertEquals(ext.computeRules.length, 4);
+  // 2 add + 2 Nat_rec inherited from Nat + 2 new mul
+  assertEquals(ext.computeRules.length, 6);
   const funcNames = new Set(ext.computeRules.map((r) => r.funcName));
   assertEquals(funcNames.has("add"), true);
   assertEquals(funcNames.has("mul"), true);
+  assertEquals(funcNames.has("Nat_rec"), true);
 });
 
 // ─── Constructor typing for multi-field data ───────────────────────
