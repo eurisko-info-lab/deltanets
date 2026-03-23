@@ -1,12 +1,13 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Current state**: 15,546 LoC TypeScript · 340 tests · 17 tactics  
-**Overall Rocq parity**: ~25% surface, ~15% depth
+**Updated**: 2026-03-23, post-Phase 19  
+**Current state**: ~20k LoC TypeScript · 614 tests · 5 built-in tactics · user-defined tactics  
+**Overall Rocq parity**: ~65% surface, ~45% depth
 
 ---
 
-## Completed Phases (1–12)
+## Completed Phases (1–19)
 
 | Phase | Feature | Commit |
 |-------|---------|--------|
@@ -29,87 +30,68 @@
 | 17 | Quotation & reflection | `97d6aaf` |
 | 18 | Meta-agents | `c3cc341` |
 | 19 | Tactic-as-rules | `917d6c6` |
+| 19a | Unified tactic pipeline | `25db1ab` |
 
 ---
 
-## Top 10 Remaining Gaps
+## Remaining Gaps
 
 | # | Gap | Impact | Current state |
 |---|-----|--------|--------------|
-| 1 | No trusted kernel / proof terms | Can't verify proofs independently | Tactics rewrite AST directly |
-| 2 | No unification | Implicit args never solved, no type inference | `exprEqual` is syntactic only |
-| 3 | No Pi/Sigma type formers | Types limited to constructor applications | No `∀(x:A), B x` |
-| 4 | No coinductive types | No streams, bisimulation, productivity | Not in AST |
-| 5 | No mutual/nested recursion | Can't define Even/Odd mutually | Sequential prove blocks only |
-| 6 | No let-bindings in proofs | Every proof is a single expression | Only pattern bindings |
-| 7 | No universe polymorphism | Only concrete Type₀, Type₁ | No universe variables |
-| 8 | No sections/variables | Must repeat params everywhere | No auto-abstraction |
-| 9 | No notations/coercions | Syntax is fixed | No user extensibility |
-| 10 | No tactic language | Tactics hardcoded in TypeScript | No user-defined tactics |
+| 1 | No tactic meta-agent primitives | User tactics can't normalize, search context, or check types | Only syntactic Tm* rewriting |
+| 2 | No coinductive types | No streams, bisimulation, productivity | Not in AST |
+| 3 | No mutual/nested recursion | Can't define Even/Odd mutually | Sequential prove blocks only |
+| 4 | No sections/variables | Must repeat params everywhere | No auto-abstraction |
+| 5 | No notations/coercions | Syntax is fixed | No user extensibility |
 
 ---
 
-## Architectural Decision: Meta-INet
+## Architectural Decisions
 
-**Insight**: INet reduction is Turing-complete and already the execution backbone.
-Most proof automation (tactics, proof search, rewriting) can be implemented as
-INet rule sets rather than hardcoded TypeScript resolvers.
+### Meta-INet (decided Phase 17–18)
 
-**Mechanism**: Quotation & reflection — represent proof goals and proof terms
-as INet agents. Tactic resolution = INet reduction. The trusted kernel = the
-INet reduction engine (~200 LoC), already implemented.
+INet reduction is Turing-complete and already the execution backbone.
+Quotation & reflection represent proof goals/terms as INet agents.
+Tactic resolution = INet reduction. The trusted kernel = the INet reduction
+engine (~200 LoC).
 
-**Benefits**:
-- Trusted kernel for free (INet reducer is tiny and already exists)
-- User-extensible tactics (just write new agents + rules)
-- Proof certificates are nets (verifiable by reduction)
-- Automation phases become library code, not core changes
+### Tactic Architecture (decided Phase 19a)
 
-**Still needs TypeScript**: Pi/Sigma types, universe hierarchy, unification —
-these define what "well-typed" means and can't self-host until the system
-can prove its own soundness.
+**Built-in tactics (assumption/simp/decide/omega/auto) stay in TypeScript.**
+They are proof *finders*, not proof *checkers* — `buildProofTree` + the type
+checker independently validate any proof term they produce. A buggy tactic
+can't break soundness.
+
+**User-defined tactics run as INet reductions** via `tactic name { agents... rules... }`.
+Currently limited to syntactic Tm* rewriting (no normalization, no context access).
+
+**Next step: meta-agent primitives** — expose Normalize, CtxSearch, EqCheck
+as MetaHandlers inside `runUserTactic`, giving user tactics the same
+power as built-in ones. Built-in tactics can optionally be ported to INet
+later once the primitives are proven.
 
 ---
 
-## Roadmap (Phases 13–28)
+## Roadmap (Phases 20–28)
 
-### Tier 1 — Type-Theory Foundations
+### Tier 3a — Tactic Meta-Agents
 
-These define the core type theory. Must be in TypeScript (the "kernel").
-
-| Phase | Feature | Description | Est. LoC |
-|-------|---------|-------------|----------|
-| **13** | **Let-bindings in proofs** | `let x = expr in body` inside prove blocks | ~150 |
-| **14** | **Pi & Sigma types** | `∀(x:A), B x` and `Σ(x:A), B x` as first-class ProveExpr formers | ~400 |
-| **15** | **Unification engine** | Metavariables, occurs check, flex-rigid, implicit argument solving | ~600 |
-| **16** | **Universe polymorphism** | Universe variables, cumulativity, constraint solving | ~400 |
-
-*Cumulative Rocq %: ~50%*
-
-### Tier 2 — Quotation & Meta-INet
-
-The pivot: make the INet engine the metalanguage for proof automation.
+Expose kernel operations to the INet tactic engine.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **17** | **Quotation & reflection** | `quote`/`unquote` primitives; represent ProveExpr as INet agents; proof goals as nets | ~500 |
-| **18** | **Meta-agents** | Built-in agents that inspect/construct/transform quoted terms (match-goal, apply-rule, normalize-term) | ~400 |
-| **19** | **Tactic-as-rules** | Rewrite simp/decide/omega/auto as INet rule sets; user-definable tactics via `tactic name { agents... rules... }` | ~350 |
+| **20** | **Tactic meta-agent primitives** | Normalize (reduce Tm* via compute rules), CtxSearch (inject proof context, search bindings matching goal), EqCheck (structural equality with α-renaming) as MetaHandlers in `runUserTactic`; pass ProveCtx into tactic graph | ~350 |
 
-*Cumulative Rocq %: ~65%*
-
-### Tier 3 — Expressiveness
+### Tier 3b — Expressiveness
 
 Richer data types and recursion patterns.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **20** | **Mutual inductive types** | `mutual { data Even ... data Odd ... }` with joint positivity | ~300 |
-| **21** | **Coinductive types** | `codata Stream(A) { head, tail }` + productivity checking | ~400 |
-| **22** | **Well-founded recursion** | `Function` with `{measure f}` or `{wf R}` | ~350 |
-| **23** | **Nested pattern matching** | Deep patterns, with-clauses, overlapping checks | ~250 |
-
-*Cumulative Rocq %: ~75%*
+| **21** | **Mutual inductive types** | `mutual { data Even ... data Odd ... }` with joint positivity | ~300 |
+| **22** | **Coinductive types** | `codata Stream(A) { head, tail }` + productivity checking | ~400 |
+| **23** | **Well-founded recursion** | `Function` with `{measure f}` or `{wf R}` | ~350 |
+| **24** | **Nested pattern matching** | Deep patterns, with-clauses, overlapping checks | ~250 |
 
 ### Tier 4 — Scale & Usability
 
@@ -117,22 +99,18 @@ Module system, syntax, and ergonomics.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **24** | **Sections & variables** | `section S { variable (A : Type) }` with auto-abstraction | ~200 |
-| **25** | **Notations** | `notation "x + y" := add(x, y)` with precedence | ~300 |
-| **26** | **Coercions** | Implicit type conversions registered per pair | ~200 |
-
-*Cumulative Rocq %: ~80%*
+| **25** | **Sections & variables** | `section S { variable (A : Type) }` with auto-abstraction | ~200 |
+| **26** | **Notations** | `notation "x + y" := add(x, y)` with precedence | ~300 |
+| **27** | **Coercions** | Implicit type conversions registered per pair | ~200 |
 
 ### Tier 5 — Automation Libraries (INet-native)
 
-Written as INet rule sets using the meta-INet framework from Tier 2.
+Written as INet rule sets using meta-agent primitives from Phase 20.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **27** | **Setoid rewriting** | Rewrite under arbitrary equivalence relations (INet rules) | ~300 |
-| **28** | **Ring / field solvers** | Commutative ring normalization (INet rules) | ~350 |
-
-*Cumulative Rocq %: ~85%*
+| **28** | **Setoid rewriting** | Rewrite under arbitrary equivalence relations (INet rules) | ~300 |
+| **29** | **Ring / field solvers** | Commutative ring normalization (INet rules) | ~350 |
 
 ---
 
@@ -140,14 +118,13 @@ Written as INet rule sets using the meta-INet framework from Tier 2.
 
 | Tier | Phases | Est. LoC | Cumulative Rocq % |
 |------|--------|----------|-------------------|
-| Current (1–12) | 12 | 4,737 | ~25% |
-| Tier 1: Foundations | 13–16 | ~1,550 | ~50% |
-| Tier 2: Meta-INet | 17–19 | ~1,250 | ~65% |
-| Tier 3: Expressiveness | 20–23 | ~1,300 | ~75% |
-| Tier 4: Usability | 24–26 | ~700 | ~80% |
-| Tier 5: Automation libs | 27–28 | ~650 | ~85% |
+| Done (1–19a) | 20 | ~8,400 | ~65% |
+| Tier 3a: Meta-agents | 20 | ~350 | ~70% |
+| Tier 3b: Expressiveness | 21–24 | ~1,300 | ~80% |
+| Tier 4: Usability | 25–27 | ~700 | ~85% |
+| Tier 5: Automation libs | 28–29 | ~650 | ~90% |
 
-**Total remaining: ~6,450 LoC across 16 phases**
+**Total remaining: ~3,000 LoC across 10 phases**
 
 The remaining ~15% is Rocq's 30+ years of standard library, extraction
 machinery, and ecosystem (CoqIDE, SerAPI, coq-lsp, opam packages) —
