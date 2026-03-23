@@ -356,8 +356,10 @@ function substituteExprPattern(
 type ProveCtx = {
   prove: AST.ProveDecl;
   caseBindings: Map<string, AST.ProveExpr>; // binding name → type var
+  bindingTypes: Map<string, string>; // binding name → type name (for scrutinee resolution)
   provedCtx: ProvedContext; // previously proved propositions
   constructorTyping: ConstructorTyping; // constructor → type info from data decls
+  constructorsByType?: Map<string, Set<string>>; // type name → constructor names
 };
 
 type TypeResult =
@@ -377,9 +379,13 @@ function inferType(
   if (expr.kind === "match") {
     let resultType: AST.ProveExpr | null = null;
     for (const c of expr.cases) {
-      const newBindings = new Map(ctx.caseBindings);
-      for (const b of c.bindings) newBindings.set(b, ident(b));
-      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+      const { bindings: newBindings, types: newTypes } = buildTypedBindings(c, ctx.constructorTyping);
+      for (const [k, v] of ctx.caseBindings) {
+        if (!newBindings.has(k)) newBindings.set(k, v);
+      }
+      const mergedTypes = new Map(ctx.bindingTypes);
+      for (const [k, v] of newTypes) mergedTypes.set(k, v);
+      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings, bindingTypes: mergedTypes };
       const inner = inferType(c.body, innerCtx);
       if (!inner.ok) return inner;
       if (!resultType) resultType = inner.type;
@@ -702,9 +708,13 @@ function buildNode(
   // match → sub-trees for each case arm with per-arm expected type
   if (expr.kind === "match") {
     const children = expr.cases.map((c) => {
-      const newBindings = new Map(ctx.caseBindings);
-      for (const b of c.bindings) newBindings.set(b, ident(b));
-      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+      const { bindings: newBindings, types: newTypes } = buildTypedBindings(c, ctx.constructorTyping);
+      for (const [k, v] of ctx.caseBindings) {
+        if (!newBindings.has(k)) newBindings.set(k, v);
+      }
+      const mergedTypes = new Map(ctx.bindingTypes);
+      for (const [k, v] of newTypes) mergedTypes.set(k, v);
+      const innerCtx: ProveCtx = { ...ctx, caseBindings: newBindings, bindingTypes: mergedTypes };
       let caseExpected = expected;
       if (expected) {
         const consExpr = c.bindings.length > 0
@@ -845,22 +855,87 @@ function nodeHasHoles(node: ProofNode): boolean {
   return node.children.some(nodeHasHoles);
 }
 
+// ─── Dependent pattern matching helpers ────────────────────────────
+
+/** Resolve the type name of a scrutinee from prove params and binding types. */
+function resolveScrutineeType(
+  scrutinee: string,
+  ctx: ProveCtx,
+): string | null {
+  // Check prove params first
+  for (const p of ctx.prove.params) {
+    if (p.name === scrutinee && p.type) {
+      return p.type.kind === "ident" ? p.type.name :
+             p.type.kind === "call" ? p.type.name : null;
+    }
+  }
+  // Check binding types (populated from constructor field types)
+  return ctx.bindingTypes.get(scrutinee) ?? null;
+}
+
+/** Build typed bindings for a case arm: maps binding names to ident(name)
+ *  and collects constructor-field type names when available. */
+function buildTypedBindings(
+  caseArm: AST.ProveCase,
+  constructorTyping: ConstructorTyping,
+): { bindings: Map<string, AST.ProveExpr>; types: Map<string, string> } {
+  const bindings = new Map<string, AST.ProveExpr>();
+  const types = new Map<string, string>();
+  const ctorInfo = constructorTyping.get(caseArm.pattern);
+  for (let i = 0; i < caseArm.bindings.length; i++) {
+    const b = caseArm.bindings[i];
+    bindings.set(b, ident(b));
+    if (ctorInfo && i < ctorInfo.fields.length) {
+      const ft = ctorInfo.fields[i].type;
+      const typeName = ft.kind === "ident" ? ft.name : ft.kind === "call" ? ft.name : null;
+      if (typeName) types.set(b, typeName);
+    }
+  }
+  return { bindings, types };
+}
+
+/** Check exhaustiveness of a match expression against known constructors. */
+function checkMatchExhaustiveness(
+  scrutineeType: string | null,
+  cases: AST.ProveCase[],
+  constructorsByType: Map<string, Set<string>> | undefined,
+  prefix: string,
+): string[] {
+  if (!scrutineeType || !constructorsByType) return [];
+  const knownConstructors = constructorsByType.get(scrutineeType);
+  if (!knownConstructors || knownConstructors.size === 0) return [];
+  const casePatterns = new Set(cases.map((c) => c.pattern));
+  const missing = [...knownConstructors].filter((c) => !casePatterns.has(c));
+  if (missing.length > 0) {
+    return [
+      `${prefix}: non-exhaustive match on type ${scrutineeType}\n` +
+        `  missing: ${missing.join(", ")}`,
+    ];
+  }
+  return [];
+}
+
 /** Build context and expected type for a case arm. */
 function caseCtx(
   prove: AST.ProveDecl,
   caseArm: AST.ProveCase,
   provedCtx: ProvedContext,
   constructorTyping: ConstructorTyping = new Map(),
+  constructorsByType?: Map<string, Set<string>>,
 ): { ctx: ProveCtx; expectedType: AST.ProveExpr } {
   const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
     ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
     : ident(caseArm.pattern);
+  // Build typed caseBindings: look up constructor field types when available
+  const { bindings: caseBindings, types: bindingTypes } = buildTypedBindings(caseArm, constructorTyping);
   return {
     ctx: {
       prove,
-      caseBindings: new Map(caseArm.bindings.map((b) => [b, ident(b)])),
+      caseBindings,
+      bindingTypes,
       provedCtx,
       constructorTyping,
+      constructorsByType,
     },
     expectedType: normalize(substitute(prove.returnType!, prove.params[0].name, consExpr)),
   };
@@ -945,6 +1020,7 @@ function checkExhaustiveness(
 // ─── Match expression type checker ─────────────────────────────────
 // Validates each arm individually, substituting the scrutinee variable
 // with the constructor expression in the expected type (dependent matching).
+// Also performs exhaustiveness checking when the scrutinee type is known.
 
 function typecheckMatchExpr(
   matchExpr: AST.ProveExpr & { kind: "match" },
@@ -953,14 +1029,26 @@ function typecheckMatchExpr(
   prefix: string,
 ): string[] {
   const errors: string[] = [];
+
+  // Exhaustiveness: resolve scrutinee type and check all constructors covered
+  const scrutType = resolveScrutineeType(matchExpr.scrutinee, ctx);
+  errors.push(...checkMatchExhaustiveness(
+    scrutType, matchExpr.cases, ctx.constructorsByType, prefix,
+  ));
+
   for (const arm of matchExpr.cases) {
     const consExpr: AST.ProveExpr = arm.bindings.length > 0
       ? app(arm.pattern, ...arm.bindings.map(ident))
       : ident(arm.pattern);
     const armReq = normalize(substitute(requiredType, matchExpr.scrutinee, consExpr));
-    const newBindings = new Map(ctx.caseBindings);
-    for (const b of arm.bindings) newBindings.set(b, ident(b));
-    const armCtx: ProveCtx = { ...ctx, caseBindings: newBindings };
+    // Build typed bindings from constructor fields
+    const { bindings: newBindings, types: newTypes } = buildTypedBindings(arm, ctx.constructorTyping);
+    for (const [k, v] of ctx.caseBindings) {
+      if (!newBindings.has(k)) newBindings.set(k, v);
+    }
+    const mergedTypes = new Map(ctx.bindingTypes);
+    for (const [k, v] of newTypes) mergedTypes.set(k, v);
+    const armCtx: ProveCtx = { ...ctx, caseBindings: newBindings, bindingTypes: mergedTypes };
     const armBody = stripTacticSugar(arm.body);
 
     if (armBody.kind === "match") {
@@ -1002,7 +1090,7 @@ export function typecheckProve(
   const errors: string[] = [];
 
   for (const caseArm of prove.cases) {
-    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping);
+    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
     const body = stripTacticSugar(caseArm.body);
     const reqEq = extractEq(requiredType);

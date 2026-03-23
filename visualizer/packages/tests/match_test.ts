@@ -2,6 +2,7 @@
 
 import { assertEquals } from "$std/assert/mod.ts";
 import { compileAndAssert } from "./helpers.ts";
+import { compileCore } from "@deltanets/lang";
 
 // ─── Base system with Nat + Eq + compute ───────────────────────────
 
@@ -131,4 +132,56 @@ system "Proofs" extend "Eq" {
   assertEquals(zeroCase !== undefined, true);
   assertEquals(zeroCase!.tree.rule, "match");
   assertEquals(zeroCase!.tree.children.length, 2);
+});
+
+// ─── Phase 3: Dependent pattern matching ───────────────────────────
+
+Deno.test("match: exhaustiveness — missing case in match is caught", () => {
+  const src = BASE + `
+system "Proofs" extend "Eq" {
+  prove incomplete(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> match(m) {
+      | Zero -> refl
+    }
+    | Succ(k) -> cong_succ(incomplete(k, m))
+  }
+}
+  `;
+  const result = compileCore(src);
+  const matchErrors = result.errors.filter((e: string) => e.includes("non-exhaustive match"));
+  assertEquals(matchErrors.length > 0, true, "missing Succ case in match should error");
+  assertEquals(matchErrors[0].includes("Succ"), true, "error should mention missing Succ");
+});
+
+Deno.test("match: exhaustiveness — complete match is fine", () => {
+  const src = BASE + `
+system "Proofs" extend "Eq" {
+  prove complete(n : Nat, m : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> match(m) {
+      | Zero -> refl
+      | Succ(j) -> refl
+    }
+    | Succ(k) -> cong_succ(complete(k, m))
+  }
+}
+  `;
+  compileAndAssert(src);
+});
+
+Deno.test("match: nested match on constructor binding resolves type", () => {
+  // Succ(k) introduces k : Nat, so match(k) should know k is Nat
+  // and check exhaustiveness for Nat constructors
+  const src = BASE + `
+system "Proofs" extend "Eq" {
+  prove nested(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> match(k) {
+      | Zero -> cong_succ(refl)
+    }
+  }
+}
+  `;
+  const result = compileCore(src);
+  const matchErrors = result.errors.filter((e: string) => e.includes("non-exhaustive match"));
+  assertEquals(matchErrors.length > 0, true, "match on k : Nat should require Succ case");
 });
