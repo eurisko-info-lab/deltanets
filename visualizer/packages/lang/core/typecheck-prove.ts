@@ -79,9 +79,181 @@ function constructorReturnType(
   return ident(info.typeName);
 }
 
+// ─── Unification engine ────────────────────────────────────────────
+
+/** Mutable map from metavar id → solved ProveExpr. */
+export type UnifCtx = Map<number, AST.ProveExpr>;
+
+let _metaCounter = 0;
+/** Create a fresh metavariable. */
+export function freshMeta(): AST.ProveExpr {
+  return { kind: "metavar", id: _metaCounter++ };
+}
+
+/** Walk an expression, replacing solved metavars with their solutions. */
+export function zonk(expr: AST.ProveExpr, ctx: UnifCtx): AST.ProveExpr {
+  if (expr.kind === "metavar") {
+    const sol = ctx.get(expr.id);
+    if (sol) return zonk(sol, ctx);
+    return expr;
+  }
+  if (expr.kind === "hole" || expr.kind === "ident") return expr;
+  if (expr.kind === "call") {
+    const args = expr.args.map((a) => zonk(a, ctx));
+    return { kind: "call", name: expr.name, args };
+  }
+  if (expr.kind === "let") {
+    return { kind: "let", name: expr.name, value: zonk(expr.value, ctx), body: zonk(expr.body, ctx) };
+  }
+  if (expr.kind === "pi") {
+    return { kind: "pi", param: expr.param, domain: zonk(expr.domain, ctx), codomain: zonk(expr.codomain, ctx) };
+  }
+  if (expr.kind === "sigma") {
+    return { kind: "sigma", param: expr.param, domain: zonk(expr.domain, ctx), codomain: zonk(expr.codomain, ctx) };
+  }
+  if (expr.kind === "lambda") {
+    return { kind: "lambda", param: expr.param, paramType: zonk(expr.paramType, ctx), body: zonk(expr.body, ctx) };
+  }
+  if (expr.kind === "match") {
+    return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: zonk(c.body, ctx) })) };
+  }
+  return expr;
+}
+
+/** Returns true if metavar `id` occurs anywhere in `expr`. */
+function occursIn(id: number, expr: AST.ProveExpr, ctx: UnifCtx): boolean {
+  if (expr.kind === "metavar") {
+    if (expr.id === id) return true;
+    const sol = ctx.get(expr.id);
+    return sol ? occursIn(id, sol, ctx) : false;
+  }
+  if (expr.kind === "ident" || expr.kind === "hole") return false;
+  if (expr.kind === "call") return expr.args.some((a) => occursIn(id, a, ctx));
+  if (expr.kind === "let") return occursIn(id, expr.value, ctx) || occursIn(id, expr.body, ctx);
+  if (expr.kind === "pi" || expr.kind === "sigma") return occursIn(id, expr.domain, ctx) || occursIn(id, expr.codomain, ctx);
+  if (expr.kind === "lambda") return occursIn(id, expr.paramType, ctx) || occursIn(id, expr.body, ctx);
+  if (expr.kind === "match") return expr.cases.some((c) => occursIn(id, c.body, ctx));
+  return false;
+}
+
+/**
+ * First-order unification. Tries to make `a` and `b` equal by assigning
+ * metavariables in `ctx`. Returns true on success.
+ *
+ * Both sides are normalized before comparison. Metavars are resolved
+ * eagerly (follow chains via ctx).
+ */
+export function unify(a: AST.ProveExpr, b: AST.ProveExpr, ctx: UnifCtx): boolean {
+  a = zonk(normalize(a), ctx);
+  b = zonk(normalize(b), ctx);
+
+  // Identical metavars
+  if (a.kind === "metavar" && b.kind === "metavar" && a.id === b.id) return true;
+
+  // Flex-rigid / flex-flex: assign metavar
+  if (a.kind === "metavar") {
+    if (occursIn(a.id, b, ctx)) return false; // occurs check
+    ctx.set(a.id, b);
+    return true;
+  }
+  if (b.kind === "metavar") {
+    if (occursIn(b.id, a, ctx)) return false;
+    ctx.set(b.id, a);
+    return true;
+  }
+
+  // Holes never unify
+  if (a.kind === "hole" || b.kind === "hole") return false;
+
+  // Idents
+  if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
+
+  // Calls
+  if (a.kind === "call" && b.kind === "call") {
+    if (a.name !== b.name || a.args.length !== b.args.length) return false;
+    return a.args.every((arg, i) => unify(arg, b.args[i], ctx));
+  }
+
+  // Pi
+  if (a.kind === "pi" && b.kind === "pi") {
+    if (!unify(a.domain, b.domain, ctx)) return false;
+    return unify(substitute(a.codomain, a.param, ident(b.param)), b.codomain, ctx);
+  }
+
+  // Sigma
+  if (a.kind === "sigma" && b.kind === "sigma") {
+    if (!unify(a.domain, b.domain, ctx)) return false;
+    return unify(substitute(a.codomain, a.param, ident(b.param)), b.codomain, ctx);
+  }
+
+  // Lambda
+  if (a.kind === "lambda" && b.kind === "lambda") {
+    if (!unify(a.paramType, b.paramType, ctx)) return false;
+    return unify(substitute(a.body, a.param, ident(b.param)), b.body, ctx);
+  }
+
+  return false;
+}
+
+/**
+ * Resolve a call to a prove/lemma with implicit parameters.
+ *
+ * Strategy:
+ * 1. Fresh metavars for each implicit param
+ * 2. Map explicit params → provided args
+ * 3. For each explicit param with a type annotation, unify the param type
+ *    (with metavar bindings) against the type of the corresponding arg
+ *    (looked up from caseBindings / constructorTyping)
+ * 4. Zonk metavars out of the substituted return type
+ */
+function resolveImplicitCall(
+  params: AST.ProveParam[],
+  returnType: AST.ProveExpr,
+  args: AST.ProveExpr[],
+  ctx: ProveCtx,
+): { type: AST.ProveExpr; unifCtx: UnifCtx } {
+  const bindings = new Map<string, AST.ProveExpr>();
+  const unifCtx: UnifCtx = new Map();
+
+  // Phase 1: assign bindings — metavars for implicits, args for explicits
+  let argIdx = 0;
+  for (const p of params) {
+    if (p.implicit) {
+      bindings.set(p.name, freshMeta());
+    } else if (argIdx < args.length) {
+      bindings.set(p.name, args[argIdx++]);
+    }
+  }
+
+  // Phase 2: unify explicit param types against actual arg types to solve metavars
+  argIdx = 0;
+  for (const p of params) {
+    if (p.implicit) continue;
+    if (argIdx >= args.length) break;
+    const arg = args[argIdx++];
+    if (p.type) {
+      // Expected type of this param (with metavar bindings)
+      const expectedType = substituteAll(p.type, bindings);
+      // Infer actual type of the argument
+      const argResult = inferType(arg, ctx);
+      if (argResult.ok) {
+        unify(expectedType, argResult.type, unifCtx);
+      }
+    }
+  }
+
+  // Phase 3: substitute all bindings into return type, then zonk
+  const rawType = substituteAll(returnType, bindings);
+  return { type: rawType, unifCtx };
+}
+
+// ─── Expression equality (syntactic, after normalization) ──────────
+
 function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   if (a.kind === "hole" || b.kind === "hole") return false;
   if (a.kind === "match" || b.kind === "match") return false;
+  if (a.kind === "metavar" && b.kind === "metavar") return a.id === b.id;
+  if (a.kind === "metavar" || b.kind === "metavar") return false;
   if (a.kind === "let" && b.kind === "let") {
     return a.name === b.name && exprEqual(a.value, b.value) && exprEqual(a.body, b.body);
   }
@@ -113,6 +285,7 @@ function toSubscript(n: number): string {
 
 function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
+  if (e.kind === "metavar") return `?${e.id}`;
   if (e.kind === "match") return `match(${e.scrutinee}) { ... }`;
   if (e.kind === "let") return `let ${e.name} = ${exprToString(e.value)} in ${exprToString(e.body)}`;
   if (e.kind === "pi") return `∀(${e.param} : ${exprToString(e.domain)}), ${exprToString(e.codomain)}`;
@@ -139,7 +312,7 @@ function substitute(
   varName: string,
   value: AST.ProveExpr,
 ): AST.ProveExpr {
-  if (expr.kind === "hole") return expr;
+  if (expr.kind === "hole" || expr.kind === "metavar") return expr;
   if (expr.kind === "ident") {
     return expr.name === varName ? value : expr;
   }
@@ -186,7 +359,7 @@ function substituteAll(
   expr: AST.ProveExpr,
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
-  if (expr.kind === "hole") return expr;
+  if (expr.kind === "hole" || expr.kind === "metavar") return expr;
   if (expr.kind === "ident") {
     return bindings.get(expr.name) ?? expr;
   }
@@ -260,7 +433,7 @@ function substituteComputeResult(
   expr: AST.ProveExpr,
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
-  if (expr.kind === "hole" || expr.kind === "match") return expr;
+  if (expr.kind === "hole" || expr.kind === "match" || expr.kind === "metavar") return expr;
   if (expr.kind === "ident") return bindings.get(expr.name) ?? expr;
   if (expr.kind === "let") {
     return { kind: "let", name: expr.name, value: substituteComputeResult(expr.value, bindings), body: substituteComputeResult(expr.body, bindings) };
@@ -359,7 +532,7 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     if (m) return app("Type", ident(m[1]));
     return expr;
   }
-  if (expr.kind === "hole" || expr.kind === "match") return expr;
+  if (expr.kind === "hole" || expr.kind === "match" || expr.kind === "metavar") return expr;
   if (expr.kind === "let") {
     // Inline the let binding: let x = v in body → body[x := v]
     const normValue = normalize(expr.value);
@@ -509,6 +682,11 @@ function inferType(
   // Hole → can't infer, needs goal from context
   if (expr.kind === "hole") {
     return { ok: false, error: "hole" };
+  }
+
+  // Metavar → internal unification variable, shouldn't appear in user proofs
+  if (expr.kind === "metavar") {
+    return { ok: false, error: `unsolved metavariable ?${expr.id}` };
   }
 
   // Let → infer type of body with binding in scope
@@ -714,14 +892,8 @@ function inferType(
     if (!ctx.prove.returnType) {
       return { ok: false, error: `recursive call to ${name} but no return type declared` };
     }
-    // Substitute args into the declared proposition (simultaneous)
-    // Only explicit params receive arguments; implicit ones are skipped.
-    const bindings = new Map<string, AST.ProveExpr>();
-    const explicitNames = ctx.prove.params.filter((p) => !p.implicit).map((p) => p.name);
-    for (let i = 0; i < args.length && i < explicitNames.length; i++) {
-      bindings.set(explicitNames[i], args[i]);
-    }
-    return { ok: true, type: normalize(substituteAll(ctx.prove.returnType, bindings)) };
+    const { type, unifCtx } = resolveImplicitCall(ctx.prove.params, ctx.prove.returnType, args, ctx);
+    return { ok: true, type: normalize(zonk(type, unifCtx)) };
   }
 
   // ── Tactic combinators ──
@@ -758,12 +930,8 @@ function inferType(
   // Cross-lemma call: look up previously proved proposition
   const proved = ctx.provedCtx.get(name);
   if (proved) {
-    const bindings = new Map<string, AST.ProveExpr>();
-    const explicitNames = proved.params.filter((p) => !p.implicit).map((p) => p.name);
-    for (let i = 0; i < args.length && i < explicitNames.length; i++) {
-      bindings.set(explicitNames[i], args[i]);
-    }
-    return { ok: true, type: normalize(substituteAll(proved.returnType, bindings)) };
+    const { type, unifCtx } = resolveImplicitCall(proved.params, proved.returnType, args, ctx);
+    return { ok: true, type: normalize(zonk(type, unifCtx)) };
   }
 
   // Constructor application: infer type from data declaration
@@ -913,6 +1081,11 @@ function buildNode(
     const goalStr = expected ? exprToString(normalize(expected)) : "?";
     const suggestions = expected ? searchCandidates(ctx, expected) : [];
     return { rule: "goal", term: "?", conclusion: goalStr, children: [], isGoal: true, suggestions };
+  }
+
+  // metavar → leaf node (shouldn't appear in user-facing proofs)
+  if (expr.kind === "metavar") {
+    return { rule: "?", term: `?${expr.id}`, conclusion: "unsolved metavariable", children: [] };
   }
 
   // let → build sub-trees for value and body
@@ -1806,6 +1979,7 @@ export function resolveDecide(
 }
 
 function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveExpr>): boolean {
+  if (expr.kind === "metavar") return false;
   if (expr.kind === "ident") return !caseBindings.has(expr.name);
   if (expr.kind === "call") return expr.args.every(a => isGroundTerm(a, caseBindings));
   if (expr.kind === "let") return isGroundTerm(expr.value, caseBindings) && isGroundTerm(expr.body, caseBindings);

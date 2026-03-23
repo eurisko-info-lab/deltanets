@@ -441,6 +441,7 @@ function desugarProve(
 
     function translateExpr(expr: AST.ProveExpr): AST.PortRef {
       if (expr.kind === "hole") throw new EvalError(`prove ${prove.name}: unexpected ? hole in desugaring`);
+      if (expr.kind === "metavar") throw new EvalError(`prove ${prove.name}: unsolved metavariable ?${expr.id} in desugaring`);
       if (expr.kind === "match") throw new EvalError(`prove ${prove.name}: match expressions cannot be desugared into agents`);
       if (expr.kind === "let") {
         const valPort = translateExpr(expr.value);

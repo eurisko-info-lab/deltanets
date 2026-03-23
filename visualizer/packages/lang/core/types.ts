@@ -105,7 +105,8 @@ export type ProveExpr =
   | { kind: "let"; name: string; value: ProveExpr; body: ProveExpr } // let x = e in body
   | { kind: "pi"; param: string; domain: ProveExpr; codomain: ProveExpr } // forall(x : A, B)
   | { kind: "sigma"; param: string; domain: ProveExpr; codomain: ProveExpr } // exists(x : A, B)
-  | { kind: "lambda"; param: string; paramType: ProveExpr; body: ProveExpr }; // fun(x : A, body)
+  | { kind: "lambda"; param: string; paramType: ProveExpr; body: ProveExpr } // fun(x : A, body)
+  | { kind: "metavar"; id: number }; // unification variable ?id
 
 // agent name(port, port, ..variadicPort)
 export type AgentDecl = {
