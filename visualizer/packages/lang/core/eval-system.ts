@@ -5,7 +5,7 @@
 
 import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
-import type { AgentDef, ModeDef, RuleDef, SystemDef, TacticDef } from "./evaluator.ts";
+import type { AgentDef, ClassDef, InstanceDef, ModeDef, RuleDef, SystemDef, TacticDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
@@ -18,9 +18,9 @@ export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined };
   return { sys, proofTrees };
 }
 
@@ -91,7 +91,9 @@ export function evalBodyInto(
   systems?: Map<string, SystemDef>,
   inheritedSetoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>,
   inheritedRings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }> } {
+  inheritedClasses?: Map<string, ClassDef>,
+  inheritedInstances?: InstanceDef[],
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[] } {
   const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
@@ -100,6 +102,8 @@ export function evalBodyInto(
   const coercions = new Map<string, Map<string, string>>(); // from → to → func
   const setoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>(inheritedSetoids); // relation name → setoid def
   const rings = new Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>(inheritedRings); // type name → ring def
+  const classes = new Map<string, ClassDef>(inheritedClasses); // class name → class def
+  const instances: InstanceDef[] = [...(inheritedInstances ?? [])]; // typeclass instances
   // Pre-scan: collect constructor families and compute rules before processing
   // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
@@ -373,6 +377,42 @@ export function evalBodyInto(
         rings.set(item.type, { type: item.type, zero: item.zero, one: item.one, add: item.add, mul: item.mul });
         break;
       }
+      case "class": {
+        // Register typeclass: store method signatures
+        classes.set(item.name, {
+          name: item.name,
+          params: item.params,
+          methods: item.methods.map((m) => ({ name: m.name, type: m.type })),
+        });
+        break;
+      }
+      case "instance": {
+        // Register typeclass instance and generate compute rules for method dispatch
+        const classDef = classes.get(item.className);
+        if (!classDef) throw new EvalError(`instance: unknown class '${item.className}'`);
+        const methodMap = new Map<string, string>();
+        for (const m of item.methods) {
+          const defined = classDef.methods.some((cm) => cm.name === m.name);
+          if (!defined) throw new EvalError(`instance ${item.className}(${item.args.join(", ")}): unknown method '${m.name}'`);
+          methodMap.set(m.name, m.value);
+        }
+        // Verify all class methods are implemented
+        for (const cm of classDef.methods) {
+          if (!methodMap.has(cm.name)) {
+            throw new EvalError(`instance ${item.className}(${item.args.join(", ")}): missing method '${cm.name}'`);
+          }
+        }
+        instances.push({ className: item.className, args: item.args, methods: methodMap });
+        // Generate compute rules: methodName(TypeArg, ...) = implAgent(...)
+        for (const [methodName, implName] of methodMap) {
+          computeRules.push({
+            head: methodName,
+            patterns: item.args.map((a) => ({ kind: "ident" as const, name: a })),
+            body: { kind: "ident" as const, name: implName },
+          });
+        }
+        break;
+      }
       case "open": {
         // Built-in "Quote" system: register quotation agents
         if (item.system === "Quote") {
@@ -505,7 +545,7 @@ export function evalBodyInto(
   const exports = exportNames.length > 0
     ? new Set(exportNames.flatMap(e => e.names))
     : undefined;
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -523,9 +563,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings, base.classes, base.instances);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -543,6 +583,8 @@ export function evalCompose(
   const mergedCtorTyping: ConstructorTyping = new Map();
   const mergedSetoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>();
   const mergedRings = new Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>();
+  const mergedClasses = new Map<string, ClassDef>();
+  const mergedInstances: InstanceDef[] = [];
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -599,12 +641,22 @@ export function evalCompose(
     if (comp.rings) {
       for (const [name, r] of comp.rings) mergedRings.set(name, r);
     }
+
+    // Classes: merge
+    if (comp.classes) {
+      for (const [name, c] of comp.classes) mergedClasses.set(name, c);
+    }
+
+    // Instances: merge
+    if (comp.instances) {
+      mergedInstances.push(...comp.instances);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings, mergedClasses, mergedInstances);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────

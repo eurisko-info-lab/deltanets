@@ -44,6 +44,8 @@ export const TT = {
   COERCION: "COERCION",
   SETOID: "SETOID",
   RING: "RING",
+  CLASS: "CLASS",
+  INSTANCE: "INSTANCE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -122,6 +124,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   coercion: TT.COERCION,
   setoid: TT.SETOID,
   ring: TT.RING,
+  class: TT.CLASS,
+  instance: TT.INSTANCE,
 };
 
 export class LexError extends Error {

@@ -51,6 +51,20 @@ export type SystemDef = {
   tactics?: Map<string, TacticDef>; // user-defined tactics
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // registered setoid relations
   rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; // registered ring structures
+  classes?: Map<string, ClassDef>; // typeclass declarations
+  instances?: InstanceDef[]; // typeclass instances
+};
+
+export type ClassDef = {
+  name: string;
+  params: string[];
+  methods: { name: string; type: import("./types.ts").ProveExpr }[];
+};
+
+export type InstanceDef = {
+  className: string;
+  args: string[];
+  methods: Map<string, string>; // method name → implementation agent name
 };
 
 export type TacticDef = {

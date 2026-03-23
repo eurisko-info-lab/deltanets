@@ -27,7 +27,9 @@ export type Statement =
   | NotationDecl
   | CoercionDecl
   | SetoidDecl
-  | RingDecl;
+  | RingDecl
+  | ClassDecl
+  | InstanceDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -54,7 +56,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -124,6 +126,24 @@ export type RingDecl = {
   one?: string;   // multiplicative identity (e.g., "One")
   add: string;    // addition operation name (e.g., "add")
   mul: string;    // multiplication operation name (e.g., "mul")
+};
+
+// class Show(A) { show : A -> String }
+// Declares a typeclass: a named set of method signatures parameterized by type variables.
+export type ClassDecl = {
+  kind: "class";
+  name: string;       // class name (e.g., "Show")
+  params: string[];   // type parameters (e.g., ["A"])
+  methods: DataField[]; // method signatures (name : type)
+};
+
+// instance Show(Nat) { show = showNat }
+// Provides concrete implementations for a typeclass at specific types.
+export type InstanceDecl = {
+  kind: "instance";
+  className: string;      // which class (e.g., "Show")
+  args: string[];         // type arguments (e.g., ["Nat"])
+  methods: { name: string; value: string }[]; // method implementations
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

@@ -215,6 +215,10 @@ class Parser {
         return this.parseSetoidDecl();
       case TT.RING:
         return this.parseRingDecl();
+      case TT.CLASS:
+        return this.parseClassDecl();
+      case TT.INSTANCE:
+        return this.parseInstanceDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -378,8 +382,10 @@ class Parser {
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
       else if (tok.type === TT.RING) body.push(this.parseRingDecl());
+      else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
+      else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1098,6 +1104,8 @@ class Parser {
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
       else if (tok.type === TT.RING) body.push(this.parseRingDecl());
+      else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
+      else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1222,6 +1230,69 @@ class Parser {
       throw new ParseError("ring must declare zero, add, and mul", this.prev().line, this.prev().col);
     }
     return { kind: "ring", type, zero, add, mul, ...(one ? { one } : {}) };
+  }
+
+  // ─── Class (typeclass declaration) ───────────────────────────────
+  // class Show(A) { show : A -> String }
+
+  parseClassDecl(): AST.ClassDecl {
+    this.eat(TT.CLASS);
+    const name = this.eatIdent();
+    const params: string[] = [];
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      if (!this.check(TT.RPAREN)) {
+        this.parseCommaList(() => {
+          const p = this.eatIdent();
+          params.push(p);
+          return p;
+        });
+      }
+      this.eat(TT.RPAREN);
+    }
+    this.eat(TT.LBRACE);
+    const methods: AST.DataField[] = [];
+    if (!this.check(TT.RBRACE)) {
+      methods.push(...this.parseCommaList(() => {
+        const fieldName = this.eatIdent();
+        this.eat(TT.COLON);
+        const fieldType = this.parseProveExpr();
+        return { name: fieldName, type: fieldType };
+      }));
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "class", name, params, methods };
+  }
+
+  // ─── Instance (typeclass implementation) ─────────────────────────
+  // instance Show(Nat) { show = showNat }
+
+  parseInstanceDecl(): AST.InstanceDecl {
+    this.eat(TT.INSTANCE);
+    const className = this.eatIdent();
+    const args: string[] = [];
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      if (!this.check(TT.RPAREN)) {
+        this.parseCommaList(() => {
+          const a = this.eatIdent();
+          args.push(a);
+          return a;
+        });
+      }
+      this.eat(TT.RPAREN);
+    }
+    this.eat(TT.LBRACE);
+    const methods: { name: string; value: string }[] = [];
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const key = this.eatIdent();
+      this.eat(TT.EQ);
+      const val = this.eatIdent();
+      methods.push({ name: key, value: val });
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "instance", className, args, methods };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────
