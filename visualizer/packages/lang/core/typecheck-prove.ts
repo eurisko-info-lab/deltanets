@@ -424,6 +424,10 @@ function inferType(
     if (expr.name === "conv") {
       return { ok: true, type: ident("conv") };
     }
+    // simp — automated simplification (resolved before type-checking)
+    if (expr.name === "simp") {
+      return { ok: false, error: "simp: could not resolve — no proof found" };
+    }
     // Nullary constructor: infer type from data declaration
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
@@ -778,6 +782,9 @@ function buildNode(
   if (expr.kind === "ident" && expr.name === "conv") {
     return { rule: "conv", term, conclusion, children: [] };
   }
+  if (expr.kind === "ident" && expr.name === "simp") {
+    return { rule: "simp", term, conclusion, children: [] };
+  }
   if (expr.kind === "ident") {
     return { rule: "?", term, conclusion, children: [] };
   }
@@ -1029,8 +1036,10 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "ident" && expr.name === "conv") {
     return { kind: "ident", name: "refl" };
   }
-  if (expr.kind !== "call") return expr;
-  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if (expr.kind === "ident" && expr.name === "simp") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind !== "call") return expr;  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
   }
@@ -1223,6 +1232,12 @@ export function typecheckProve(
       continue;
     }
 
+    // Handle simp — should have been resolved before type checking; if still present, it failed
+    if (rawBody.kind === "ident" && rawBody.name === "simp") {
+      errors.push(`${prefix}: simp failed — could not find a proof\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
     const body = stripTacticSugar(rawBody);
 
     // Handle rewrite(proof) — contextual goal-rewriting check
@@ -1367,4 +1382,140 @@ function parseProofString(s: string): AST.ProveExpr {
     return { kind: "ident", name };
   }
   return parseExpr();
+}
+
+// ─── Simp resolution ───────────────────────────────────────────────
+// Resolves `simp` in prove case bodies to a concrete proof term.
+// Strategy: conv (definitional equality) → assumption search → rewrite with lemmas.
+// Must be called BEFORE type-checking and desugaring.
+
+export function resolveSimp(
+  prove: AST.ProveDecl,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[] = [],
+): AST.ProveDecl {
+  if (!prove.returnType) return prove;
+
+  let changed = false;
+  const newCases = prove.cases.map((caseArm) => {
+    const resolved = resolveSimpExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
+    if (resolved !== caseArm.body) {
+      changed = true;
+      return { ...caseArm, body: resolved };
+    }
+    return caseArm;
+  });
+  return changed ? { ...prove, cases: newCases } : prove;
+}
+
+function resolveSimpExpr(
+  expr: AST.ProveExpr,
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  computeRules: ComputeRule[],
+): AST.ProveExpr {
+  if (expr.kind === "ident" && expr.name === "simp") {
+    return withNormTable(computeRules, () => {
+      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
+
+      // 1. conv: if both sides normalize to same term → refl
+      const goalEq = extractEq(normalize(goal));
+      if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+        return ident("refl") as AST.ProveExpr;
+      }
+
+      // 2. assumption-style search
+      const candidates = searchCandidates(ctx, goal);
+      if (candidates.length > 0) return parseProofString(candidates[0]);
+
+      // 3. one-step rewrite with each available lemma
+      if (goalEq) {
+        const lemmaProof = trySimpRewrite(ctx, goalEq);
+        if (lemmaProof) return lemmaProof;
+      }
+
+      return expr; // leave as simp — type checker will report the error
+    });
+  }
+  if (expr.kind === "match") {
+    let changed = false;
+    const newCases = expr.cases.map((c) => {
+      const r = resolveSimpExpr(c.body, prove, caseArm, provedCtx, computeRules);
+      if (r !== c.body) changed = true;
+      return { ...c, body: r };
+    });
+    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
+  }
+  if (expr.kind === "call") {
+    let changed = false;
+    const newArgs = expr.args.map((a) => {
+      const r = resolveSimpExpr(a, prove, caseArm, provedCtx, computeRules);
+      if (r !== a) changed = true;
+      return r;
+    });
+    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
+  }
+  return expr;
+}
+
+/** Try to close an equality goal by rewriting one side with an available lemma,
+ *  then checking if the result matches the other side after normalization. */
+function trySimpRewrite(
+  ctx: ProveCtx,
+  goalEq: { left: AST.ProveExpr; right: AST.ProveExpr },
+): AST.ProveExpr | null {
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+
+  // Collect all available equational lemmas as { call, left, right }
+  const lemmas: { proof: AST.ProveExpr; left: AST.ProveExpr; right: AST.ProveExpr }[] = [];
+
+  // IH calls
+  const auxArgs = auxParams(ctx.prove.params).map((p) => ident(p.name));
+  for (const b of ctx.caseBindings.keys()) {
+    const call = app(ctx.prove.name, ident(b), ...auxArgs);
+    const r = inferType(call, ctx);
+    if (r.ok) {
+      const eq = extractEq(normalize(r.type));
+      if (eq) lemmas.push({ proof: call, left: normalize(eq.left), right: normalize(eq.right) });
+    }
+  }
+
+  // Cross-lemma calls
+  const availableVars = [
+    ...[...ctx.caseBindings.keys()].map(ident),
+    ...auxParams(ctx.prove.params).map((p) => ident(p.name)),
+  ];
+  for (const [lemmaName, lemma] of ctx.provedCtx) {
+    const explicitParams = lemma.params.filter((p) => !p.implicit);
+    if (explicitParams.length <= availableVars.length) {
+      const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
+      const r = inferType(call, ctx);
+      if (r.ok) {
+        const eq = extractEq(normalize(r.type));
+        if (eq) lemmas.push({ proof: call, left: normalize(eq.left), right: normalize(eq.right) });
+      }
+    }
+  }
+
+  // Try L→R rewriting on lhs to reach rhs
+  for (const lem of lemmas) {
+    const rewritten = normalize(substituteExprPattern(lhs, lem.left, lem.right));
+    if (exprEqual(rewritten, rhs)) {
+      // lhs[l↦r] = rhs, so: trans(rewrite(lemma, lhs_proof), ...) — but simpler: subst
+      // Actually the simplest proof: the lemma itself rewrites the goal
+      return app("rewrite", lem.proof);
+    }
+  }
+
+  // Try R→L rewriting (sym) on lhs to reach rhs
+  for (const lem of lemmas) {
+    const rewritten = normalize(substituteExprPattern(lhs, lem.right, lem.left));
+    if (exprEqual(rewritten, rhs)) {
+      return app("rewrite", app("sym", lem.proof));
+    }
+  }
+
+  return null;
 }

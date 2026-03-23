@@ -7,7 +7,7 @@ import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, typecheckProve, withNormTable } from "./typecheck-prove.ts";
+import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 
 export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: ProofTree[] } {
@@ -133,6 +133,8 @@ export function evalBodyInto(
         }
         // Resolve assumption tactic to concrete proof terms
         prove = withNormTable(computeRules, () => resolveAssumptions(prove, provedCtx));
+        // Resolve simp tactic to concrete proof terms
+        prove = withNormTable(computeRules, () => resolveSimp(prove, provedCtx, computeRules));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
@@ -579,6 +581,9 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })) };
   }
   if (expr.kind === "ident" && expr.name === "conv") {
+    return { kind: "ident", name: "refl" };
+  }
+  if (expr.kind === "ident" && expr.name === "simp") {
     return { kind: "ident", name: "refl" };
   }
   if (expr.kind !== "call") return expr;
