@@ -596,6 +596,12 @@ export function typeUniverse(type: AST.ProveExpr): number {
   if (uLevel >= 0) return uLevel + 1;
   const n = normalize(type);
   if (n.kind === "ident") return 0;
+  if (n.kind === "pi" || n.kind === "sigma") {
+    return Math.max(typeUniverse(n.domain), typeUniverse(n.codomain));
+  }
+  if (n.kind === "lambda") {
+    return Math.max(typeUniverse(n.paramType), typeUniverse(n.body));
+  }
   if (n.kind === "call") {
     if (n.name === "Eq") return 0;
     if (n.name === "Sigma" && n.args.length >= 3) {
@@ -606,6 +612,22 @@ export function typeUniverse(type: AST.ProveExpr): number {
     }
   }
   return 0;
+}
+
+/** Cumulative subtype check: `sub` is a subtype of `sup`.
+ *  Type(i) ≤ Type(j) when i ≤ j. For non-universe types, uses
+ *  syntactic equality after normalization. */
+export function typeSubsumes(
+  sub: AST.ProveExpr,
+  sup: AST.ProveExpr,
+): boolean {
+  const a = normalize(sub);
+  const b = normalize(sup);
+  // Universe cumulativity: Type(i) ≤ Type(j) when i ≤ j
+  const aLevel = universeLevel(a);
+  const bLevel = universeLevel(b);
+  if (aLevel >= 0 && bLevel >= 0) return aLevel <= bLevel;
+  return exprEqual(a, b);
 }
 
 // ─── Expression-level pattern substitution ────────────────────────
@@ -699,14 +721,18 @@ function inferType(
     return inferType(expr.body, innerCtx);
   }
 
-  // Pi type → its type is a universe
+  // Pi type → its type is a universe (max of domain and codomain universes)
   if (expr.kind === "pi") {
-    return { ok: true, type: app("Type", ident("0")) };
+    const domULevel = typeUniverse(expr.domain);
+    const codULevel = typeUniverse(expr.codomain);
+    return { ok: true, type: app("Type", ident(String(Math.max(domULevel, codULevel)))) };
   }
 
-  // Sigma type → its type is a universe
+  // Sigma type → its type is a universe (max of domain and codomain universes)
   if (expr.kind === "sigma") {
-    return { ok: true, type: app("Type", ident("0")) };
+    const domULevel = typeUniverse(expr.domain);
+    const codULevel = typeUniverse(expr.codomain);
+    return { ok: true, type: app("Type", ident(String(Math.max(domULevel, codULevel)))) };
   }
 
   // Lambda → infer Pi type: fun(x : A, body) : forall(x : A, typeof body)

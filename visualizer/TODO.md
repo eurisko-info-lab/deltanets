@@ -22,6 +22,10 @@
 | 10 | Record types | `143ef3c` |
 | 11 | Module system (open/export) | `cdbd191` |
 | 12 | Decision procedures (decide/omega/auto) | `2550a48` |
+| 13 | Let-bindings in proofs | `65a30fb` |
+| 14 | Pi & Sigma types | `ab77d12` |
+| 15 | Unification engine | `a7b33a5` |
+| 16 | Universe polymorphism | `fbbbad7` |
 
 ---
 
