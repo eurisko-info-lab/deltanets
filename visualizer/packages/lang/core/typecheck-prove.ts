@@ -801,6 +801,10 @@ function inferType(
     if (expr.name === "auto") {
       return { ok: false, error: "auto: could not resolve — no proof found" };
     }
+    // ring — commutative ring normalization (checked directly in typecheckProve)
+    if (expr.name === "ring") {
+      return { ok: true, type: ident("ring") };
+    }
     // Nullary constructor: infer type from data declaration
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
@@ -1021,6 +1025,100 @@ function isEquivRelation(rel: string, setoids?: Map<string, unknown>): boolean {
   return rel === "Eq" || (setoids != null && setoids.has(rel));
 }
 
+// ─── Ring polynomial normalization ─────────────────────────────────
+// Converts expressions over a commutative semiring (add, mul, zero, one)
+// into canonical polynomial form (sorted sum of sorted monomials).
+// Two expressions are ring-equal iff their polynomial forms are identical.
+
+type RingInfo = { type: string; zero: string; one?: string; add: string; mul: string };
+
+/** Canonical polynomial: Map from monomial-key → coefficient.
+ *  Monomial key is sorted product of atom expression strings joined by "\0".
+ *  Empty string represents the constant 1 (multiplicative unit). */
+function exprToPolynomial(
+  expr: AST.ProveExpr,
+  ring: RingInfo,
+): Map<string, number> {
+  // Zero: empty polynomial (additive identity)
+  if (expr.kind === "ident" && expr.name === ring.zero) {
+    return new Map();
+  }
+  // One: constant monomial with coeff 1
+  if (ring.one && expr.kind === "ident" && expr.name === ring.one) {
+    return new Map([["", 1]]);
+  }
+  // Addition: merge polynomials
+  if (expr.kind === "call" && expr.name === ring.add && expr.args.length === 2) {
+    return addPolynomials(
+      exprToPolynomial(expr.args[0], ring),
+      exprToPolynomial(expr.args[1], ring),
+    );
+  }
+  // Multiplication: distribute
+  if (expr.kind === "call" && expr.name === ring.mul && expr.args.length === 2) {
+    return mulPolynomials(
+      exprToPolynomial(expr.args[0], ring),
+      exprToPolynomial(expr.args[1], ring),
+    );
+  }
+  // Atom: single monomial with the expression as the sole variable
+  const atomKey = exprToString(expr);
+  return new Map([[atomKey, 1]]);
+}
+
+function addPolynomials(a: Map<string, number>, b: Map<string, number>): Map<string, number> {
+  const result = new Map(a);
+  for (const [key, coeff] of b) {
+    result.set(key, (result.get(key) ?? 0) + coeff);
+  }
+  // Remove zero-coefficient terms
+  for (const [key, coeff] of result) {
+    if (coeff === 0) result.delete(key);
+  }
+  return result;
+}
+
+function mulPolynomials(a: Map<string, number>, b: Map<string, number>): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const [keyA, coeffA] of a) {
+    for (const [keyB, coeffB] of b) {
+      // Combine monomial keys by merging sorted atom lists
+      const atomsA = keyA ? keyA.split("\0") : [];
+      const atomsB = keyB ? keyB.split("\0") : [];
+      const combined = [...atomsA, ...atomsB].sort().join("\0");
+      result.set(combined, (result.get(combined) ?? 0) + coeffA * coeffB);
+    }
+  }
+  for (const [key, coeff] of result) {
+    if (coeff === 0) result.delete(key);
+  }
+  return result;
+}
+
+function polynomialEqual(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, coeff] of a) {
+    if (b.get(key) !== coeff) return false;
+  }
+  return true;
+}
+
+/** Ring congruence: two expressions are ring-equal if their polynomial forms match,
+ *  OR they have the same non-ring outermost constructor and all children are ring-equal. */
+function ringCongruent(a: AST.ProveExpr, b: AST.ProveExpr, ring: RingInfo): boolean {
+  // Try direct polynomial comparison first
+  const pa = exprToPolynomial(a, ring);
+  const pb = exprToPolynomial(b, ring);
+  if (polynomialEqual(pa, pb)) return true;
+  // Congruence: same constructor (not a ring op), same arity → recurse on children
+  if (a.kind === "call" && b.kind === "call" && a.name === b.name &&
+      a.name !== ring.add && a.name !== ring.mul &&
+      a.args.length === b.args.length) {
+    return a.args.every((ai, i) => ringCongruent(normalize(ai), normalize(b.args[i]), ring));
+  }
+  return false;
+}
+
 // Extract a declared Sigma type: Sigma(Domain, boundVar, Predicate)
 function extractSigma(
   type: AST.ProveExpr,
@@ -1213,6 +1311,9 @@ function buildNode(
   }
   if (expr.kind === "ident" && expr.name === "omega") {
     return { rule: "omega", term, conclusion, children: [] };
+  }
+  if (expr.kind === "ident" && expr.name === "ring") {
+    return { rule: "ring", term, conclusion, children: [] };
   }
   if (expr.kind === "ident" && expr.name === "auto") {
     return { rule: "auto", term, conclusion, children: [] };
@@ -1609,6 +1710,9 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "ident" && expr.name === "auto") {
     return { kind: "ident", name: "refl" };
   }
+  if (expr.kind === "ident" && expr.name === "ring") {
+    return { kind: "ident", name: "refl" };
+  }
   if (expr.kind !== "call") return expr;  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
@@ -1963,6 +2067,7 @@ export function typecheckProve(
   codataTypes?: Set<string>,
   coercions?: Map<string, Map<string, string>>,
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>,
+  rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -2005,6 +2110,22 @@ export function typecheckProve(
       if (reqEquivConv && isEquivRelation(reqEquivConv.rel, setoids) &&
           exprEqual(normalize(reqEquivConv.left), normalize(reqEquivConv.right))) continue;
       errors.push(`${prefix}: conv failed — sides are not definitionally equal\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle ring — goal proved by commutative ring normalization
+    if ((rawBody.kind === "ident" && rawBody.name === "ring") ||
+        (rawBody.kind === "call" && rawBody.name === "ring" && rawBody.args.length === 0)) {
+      if (reqEq && rings && rings.size > 0) {
+        const lhs = normalize(reqEq.left);
+        const rhs = normalize(reqEq.right);
+        let matched = false;
+        for (const ring of rings.values()) {
+          if (ringCongruent(lhs, rhs, ring)) { matched = true; break; }
+        }
+        if (matched) continue;
+      }
+      errors.push(`${prefix}: ring failed — sides are not equal as polynomials\n  goal: ${exprToString(requiredType)}`);
       continue;
     }
 

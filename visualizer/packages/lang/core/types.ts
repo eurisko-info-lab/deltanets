@@ -26,7 +26,8 @@ export type Statement =
   | SectionDecl
   | NotationDecl
   | CoercionDecl
-  | SetoidDecl;
+  | SetoidDecl
+  | RingDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -53,7 +54,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -112,6 +113,17 @@ export type SetoidDecl = {
   refl: string;  // reflexivity proof name
   sym: string;   // symmetry proof name
   trans: string;  // transitivity proof name
+};
+
+// ring T { zero = Z, add = f, mul = g }
+// Registers a commutative semiring structure on type T.
+export type RingDecl = {
+  kind: "ring";
+  type: string;   // domain type name (e.g., "Nat")
+  zero: string;   // additive identity (e.g., "Zero")
+  one?: string;   // multiplicative identity (e.g., "One")
+  add: string;    // addition operation name (e.g., "add")
+  mul: string;    // multiplication operation name (e.g., "mul")
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

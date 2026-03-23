@@ -213,6 +213,8 @@ class Parser {
         return this.parseCoercionDecl();
       case TT.SETOID:
         return this.parseSetoidDecl();
+      case TT.RING:
+        return this.parseRingDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -375,8 +377,9 @@ class Parser {
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
+      else if (tok.type === TT.RING) body.push(this.parseRingDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -767,6 +770,11 @@ class Parser {
       const body = this.parseProveExpr();
       return { kind: "lambda", param, paramType, body };
     }
+    // ring keyword used as tactic in prove body
+    if (this.check(TT.RING)) {
+      this.advance();
+      return { kind: "ident", name: "ring" };
+    }
     const name = this.eatIdent();
     // match(scrutinee) { | Pat(bindings) -> body ... }
     if (name === "match") {
@@ -1089,6 +1097,7 @@ class Parser {
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
+      else if (tok.type === TT.RING) body.push(this.parseRingDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1184,6 +1193,35 @@ class Parser {
     this.eatIdentValue("via");
     const func = this.eatIdent();
     return { kind: "coercion", name, from, to, func };
+  }
+
+  // ─── Ring ────────────────────────────────────────────────────────
+  // ring T { zero = Z, add = f, mul = g }
+
+  parseRingDecl(): AST.RingDecl {
+    this.eat(TT.RING);
+    const type = this.eatIdent();
+    this.eat(TT.LBRACE);
+    let zero: string | null = null;
+    let one: string | null = null;
+    let add: string | null = null;
+    let mul: string | null = null;
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const key = this.eatIdent();
+      this.eat(TT.EQ);
+      const val = this.eatIdent();
+      if (key === "zero") zero = val;
+      else if (key === "one") one = val;
+      else if (key === "add") add = val;
+      else if (key === "mul") mul = val;
+      else throw new ParseError(`Unknown ring field '${key}', expected zero/one/add/mul`, this.prev().line, this.prev().col);
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RBRACE);
+    if (!zero || !add || !mul) {
+      throw new ParseError("ring must declare zero, add, and mul", this.prev().line, this.prev().col);
+    }
+    return { kind: "ring", type, zero, add, mul, ...(one ? { one } : {}) };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────
