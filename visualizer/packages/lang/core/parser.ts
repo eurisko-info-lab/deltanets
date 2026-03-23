@@ -164,6 +164,8 @@ class Parser {
         return this.parseProveDecl();
       case TT.DATA:
         return this.parseDataDecl();
+      case TT.RECORD:
+        return this.parseRecordDecl();
       case TT.COMPUTE:
         return this.parseComputeDecl();
       default:
@@ -317,9 +319,10 @@ class Parser {
       else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
       else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
       else if (tok.type === TT.DATA) body.push(this.parseDataDecl());
+      else if (tok.type === TT.RECORD) body.push(this.parseRecordDecl());
       else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/compute, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/compute, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -690,6 +693,38 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "data", name, params, indices, constructors };
+  }
+
+  // ─── Record (single-constructor data type with projections) ──────
+  // record Name(params) { field : Type, ... }
+
+  parseRecordDecl(): AST.RecordDecl {
+    this.eat(TT.RECORD);
+    const name = this.eatIdent();
+    const params: string[] = [];
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      if (!this.check(TT.RPAREN)) {
+        this.parseCommaList(() => {
+          const p = this.eatIdent();
+          params.push(p);
+          return p;
+        });
+      }
+      this.eat(TT.RPAREN);
+    }
+    this.eat(TT.LBRACE);
+    const fields: AST.DataField[] = [];
+    if (!this.check(TT.RBRACE)) {
+      fields.push(...this.parseCommaList(() => {
+        const fieldName = this.eatIdent();
+        this.eat(TT.COLON);
+        const fieldType = this.parseProveExpr();
+        return { name: fieldName, type: fieldType };
+      }));
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "record", name, params, fields };
   }
 
   // ─── Compute (type-level reduction rule) ─────────────────────────

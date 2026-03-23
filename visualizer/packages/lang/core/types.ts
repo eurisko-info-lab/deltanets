@@ -18,6 +18,7 @@ export type Statement =
   | LanesDecl
   | ProveDecl
   | DataDecl
+  | RecordDecl
   | ComputeDecl;
 
 // system "name" { agent..., rule..., mode... }
@@ -45,7 +46,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | ComputeDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl;
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }
 // Desugars into an AgentDecl + RuleDecl[] during evaluation.
@@ -194,6 +195,22 @@ export type DataConstructor = {
 export type DataField = {
   name: string;
   type: ProveExpr;
+};
+
+// ─── Record declaration (single-constructor data type with projections) ──
+// Sugar for a data type with one constructor + projection functions.
+//
+//   record Pair(A, B) { fst : A, snd : B }
+// Desugars to:
+//   data Pair(A, B) { | mkPair(fst : A, snd : B) }
+//   compute fst(mkPair(x, y)) = x
+//   compute snd(mkPair(x, y)) = y
+
+export type RecordDecl = {
+  kind: "record";
+  name: string;
+  params: string[];
+  fields: DataField[];
 };
 
 // ─── Compute declaration (type-level reduction rules) ──────────────

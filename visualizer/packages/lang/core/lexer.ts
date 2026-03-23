@@ -28,6 +28,7 @@ export const TT = {
   LANE: "LANE",
   PROVE: "PROVE",
   DATA: "DATA",
+  RECORD: "RECORD",
   COMPUTE: "COMPUTE",
   PIPE: "PIPE",
   // Operators
@@ -91,6 +92,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   lane: TT.LANE,
   prove: TT.PROVE,
   data: TT.DATA,
+  record: TT.RECORD,
   compute: TT.COMPUTE,
 };
 

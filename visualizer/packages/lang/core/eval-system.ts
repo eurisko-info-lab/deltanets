@@ -58,6 +58,15 @@ export function evalBodyInto(
           returnIndices: ctor.returnIndices,
         });
       }
+    } else if (item.kind === "record") {
+      const ctorName = `mk${item.name}`;
+      constructorsByType.set(item.name, new Set([ctorName]));
+      constructorTyping.set(ctorName, {
+        typeName: item.name,
+        params: item.params,
+        indices: [],
+        fields: item.fields,
+      });
     } else if (item.kind === "prove") {
       const firstParam = inductionParam(item.params);
       if (firstParam?.type) {
@@ -83,6 +92,10 @@ export function evalBodyInto(
     if (item.kind === "data") {
       for (const ctor of item.constructors) knownAgents.add(ctor.name);
     }
+    if (item.kind === "record") {
+      knownAgents.add(`mk${item.name}`);
+      for (const f of item.fields) knownAgents.add(f.name);
+    }
   }
   // Pre-scan: collect compute rules so they're available for type checking
   for (const item of body) {
@@ -94,6 +107,12 @@ export function evalBodyInto(
   for (const item of body) {
     if (item.kind === "data") {
       computeRules.push(...generateEliminatorRules(item));
+    }
+  }
+  // Auto-generate projection compute rules for records
+  for (const item of body) {
+    if (item.kind === "record") {
+      computeRules.push(...generateProjectionRules(item));
     }
   }
 
@@ -123,6 +142,11 @@ export function evalBodyInto(
         // Sugar: desugar data declaration into constructor agents +
         // duplicator agent + duplicator rules, and register constructors.
         desugarData(item, agents, rules, constructorsByType);
+        break;
+      }
+      case "record": {
+        // Sugar: desugar record into data type + projection compute rules.
+        desugarRecord(item, agents, rules, constructorsByType, computeRules, constructorTyping);
         break;
       }
       case "prove": {
@@ -740,6 +764,85 @@ function generateEliminatorRules(decl: AST.DataDecl): ComputeRule[] {
       : { kind: "ident", name: methodNames[ci] };
 
     rules.push({ funcName: recName, args, result });
+  }
+  return rules;
+}
+
+// ─── Record desugaring ─────────────────────────────────────────────
+// Expands a `record` declaration into:
+//   1. A data type with one constructor (mkName)
+//   2. Projection agents (one per field)
+//   3. Projection rules: proj <> mkName → relink/erase
+
+function desugarRecord(
+  decl: AST.RecordDecl,
+  agents: Map<string, AgentDef>,
+  rules: RuleDef[],
+  constructorsByType: Map<string, Set<string>>,
+  computeRules: ComputeRule[],
+  constructorTyping: ConstructorTyping,
+): void {
+  const ctorName = `mk${decl.name}`;
+
+  // Synthesize a DataDecl and delegate constructor + dup generation to desugarData
+  const dataDecl: AST.DataDecl = {
+    kind: "data",
+    name: decl.name,
+    params: decl.params,
+    indices: [],
+    constructors: [{ name: ctorName, fields: decl.fields }],
+  };
+  desugarData(dataDecl, agents, rules, constructorsByType);
+
+  // Generate projection agents + rules
+  for (let i = 0; i < decl.fields.length; i++) {
+    const field = decl.fields[i];
+    // Agent: fieldName(principal, result)
+    const projPorts: AST.PortDef[] = [
+      { name: "principal", variadic: false },
+      { name: "result", variadic: false },
+    ];
+    agents.set(field.name, evalAgent({ kind: "agent", name: field.name, ports: projPorts }));
+
+    // Rule: fieldName <> mkName → relink result to field[i], erase others
+    const stmts: AST.RuleStmt[] = [];
+    stmts.push({
+      kind: "relink",
+      portA: { node: "left", port: "result" },
+      portB: { node: "right", port: field.name },
+    });
+    // Erase all other fields
+    for (let j = 0; j < decl.fields.length; j++) {
+      if (j !== i) {
+        stmts.push({ kind: "erase", port: { node: "right", port: decl.fields[j].name } });
+      }
+    }
+    rules.push({
+      agentA: field.name,
+      agentB: ctorName,
+      action: { kind: "custom", body: stmts },
+    });
+  }
+}
+
+/** Generate compute rules for record projections:
+ *  fieldName(mkName(f0, f1, ...)) = fi */
+function generateProjectionRules(decl: AST.RecordDecl): ComputeRule[] {
+  const ctorName = `mk${decl.name}`;
+  const rules: ComputeRule[] = [];
+  const fieldVars = decl.fields.map((_, fi) => `_f${fi}`);
+
+  for (let i = 0; i < decl.fields.length; i++) {
+    const field = decl.fields[i];
+    rules.push({
+      funcName: field.name,
+      args: [{
+        kind: "ctor",
+        name: ctorName,
+        args: fieldVars,
+      }],
+      result: { kind: "ident", name: fieldVars[i] },
+    });
   }
   return rules;
 }
