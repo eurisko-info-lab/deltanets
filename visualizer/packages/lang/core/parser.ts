@@ -90,6 +90,7 @@ function flattenDeepPatterns(
 class Parser {
   pos = 0;
   private deepPatternCounter = { value: 0 };
+  private notations = new Map<string, { func: string; precedence: number; assoc: "left" | "right" }>();
   constructor(private tokens: Token[]) {}
 
   peek(): Token {
@@ -204,6 +205,10 @@ class Parser {
         return this.parseTacticDecl();
       case TT.MUTUAL:
         return this.parseMutualDecl();
+      case TT.SECTION:
+        return this.parseSectionDecl();
+      case TT.NOTATION:
+        return this.parseNotationDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -363,8 +368,9 @@ class Parser {
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
+      else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -661,7 +667,40 @@ class Parser {
     return { name };
   }
 
+  // Map token types to notation symbol strings
+  private tokenToNotationSymbol(): string | null {
+    const tok = this.peek();
+    switch (tok.type) {
+      case TT.PLUS: return "+";
+      case TT.MINUS: return "-";
+      case TT.STAR: return "*";
+      case TT.SLASH: return "/";
+      default: return null;
+    }
+  }
+
   parseProveExpr(): AST.ProveExpr {
+    return this.parseProveExprPrec(0);
+  }
+
+  private parseProveExprPrec(minPrec: number): AST.ProveExpr {
+    let left = this.parsePrimaryProveExpr();
+    // Infix notation loop (Pratt parsing)
+    while (true) {
+      const sym = this.tokenToNotationSymbol();
+      if (!sym) break;
+      const nota = this.notations.get(sym);
+      if (!nota) break;
+      if (nota.precedence < minPrec) break;
+      this.advance(); // consume operator token
+      const nextPrec = nota.assoc === "left" ? nota.precedence + 1 : nota.precedence;
+      const right = this.parseProveExprPrec(nextPrec);
+      left = { kind: "call", name: nota.func, args: [left, right] };
+    }
+    return left;
+  }
+
+  private parsePrimaryProveExpr(): AST.ProveExpr {
     if (this.check(TT.QUESTION)) {
       this.advance();
       return { kind: "hole" };
@@ -1041,6 +1080,7 @@ class Parser {
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
+      else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1050,6 +1090,48 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "section", name, variables, body };
+  }
+
+  // ─── Notation ────────────────────────────────────────────────────
+  // notation "+" := add (prec 50, left)
+  // Registers an infix operator and returns AST node.
+
+  parseNotationDecl(): AST.NotationDecl {
+    this.eat(TT.NOTATION);
+    const symbol = this.eat(TT.STRING).value;
+    this.eat(TT.EQ); // :=  (we parse = since := isn't a token; the : is part of string termination context)
+    const func = this.eatIdent();
+    // Parse optional (prec N, left|right)
+    let precedence = 50;
+    let assoc: "left" | "right" = "left";
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      // expect: prec N
+      this.eatIdentValue("prec");
+      const precTok = this.eat(TT.NUMBER);
+      precedence = parseInt(precTok.value, 10);
+      if (this.check(TT.COMMA)) {
+        this.advance();
+        // left/right are keywords (TT.LEFT, TT.RIGHT), so accept both IDENT and keyword tokens
+        const tok = this.peek();
+        let assocStr: string;
+        if (tok.type === TT.LEFT) { this.advance(); assocStr = "left"; }
+        else if (tok.type === TT.RIGHT) { this.advance(); assocStr = "right"; }
+        else { assocStr = this.eatIdent(); }
+        if (assocStr === "left" || assocStr === "right") {
+          assoc = assocStr;
+        } else {
+          throw new ParseError(
+            `Expected 'left' or 'right', got '${assocTok}'`,
+            this.peek().line, this.peek().col,
+          );
+        }
+      }
+      this.eat(TT.RPAREN);
+    }
+    // Register in parser's notation table for subsequent expressions
+    this.notations.set(symbol, { func, precedence, assoc });
+    return { kind: "notation", symbol, func, precedence, assoc };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

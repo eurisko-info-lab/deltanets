@@ -22,7 +22,9 @@ export type Statement =
   | CodataDecl
   | ComputeDecl
   | TacticDecl
-  | MutualDecl;
+  | MutualDecl
+  | SectionDecl
+  | NotationDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -49,7 +51,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -77,6 +79,16 @@ export type SectionDecl = {
 export type SectionVariable = {
   name: string;
   type: ProveExpr;
+};
+
+// notation "x + y" := add(x, y) (prec 50, left)
+// Desugars infix operator into function call at parse time.
+export type NotationDecl = {
+  kind: "notation";
+  symbol: string; // operator character, e.g. "+"
+  func: string; // expansion function name, e.g. "add"
+  precedence: number;
+  assoc: "left" | "right";
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

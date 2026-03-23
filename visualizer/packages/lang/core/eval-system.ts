@@ -348,6 +348,10 @@ export function evalBodyInto(
         // Already pre-scanned into computeRules above
         break;
       }
+      case "notation": {
+        // Notations are applied during parsing; nothing to do at eval time
+        break;
+      }
       case "open": {
         // Built-in "Quote" system: register quotation agents
         if (item.system === "Quote") {

@@ -40,6 +40,7 @@ export const TT = {
   CODATA: "CODATA",
   SECTION: "SECTION",
   VARIABLE: "VARIABLE",
+  NOTATION: "NOTATION",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -59,6 +60,8 @@ export const TT = {
   COLON: "COLON",
   QUESTION: "QUESTION", // ?
   MINUS: "MINUS",
+  STAR: "STAR", // *
+  SLASH: "SLASH", // /
   DOTDOT: "DOTDOT", // ..
   // Literals
   IDENT: "IDENT",
@@ -112,6 +115,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   codata: TT.CODATA,
   section: TT.SECTION,
   variable: TT.VARIABLE,
+  notation: TT.NOTATION,
 };
 
 export class LexError extends Error {
@@ -200,6 +204,8 @@ export function tokenize(source: string): Token[] {
       ":": TT.COLON,
       "?": TT.QUESTION,
       "-": TT.MINUS,
+      "*": TT.STAR,
+      "/": TT.SLASH,
       "|": TT.PIPE,
     };
     if (singles[source[i]]) {
