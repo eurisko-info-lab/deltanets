@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
+import { inductionParam, auxParams as getAuxParams } from "./types.ts";
 import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, typecheckProve, withNormTable } from "./typecheck-prove.ts";
@@ -58,7 +59,7 @@ export function evalBodyInto(
         });
       }
     } else if (item.kind === "prove") {
-      const firstParam = item.params[0];
+      const firstParam = inductionParam(item.params);
       if (firstParam?.type) {
         const typeName = firstParam.type.kind === "ident"
           ? firstParam.type.name
@@ -276,7 +277,7 @@ function desugarProve(
   prove: AST.ProveDecl,
   agents: Map<string, AgentDef>,
 ): { agentDecl: AST.AgentDecl; ruleDecls: AST.RuleDecl[] } {
-  const auxParams = prove.params.slice(1).map((p) => p.name);
+  const auxParams = getAuxParams(prove.params).map((p) => p.name);
   const ports: AST.PortDef[] = [
     { name: "principal", variadic: false },
     { name: "result", variadic: false },
@@ -318,7 +319,7 @@ function desugarProve(
     for (const [varName, count] of countVarUses(caseArm.body, varNames)) {
       if (count <= 1) continue;
       const paramInfo = prove.params.find((p) => p.name === varName);
-      const typeExpr = paramInfo?.type ?? prove.params[0]?.type;
+      const typeExpr = paramInfo?.type ?? inductionParam(prove.params)?.type;
       const typeName = typeExpr?.kind === "ident" ? typeExpr.name
         : typeExpr?.kind === "call" ? typeExpr.name : null;
       if (!typeName) throw new EvalError(
@@ -449,7 +450,7 @@ export function checkProveLinearity(
 
   if (modesExcludingErase.length === 0 && modesExcludingDup.length === 0) return [];
 
-  const auxParamNames = prove.params.slice(1).map((p) => p.name);
+  const auxParamNames = getAuxParams(prove.params).map((p) => p.name);
   const warnings: string[] = [];
 
   for (const caseArm of prove.cases) {

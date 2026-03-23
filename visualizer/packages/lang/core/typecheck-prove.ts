@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
+import { inductionParam, auxParams } from "./types.ts";
 
 // Context of previously proved propositions for cross-lemma resolution
 export type ProvedContext = Map<
@@ -542,10 +543,11 @@ function inferType(
       return { ok: false, error: `recursive call to ${name} but no return type declared` };
     }
     // Substitute args into the declared proposition (simultaneous)
+    // Only explicit params receive arguments; implicit ones are skipped.
     const bindings = new Map<string, AST.ProveExpr>();
-    const paramNames = ctx.prove.params.map((p) => p.name);
-    for (let i = 0; i < args.length && i < paramNames.length; i++) {
-      bindings.set(paramNames[i], args[i]);
+    const explicitNames = ctx.prove.params.filter((p) => !p.implicit).map((p) => p.name);
+    for (let i = 0; i < args.length && i < explicitNames.length; i++) {
+      bindings.set(explicitNames[i], args[i]);
     }
     return { ok: true, type: normalize(substituteAll(ctx.prove.returnType, bindings)) };
   }
@@ -571,9 +573,9 @@ function inferType(
   const proved = ctx.provedCtx.get(name);
   if (proved) {
     const bindings = new Map<string, AST.ProveExpr>();
-    const paramNames = proved.params.map((p) => p.name);
-    for (let i = 0; i < args.length && i < paramNames.length; i++) {
-      bindings.set(paramNames[i], args[i]);
+    const explicitNames = proved.params.filter((p) => !p.implicit).map((p) => p.name);
+    for (let i = 0; i < args.length && i < explicitNames.length; i++) {
+      bindings.set(explicitNames[i], args[i]);
     }
     return { ok: true, type: normalize(substituteAll(proved.returnType, bindings)) };
   }
@@ -665,7 +667,7 @@ function searchCandidates(
   tryAdd(ident("refl"));
 
   // 2. IH calls
-  const auxArgs = ctx.prove.params.slice(1).map((p) => ident(p.name));
+  const auxArgs = auxParams(ctx.prove.params).map((p) => ident(p.name));
   const allIHs = ctx.prove.returnType
     ? [...ctx.caseBindings.keys()].map((b) => app(ctx.prove.name, ident(b), ...auxArgs))
     : [];
@@ -674,7 +676,7 @@ function searchCandidates(
   // 3. Cross-lemma calls
   const availableVars = [
     ...[...ctx.caseBindings.keys()].map(ident),
-    ...ctx.prove.params.slice(1).map((p) => ident(p.name)),
+    ...auxParams(ctx.prove.params).map((p) => ident(p.name)),
   ];
   const allLemmaCalls: AST.ProveExpr[] = [];
   for (const [lemmaName, lemma] of ctx.provedCtx) {
@@ -954,7 +956,7 @@ function caseCtx(
       constructorTyping,
       constructorsByType,
     },
-    expectedType: normalize(substitute(prove.returnType!, prove.params[0].name, consExpr)),
+    expectedType: normalize(substitute(prove.returnType!, inductionParam(prove.params)!.name, consExpr)),
   };
 }
 
@@ -1010,7 +1012,7 @@ function checkExhaustiveness(
   prove: AST.ProveDecl,
   constructorsByType: Map<string, Set<string>>,
 ): string[] {
-  const firstParam = prove.params[0];
+  const firstParam = inductionParam(prove.params);
   if (!firstParam?.type) return [];
   const typeName = firstParam.type.kind === "ident"
     ? firstParam.type.name

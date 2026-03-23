@@ -552,6 +552,18 @@ class Parser {
   }
 
   parseProveParam(): AST.ProveParam {
+    // Implicit param: {name} or {name : Type}
+    if (this.check(TT.LBRACE)) {
+      this.advance();
+      const name = this.eatIdent();
+      let type: AST.ProveExpr | undefined;
+      if (this.check(TT.COLON)) {
+        this.advance();
+        type = this.parseProveExpr();
+      }
+      this.eat(TT.RBRACE);
+      return { name, type, implicit: true };
+    }
     const name = this.eatIdent();
     if (this.check(TT.COLON)) {
       this.advance();

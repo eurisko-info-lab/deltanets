@@ -62,7 +62,19 @@ export type ProveDecl = {
 export type ProveParam = {
   name: string;
   type?: ProveExpr; // optional type annotation (e.g., Nat)
+  implicit?: boolean; // true if wrapped in {braces} — inferred, not an agent port
 };
+
+/** The first explicit (non-implicit) parameter — the induction variable. */
+export function inductionParam(params: ProveParam[]): ProveParam | undefined {
+  return params.find((p) => !p.implicit);
+}
+
+/** All explicit (non-implicit) parameters after the induction variable. */
+export function auxParams(params: ProveParam[]): ProveParam[] {
+  const idx = params.findIndex((p) => !p.implicit);
+  return idx < 0 ? [] : params.slice(idx + 1).filter((p) => !p.implicit);
+}
 
 export type ProveCase = {
   pattern: string; // constructor name (Zero, Succ, ...)
