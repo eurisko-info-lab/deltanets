@@ -45,6 +45,7 @@ export function evalBodyInto(
   // Pre-scan: collect constructor families and compute rules before processing
   // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
+  const codataTypes = new Set<string>();
   const constructorTyping: ConstructorTyping = new Map(inheritedCtorTyping);
   if (inheritedConstructors) {
     for (const [type, ctors] of inheritedConstructors) {
@@ -101,6 +102,16 @@ export function evalBodyInto(
         indices: [],
         fields: item.fields,
       });
+    } else if (item.kind === "codata") {
+      const guardName = `guard_${item.name.toLowerCase()}`;
+      codataTypes.add(item.name);
+      constructorsByType.set(item.name, new Set([guardName]));
+      constructorTyping.set(guardName, {
+        typeName: item.name,
+        params: item.params,
+        indices: [],
+        fields: item.fields,
+      });
     } else if (item.kind === "prove") {
       const firstParam = inductionParam(item.params);
       if (firstParam?.type) {
@@ -134,6 +145,10 @@ export function evalBodyInto(
     }
     if (item.kind === "record") {
       knownAgents.add(`mk${item.name}`);
+      for (const f of item.fields) knownAgents.add(f.name);
+    }
+    if (item.kind === "codata") {
+      knownAgents.add(`guard_${item.name.toLowerCase()}`);
       for (const f of item.fields) knownAgents.add(f.name);
     }
     if (item.kind === "open" && item.system === "Quote") {
@@ -192,6 +207,9 @@ export function evalBodyInto(
     if (item.kind === "record") {
       computeRules.push(...generateProjectionRules(item));
     }
+    if (item.kind === "codata") {
+      computeRules.push(...generateObservationRules(item));
+    }
   }
 
   for (const item of body) {
@@ -227,6 +245,11 @@ export function evalBodyInto(
         desugarRecord(item, agents, rules, constructorsByType, computeRules, constructorTyping);
         break;
       }
+      case "codata": {
+        // Sugar: desugar codata into guard agent + observation agents + rules.
+        desugarCodata(item, agents, rules, constructorsByType);
+        break;
+      }
       case "prove": {
         // Expand induction(var) tactic into case arms with ? holes
         let prove = item;
@@ -251,7 +274,7 @@ export function evalBodyInto(
         // Mode-aware linearity check: error if prove needs erase/dup incompatible with modes
         const linearityErrors = checkProveLinearity(prove, agents, modes);
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping);
+        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes);
         const allErrors = [...linearityErrors, ...typeErrors];
         if (allErrors.length > 0) {
           throw new EvalError(allErrors.join("\n"));
@@ -386,7 +409,7 @@ export function evalBodyInto(
             }
           }
           const linearityErrors = checkProveLinearity(prove, agents, modes);
-          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping);
+          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes);
           const termErrors = checkMutualTermination(prove, mutualNames);
           const allErrors = [...linearityErrors, ...typeErrors, ...termErrors];
           if (allErrors.length > 0) {
@@ -1316,6 +1339,61 @@ function desugarRecord(
   }
 }
 
+/** Desugar a codata declaration into a guard agent + observation agents + interaction rules.
+ *  codata Stream(A) { head : A, tail : Stream(A) }
+ *  →  guard_stream(principal, head, tail)          -- guard agent
+ *     head(principal, result), tail(principal, result)   -- observation agents
+ *     head <> guard_stream → relink result↔head, erase tail
+ *     tail <> guard_stream → relink result↔tail, erase head
+ *     dup_stream <> guard_stream → dup each field     */
+function desugarCodata(
+  decl: AST.CodataDecl,
+  agents: Map<string, AgentDef>,
+  rules: RuleDef[],
+  constructorsByType: Map<string, Set<string>>,
+): void {
+  const guardName = `guard_${decl.name.toLowerCase()}`;
+
+  // Synthesize a DataDecl with a single constructor (the guard) and delegate to desugarData
+  const dataDecl: AST.DataDecl = {
+    kind: "data",
+    name: decl.name,
+    params: decl.params,
+    indices: [],
+    constructors: [{ name: guardName, fields: decl.fields }],
+  };
+  desugarData(dataDecl, agents, rules, constructorsByType);
+
+  // Generate observation agents + interaction rules (same as record projections)
+  for (let i = 0; i < decl.fields.length; i++) {
+    const field = decl.fields[i];
+    // Agent: fieldName(principal, result)
+    const obsPorts: AST.PortDef[] = [
+      { name: "principal", variadic: false },
+      { name: "result", variadic: false },
+    ];
+    agents.set(field.name, evalAgent({ kind: "agent", name: field.name, ports: obsPorts }));
+
+    // Rule: fieldName <> guard_name → relink result to field[i], erase others
+    const stmts: AST.RuleStmt[] = [];
+    stmts.push({
+      kind: "relink",
+      portA: { node: "left", port: "result" },
+      portB: { node: "right", port: field.name },
+    });
+    for (let j = 0; j < decl.fields.length; j++) {
+      if (j !== i) {
+        stmts.push({ kind: "erase-stmt", port: { node: "right", port: decl.fields[j].name } });
+      }
+    }
+    rules.push({
+      agentA: field.name,
+      agentB: guardName,
+      action: { kind: "custom", body: stmts },
+    });
+  }
+}
+
 /** Generate compute rules for record projections:
  *  fieldName(mkName(f0, f1, ...)) = fi */
 function generateProjectionRules(decl: AST.RecordDecl): ComputeRule[] {
@@ -1330,6 +1408,28 @@ function generateProjectionRules(decl: AST.RecordDecl): ComputeRule[] {
       args: [{
         kind: "ctor",
         name: ctorName,
+        args: fieldVars,
+      }],
+      result: { kind: "ident", name: fieldVars[i] },
+    });
+  }
+  return rules;
+}
+
+/** Generate compute rules for codata observations:
+ *  fieldName(guard_name(f0, f1, ...)) = fi */
+function generateObservationRules(decl: AST.CodataDecl): ComputeRule[] {
+  const guardName = `guard_${decl.name.toLowerCase()}`;
+  const rules: ComputeRule[] = [];
+  const fieldVars = decl.fields.map((_, fi) => `_f${fi}`);
+
+  for (let i = 0; i < decl.fields.length; i++) {
+    const field = decl.fields[i];
+    rules.push({
+      funcName: field.name,
+      args: [{
+        kind: "ctor",
+        name: guardName,
         args: fieldVars,
       }],
       result: { kind: "ident", name: fieldVars[i] },

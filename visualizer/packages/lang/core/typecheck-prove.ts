@@ -1667,6 +1667,64 @@ function checkTermination(
   return errors;
 }
 
+/** Productivity checking for codata-returning proves.
+ *  Dual of termination: every recursive call must appear under a guard
+ *  constructor application (guarded corecursion). */
+function checkProductivity(
+  prove: AST.ProveDecl,
+  codataTypeName: string,
+): string[] {
+  const guardName = `guard_${codataTypeName.toLowerCase()}`;
+  const errors: string[] = [];
+  for (const caseArm of prove.cases) {
+    if (caseArm.body.kind === "hole") continue;
+    const unguarded = collectUnguardedRecCalls(caseArm.body, prove.name, guardName);
+    for (const call of unguarded) {
+      errors.push(
+        `prove ${prove.name}, case ${caseArm.pattern}: corecursive call ` +
+        `${prove.name}(${call.kind === "call" ? call.args.map(exprToString).join(", ") : ""}) ` +
+        `is not productive — must appear under ${guardName}(...)`,
+      );
+    }
+  }
+  return errors;
+}
+
+/** Collect recursive calls to funcName that do NOT appear as arguments to guardName. */
+function collectUnguardedRecCalls(
+  expr: AST.ProveExpr,
+  funcName: string,
+  guardName: string,
+): AST.ProveExpr[] {
+  const calls: AST.ProveExpr[] = [];
+  function walk(e: AST.ProveExpr, guarded: boolean) {
+    if (e.kind === "call" && e.name === funcName && !guarded) {
+      calls.push(e);
+    }
+    if (e.kind === "call") {
+      const isGuard = e.name === guardName;
+      for (const a of e.args) walk(a, isGuard);
+    }
+    if (e.kind === "let") {
+      walk(e.value, false);
+      walk(e.body, false);
+    }
+    if (e.kind === "pi" || e.kind === "sigma") {
+      walk(e.domain, false);
+      walk(e.codomain, false);
+    }
+    if (e.kind === "lambda") {
+      walk(e.paramType, false);
+      walk(e.body, false);
+    }
+    if (e.kind === "match") {
+      for (const c of e.cases) walk(c.body, false);
+    }
+  }
+  walk(expr, false);
+  return calls;
+}
+
 // ─── Exhaustiveness checking ───────────────────────────────────────
 // When the first param has a type annotation (e.g., n : Nat) and we
 // know the constructors for that type, check that all are covered.
@@ -1761,13 +1819,22 @@ export function typecheckProve(
   constructorsByType?: Map<string, Set<string>>,
   computeRules?: ComputeRule[],
   constructorTyping?: ConstructorTyping,
+  codataTypes?: Set<string>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
   const exhaustErrors = constructorsByType
     ? checkExhaustiveness(prove, constructorsByType)
     : [];
-  const termErrors = checkTermination(prove);
+  // For codata-returning proves, use productivity checking instead of termination
+  const returnTypeName = prove.returnType
+    ? (prove.returnType.kind === "ident" ? prove.returnType.name
+       : prove.returnType.kind === "call" ? prove.returnType.name : null)
+    : null;
+  const isCodata = returnTypeName != null && codataTypes != null && codataTypes.has(returnTypeName);
+  const termErrors = isCodata
+    ? checkProductivity(prove, returnTypeName)
+    : checkTermination(prove);
   if (!prove.returnType) return [...exhaustErrors, ...termErrors];
 
   const errors: string[] = [];

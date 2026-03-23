@@ -37,6 +37,7 @@ export const TT = {
   PIPE: "PIPE",
   TACTIC: "TACTIC",
   MUTUAL: "MUTUAL",
+  CODATA: "CODATA",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -106,6 +107,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   in: TT.IN,
   tactic: TT.TACTIC,
   mutual: TT.MUTUAL,
+  codata: TT.CODATA,
 };
 
 export class LexError extends Error {

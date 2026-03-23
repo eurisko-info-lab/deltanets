@@ -19,6 +19,7 @@ export type Statement =
   | ProveDecl
   | DataDecl
   | RecordDecl
+  | CodataDecl
   | ComputeDecl
   | TacticDecl
   | MutualDecl;
@@ -48,7 +49,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -249,6 +250,27 @@ export type MutualDecl = {
 
 export type RecordDecl = {
   kind: "record";
+  name: string;
+  params: string[];
+  fields: DataField[];
+};
+
+// ─── Coinductive data declaration ──────────────────────────────────
+// Dual of data: defined by observations (destructors) rather than
+// constructors. Allows self-reference in field types (guarded corecursion).
+//
+//   codata Stream(A) { head : A, tail : Stream(A) }
+// Desugars to:
+//   agent guard_stream(principal, head, tail)  — the "constructor" (guard)
+//   agent head(principal, result)               — observation agent
+//   agent tail(principal, result)               — observation agent
+//   rule head <> guard_stream → relink result to head field
+//   rule tail <> guard_stream → relink result to tail field
+//   compute head(guard_stream(h, t)) = h
+//   compute tail(guard_stream(h, t)) = t
+
+export type CodataDecl = {
+  kind: "codata";
   name: string;
   params: string[];
   fields: DataField[];

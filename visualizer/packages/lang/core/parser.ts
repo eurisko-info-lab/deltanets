@@ -166,6 +166,8 @@ class Parser {
         return this.parseDataDecl();
       case TT.RECORD:
         return this.parseRecordDecl();
+      case TT.CODATA:
+        return this.parseCodataDecl();
       case TT.COMPUTE:
         return this.parseComputeDecl();
       case TT.TACTIC:
@@ -324,13 +326,14 @@ class Parser {
       else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
       else if (tok.type === TT.DATA) body.push(this.parseDataDecl());
       else if (tok.type === TT.RECORD) body.push(this.parseRecordDecl());
+      else if (tok.type === TT.CODATA) body.push(this.parseCodataDecl());
       else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
       else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/compute/open/export/tactic/mutual, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -789,6 +792,38 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "record", name, params, fields };
+  }
+
+  // ─── Codata (coinductive type) ───────────────────────────────────
+  // codata Stream(A) { head : A, tail : Stream(A) }
+
+  parseCodataDecl(): AST.CodataDecl {
+    this.eat(TT.CODATA);
+    const name = this.eatIdent();
+    const params: string[] = [];
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      if (!this.check(TT.RPAREN)) {
+        this.parseCommaList(() => {
+          const p = this.eatIdent();
+          params.push(p);
+          return p;
+        });
+      }
+      this.eat(TT.RPAREN);
+    }
+    this.eat(TT.LBRACE);
+    const fields: AST.DataField[] = [];
+    if (!this.check(TT.RBRACE)) {
+      fields.push(...this.parseCommaList(() => {
+        const fieldName = this.eatIdent();
+        this.eat(TT.COLON);
+        const fieldType = this.parseProveExpr();
+        return { name: fieldName, type: fieldType };
+      }));
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "codata", name, params, fields };
   }
 
   // ─── Open (import from another system) ───────────────────────────
