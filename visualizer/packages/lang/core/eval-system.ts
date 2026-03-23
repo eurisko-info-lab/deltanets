@@ -18,9 +18,9 @@ export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined };
   return { sys, proofTrees };
 }
 
@@ -89,13 +89,15 @@ export function evalBodyInto(
   inheritedCompute?: ComputeRule[],
   inheritedCtorTyping?: ConstructorTyping,
   systems?: Map<string, SystemDef>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef> } {
+  inheritedSetoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }> } {
   const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
   const tactics = new Map<string, TacticDef>();
   const coercions = new Map<string, Map<string, string>>(); // from → to → func
+  const setoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>(inheritedSetoids); // relation name → setoid def
   // Pre-scan: collect constructor families and compute rules before processing
   // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
@@ -328,7 +330,7 @@ export function evalBodyInto(
         // Mode-aware linearity check: error if prove needs erase/dup incompatible with modes
         const linearityErrors = checkProveLinearity(prove, agents, modes);
         // Type check if return type is annotated
-        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions);
+        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids);
         const allErrors = [...linearityErrors, ...typeErrors];
         if (allErrors.length > 0) {
           throw new EvalError(allErrors.join("\n"));
@@ -357,6 +359,11 @@ export function evalBodyInto(
         // Register implicit type conversion
         if (!coercions.has(item.from)) coercions.set(item.from, new Map());
         coercions.get(item.from)!.set(item.to, item.func);
+        break;
+      }
+      case "setoid": {
+        // Register binary relation as equivalence relation
+        setoids.set(item.name, { name: item.name, type: item.type, refl: item.refl, sym: item.sym, trans: item.trans });
         break;
       }
       case "open": {
@@ -473,7 +480,7 @@ export function evalBodyInto(
             }
           }
           const linearityErrors = checkProveLinearity(prove, agents, modes);
-          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions);
+          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids);
           const termErrors = checkMutualTermination(prove, mutualNames);
           const allErrors = [...linearityErrors, ...typeErrors, ...termErrors];
           if (allErrors.length > 0) {
@@ -491,7 +498,7 @@ export function evalBodyInto(
   const exports = exportNames.length > 0
     ? new Set(exportNames.flatMap(e => e.names))
     : undefined;
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -509,9 +516,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -527,6 +534,7 @@ export function evalCompose(
   const mergedConstructors = new Map<string, Set<string>>();
   const mergedCompute: ComputeRule[] = [];
   const mergedCtorTyping: ConstructorTyping = new Map();
+  const mergedSetoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>();
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -573,12 +581,17 @@ export function evalCompose(
     for (const [name, info] of comp.constructorTyping) {
       mergedCtorTyping.set(name, info);
     }
+
+    // Setoids: merge
+    if (comp.setoids) {
+      for (const [name, s] of comp.setoids) mergedSetoids.set(name, s);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────

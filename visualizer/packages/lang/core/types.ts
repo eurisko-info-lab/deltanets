@@ -25,7 +25,8 @@ export type Statement =
   | MutualDecl
   | SectionDecl
   | NotationDecl
-  | CoercionDecl;
+  | CoercionDecl
+  | SetoidDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -52,7 +53,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -100,6 +101,17 @@ export type CoercionDecl = {
   from: string;
   to: string;
   func: string;
+};
+
+// setoid R on T { refl = r, sym = s, trans = t }
+// Registers a binary relation as an equivalence relation (setoid).
+export type SetoidDecl = {
+  kind: "setoid";
+  name: string;  // relation name (binary agent already declared)
+  type: string;  // domain type name
+  refl: string;  // reflexivity proof name
+  sym: string;   // symmetry proof name
+  trans: string;  // transitivity proof name
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

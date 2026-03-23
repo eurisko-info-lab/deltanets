@@ -699,6 +699,7 @@ type ProveCtx = {
   provedCtx: ProvedContext; // previously proved propositions
   constructorTyping: ConstructorTyping; // constructor → type info from data decls
   constructorsByType?: Map<string, Set<string>>; // type name → constructor names
+  setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // relation → setoid def
 };
 
 type TypeResult =
@@ -833,46 +834,48 @@ function inferType(
 
   // Generalized congruence: cong_X(proof, c1, ..., cn) where X is a constructor.
   // The proof applies to the LAST position; c1..cn are constants for earlier positions.
-  //   cong_succ(p)       : Eq(Succ(a), Succ(b))       when p : Eq(a, b)
-  //   cong_cons(p, h)    : Eq(Cons(h, a), Cons(h, b)) when p : Eq(a, b)
-  //   cong_pair(p, q, v) : ... etc for any constructor
+  //   cong_succ(p)       : R(Succ(a), Succ(b))       when p : R(a, b) (R = Eq or setoid)
+  //   cong_cons(p, h)    : R(Cons(h, a), Cons(h, b)) when p : R(a, b)
   if (name.startsWith("cong_") && args.length >= 1) {
     const suffix = name.slice(5);
     const constructorName = suffix.charAt(0).toUpperCase() + suffix.slice(1);
     const inner = inferType(args[0], ctx);
     if (!inner.ok) return inner;
-    const eq = extractEq(inner.type);
-    if (!eq) {
-      return { ok: false, error: `${name} first argument must have Eq type, got ${exprToString(inner.type)}` };
+    const equiv = extractEquiv(inner.type);
+    if (!equiv || !isEquivRelation(equiv.rel, ctx.setoids)) {
+      return { ok: false, error: `${name} first argument must have Eq or setoid type, got ${exprToString(inner.type)}` };
     }
     const constants = args.slice(1);
     return {
       ok: true,
-      type: app("Eq", app(constructorName, ...constants, eq.left), app(constructorName, ...constants, eq.right)),
+      type: app(equiv.rel, app(constructorName, ...constants, equiv.left), app(constructorName, ...constants, equiv.right)),
     };
   }
 
-  // sym(p) : Eq(b, a) when p : Eq(a, b)
+  // sym(p) : R(b, a) when p : R(a, b) — works for Eq or any registered setoid
   if (name === "sym" && args.length === 1) {
     const inner = inferType(args[0], ctx);
     if (!inner.ok) return inner;
-    const eq = extractEq(inner.type);
-    if (!eq) {
-      return { ok: false, error: `sym argument must have Eq type, got ${exprToString(inner.type)}` };
+    const equiv = extractEquiv(inner.type);
+    if (!equiv || !isEquivRelation(equiv.rel, ctx.setoids)) {
+      return { ok: false, error: `sym argument must have Eq or setoid type, got ${exprToString(inner.type)}` };
     }
-    return { ok: true, type: app("Eq", eq.right, eq.left) };
+    return { ok: true, type: app(equiv.rel, equiv.right, equiv.left) };
   }
 
-  // trans(p, q) : Eq(a, c) when p : Eq(a, b), q : Eq(b, c)
+  // trans(p, q) : R(a, c) when p : R(a, b), q : R(b, c) — works for Eq or any registered setoid
   if (name === "trans" && args.length === 2) {
     const t1 = inferType(args[0], ctx);
     if (!t1.ok) return t1;
     const t2 = inferType(args[1], ctx);
     if (!t2.ok) return t2;
-    const eq1 = extractEq(t1.type);
-    const eq2 = extractEq(t2.type);
-    if (!eq1 || !eq2) {
-      return { ok: false, error: `trans arguments must have Eq types` };
+    const eq1 = extractEquiv(t1.type);
+    const eq2 = extractEquiv(t2.type);
+    if (!eq1 || !eq2 || !isEquivRelation(eq1.rel, ctx.setoids) || !isEquivRelation(eq2.rel, ctx.setoids)) {
+      return { ok: false, error: `trans arguments must have Eq or setoid types` };
+    }
+    if (eq1.rel !== eq2.rel) {
+      return { ok: false, error: `trans: relation mismatch: '${eq1.rel}' vs '${eq2.rel}'` };
     }
     // Check middle types match (after normalization)
     if (!exprEqual(normalize(eq1.right), normalize(eq2.left))) {
@@ -881,7 +884,7 @@ function inferType(
         error: `trans: middle types don't match: ${exprToString(normalize(eq1.right))} vs ${exprToString(normalize(eq2.left))}`,
       };
     }
-    return { ok: true, type: app("Eq", eq1.left, eq2.right) };
+    return { ok: true, type: app(eq1.rel, eq1.left, eq2.right) };
   }
 
   // pair(witness, proof) : Sigma(witness, proofType) — ∃-introduction
@@ -921,19 +924,19 @@ function inferType(
     return { ok: false, error: `snd argument must have Sigma type, got ${exprToString(inner.type)}` };
   }
 
-  // subst(p, e) : T[a := b]  where p : Eq(a, b) and e : T
-  // Transport / J elimination: rewrites the type of e through equality p.
+  // subst(p, e) : T[a := b]  where p : R(a, b) and R is Eq or a setoid
+  // Transport / J elimination: rewrites the type of e through equality/equivalence p.
   if (name === "subst" && args.length === 2) {
     const pResult = inferType(args[0], ctx);
     if (!pResult.ok) return pResult;
-    const eq = extractEq(normalize(pResult.type));
-    if (!eq) {
-      return { ok: false, error: `subst first argument must have Eq type, got ${exprToString(pResult.type)}` };
+    const equiv = extractEquiv(normalize(pResult.type));
+    if (!equiv || !isEquivRelation(equiv.rel, ctx.setoids)) {
+      return { ok: false, error: `subst first argument must have Eq or setoid type, got ${exprToString(pResult.type)}` };
     }
     const eResult = inferType(args[1], ctx);
     if (!eResult.ok) return eResult;
-    const a = normalize(eq.left);
-    const b = normalize(eq.right);
+    const a = normalize(equiv.left);
+    const b = normalize(equiv.right);
     return { ok: true, type: normalize(substituteExprPattern(normalize(eResult.type), a, b)) };
   }
 
@@ -1001,6 +1004,21 @@ function extractEq(
     return { left: type.args[0], right: type.args[1] };
   }
   return null;
+}
+
+/** Extract any binary relation: R(a, b) → { rel: "R", left: a, right: b } */
+function extractEquiv(
+  type: AST.ProveExpr,
+): { rel: string; left: AST.ProveExpr; right: AST.ProveExpr } | null {
+  if (type.kind === "call" && type.args.length === 2) {
+    return { rel: type.name, left: type.args[0], right: type.args[1] };
+  }
+  return null;
+}
+
+/** Check if a relation is Eq or a registered setoid */
+function isEquivRelation(rel: string, setoids?: Map<string, unknown>): boolean {
+  return rel === "Eq" || (setoids != null && setoids.has(rel));
 }
 
 // Extract a declared Sigma type: Sigma(Domain, boundVar, Predicate)
@@ -1944,6 +1962,7 @@ export function typecheckProve(
   constructorTyping?: ConstructorTyping,
   codataTypes?: Set<string>,
   coercions?: Map<string, Map<string, string>>,
+  setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -1970,7 +1989,8 @@ export function typecheckProve(
   const errors: string[] = [];
 
   for (const caseArm of prove.cases) {
-    const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
+    const { ctx: baseCtx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
+    const ctx: ProveCtx = setoids ? { ...baseCtx, setoids } : baseCtx;
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
     const rawBody = caseArm.body;
     const reqEq = extractEq(requiredType);
@@ -1980,6 +2000,10 @@ export function typecheckProve(
     if ((rawBody.kind === "ident" && rawBody.name === "conv") ||
         (rawBody.kind === "call" && rawBody.name === "conv" && rawBody.args.length === 0)) {
       if (reqEq && exprEqual(normalize(reqEq.left), normalize(reqEq.right))) continue;
+      // Also handle setoid goals: conv proves R(a, a) when both sides normalize to the same term
+      const reqEquivConv = extractEquiv(requiredType);
+      if (reqEquivConv && isEquivRelation(reqEquivConv.rel, setoids) &&
+          exprEqual(normalize(reqEquivConv.left), normalize(reqEquivConv.right))) continue;
       errors.push(`${prefix}: conv failed — sides are not definitionally equal\n  goal: ${exprToString(requiredType)}`);
       continue;
     }
@@ -2010,20 +2034,29 @@ export function typecheckProve(
 
     const body = stripTacticSugar(rawBody);
 
-    // Handle rewrite(proof) — contextual goal-rewriting check
+    // Handle rewrite(proof) — contextual goal-rewriting check (Eq or setoid)
     if (body.kind === "call" && body.name === "rewrite" && body.args.length === 1) {
       const proofResult = inferType(body.args[0], ctx);
       if (!proofResult.ok) {
         if (proofResult.error !== "hole") errors.push(`${prefix}: ${proofResult.error}`);
         continue;
       }
-      const proofEq = extractEq(normalize(proofResult.type));
-      if (!proofEq || !reqEq) {
-        errors.push(`${prefix}: rewrite requires Eq types on both proof and goal`);
+      const proofEquiv = extractEquiv(normalize(proofResult.type));
+      const reqEquiv = extractEquiv(normalize(requiredType));
+      if (!proofEquiv || !reqEquiv) {
+        errors.push(`${prefix}: rewrite requires equivalence types on both proof and goal`);
         continue;
       }
-      const a = normalize(proofEq.left), b = normalize(proofEq.right);
-      const lhs = normalize(reqEq.left), rhs = normalize(reqEq.right);
+      if (proofEquiv.rel !== reqEquiv.rel) {
+        errors.push(`${prefix}: rewrite relation mismatch: proof uses '${proofEquiv.rel}', goal uses '${reqEquiv.rel}'`);
+        continue;
+      }
+      if (!isEquivRelation(proofEquiv.rel, ctx.setoids)) {
+        errors.push(`${prefix}: rewrite: '${proofEquiv.rel}' is not Eq or a registered setoid`);
+        continue;
+      }
+      const a = normalize(proofEquiv.left), b = normalize(proofEquiv.right);
+      const lhs = normalize(reqEquiv.left), rhs = normalize(reqEquiv.right);
       if (exprEqual(normalize(substituteExprPattern(lhs, a, b)), rhs)) continue;
       if (exprEqual(normalize(substituteExprPattern(lhs, b, a)), rhs)) continue;
       errors.push(
@@ -2045,12 +2078,44 @@ export function typecheckProve(
     }
 
     const infEq = extractEq(inferred.type);
+    const infEquiv = !infEq ? extractEquiv(inferred.type) : null;
+    const reqEquiv2 = !reqEq ? extractEquiv(requiredType) : null;
+
+    // Eq type matching (existing path)
     if (reqEq && infEq) {
       if (!eqTypeMatches(inferred.type, requiredType)) {
         errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
       }
       continue;
     }
+
+    // Setoid relation matching: both sides are the same registered setoid relation
+    if (reqEquiv2 && infEquiv && reqEquiv2.rel === infEquiv.rel && isEquivRelation(reqEquiv2.rel, ctx.setoids)) {
+      // Handle refl sentinel for setoid goals: R(_refl_a, _refl_a) matches R(a, a) when sides are equal
+      if (infEquiv.left.kind === "ident" && infEquiv.left.name === "_refl_a" &&
+          infEquiv.right.kind === "ident" && infEquiv.right.name === "_refl_a") {
+        if (!exprEqual(normalize(reqEquiv2.left), normalize(reqEquiv2.right))) {
+          errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+        }
+      } else if (!exprEqual(normalize(infEquiv.left), normalize(reqEquiv2.left)) ||
+                 !exprEqual(normalize(infEquiv.right), normalize(reqEquiv2.right))) {
+        errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+      }
+      continue;
+    }
+
+    // refl (Eq sentinel) matches setoid reflexive goals: refl : R(a, a) when R is a setoid
+    if (infEq && reqEquiv2 && isEquivRelation(reqEquiv2.rel, ctx.setoids)) {
+      const isReflSentinel = infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
+                             infEq.right.kind === "ident" && infEq.right.name === "_refl_a";
+      if (isReflSentinel) {
+        if (!exprEqual(normalize(reqEquiv2.left), normalize(reqEquiv2.right))) {
+          errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+        }
+        continue;
+      }
+    }
+
     if (reqEq || infEq) {
       errors.push(`${prefix}: type structure mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(inferred.type)}`);
       continue;
@@ -2214,6 +2279,13 @@ function resolveSimpExpr(
         return ident("refl") as AST.ProveExpr;
       }
 
+      // 1b. conv for setoid goals: R(a, a) → refl
+      const goalEquiv = !goalEq ? extractEquiv(normalize(goal)) : null;
+      if (goalEquiv && isEquivRelation(goalEquiv.rel, ctx.setoids) &&
+          exprEqual(normalize(goalEquiv.left), normalize(goalEquiv.right))) {
+        return ident("refl") as AST.ProveExpr;
+      }
+
       // 2. assumption-style search
       const candidates = searchCandidates(ctx, goal);
       if (candidates.length > 0) return parseProofString(candidates[0]);
@@ -2221,6 +2293,12 @@ function resolveSimpExpr(
       // 3. one-step rewrite with each available lemma
       if (goalEq) {
         const lemmaProof = trySimpRewrite(ctx, goalEq);
+        if (lemmaProof) return lemmaProof;
+      }
+
+      // 3b. one-step rewrite for setoid goals
+      if (goalEquiv && isEquivRelation(goalEquiv.rel, ctx.setoids)) {
+        const lemmaProof = trySimpRewrite(ctx, { left: goalEquiv.left, right: goalEquiv.right }, goalEquiv.rel);
         if (lemmaProof) return lemmaProof;
       }
 
@@ -2260,10 +2338,12 @@ function resolveSimpExpr(
 }
 
 /** Try to close an equality goal by rewriting one side with an available lemma,
- *  then checking if the result matches the other side after normalization. */
+ *  then checking if the result matches the other side after normalization.
+ *  Supports Eq and registered setoid relations via optional `rel` parameter. */
 function trySimpRewrite(
   ctx: ProveCtx,
   goalEq: { left: AST.ProveExpr; right: AST.ProveExpr },
+  rel: string = "Eq",
 ): AST.ProveExpr | null {
   const lhs = normalize(goalEq.left);
   const rhs = normalize(goalEq.right);
@@ -2277,8 +2357,8 @@ function trySimpRewrite(
     const call = app(ctx.prove.name, ident(b), ...auxArgs);
     const r = inferType(call, ctx);
     if (r.ok) {
-      const eq = extractEq(normalize(r.type));
-      if (eq) lemmas.push({ proof: call, left: normalize(eq.left), right: normalize(eq.right) });
+      const equiv = extractEquiv(normalize(r.type));
+      if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
     }
   }
 
@@ -2293,8 +2373,8 @@ function trySimpRewrite(
       const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
       const r = inferType(call, ctx);
       if (r.ok) {
-        const eq = extractEq(normalize(r.type));
-        if (eq) lemmas.push({ proof: call, left: normalize(eq.left), right: normalize(eq.right) });
+        const equiv = extractEquiv(normalize(r.type));
+        if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
       }
     }
   }

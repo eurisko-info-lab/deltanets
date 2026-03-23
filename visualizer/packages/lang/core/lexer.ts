@@ -42,6 +42,7 @@ export const TT = {
   VARIABLE: "VARIABLE",
   NOTATION: "NOTATION",
   COERCION: "COERCION",
+  SETOID: "SETOID",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -118,6 +119,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   variable: TT.VARIABLE,
   notation: TT.NOTATION,
   coercion: TT.COERCION,
+  setoid: TT.SETOID,
 };
 
 export class LexError extends Error {

@@ -49,6 +49,7 @@ export type SystemDef = {
   constructorTyping: import("./typecheck-prove.ts").ConstructorTyping;
   exports?: Set<string>; // if set, only these agents are visible to open/extend
   tactics?: Map<string, TacticDef>; // user-defined tactics
+  setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // registered setoid relations
 };
 
 export type TacticDef = {

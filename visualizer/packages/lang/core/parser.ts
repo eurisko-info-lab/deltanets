@@ -211,6 +211,8 @@ class Parser {
         return this.parseNotationDecl();
       case TT.COERCION:
         return this.parseCoercionDecl();
+      case TT.SETOID:
+        return this.parseSetoidDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -372,8 +374,9 @@ class Parser {
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
+      else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1085,6 +1088,7 @@ class Parser {
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
+      else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1136,6 +1140,35 @@ class Parser {
     // Register in parser's notation table for subsequent expressions
     this.notations.set(symbol, { func, precedence, assoc });
     return { kind: "notation", symbol, func, precedence, assoc };
+  }
+
+  // ─── Setoid ──────────────────────────────────────────────────────
+  // setoid R on T { refl = r, sym = s, trans = t }
+
+  parseSetoidDecl(): AST.SetoidDecl {
+    this.eat(TT.SETOID);
+    const name = this.eatIdent();
+    this.eatIdentValue("on");
+    const type = this.eatIdent();
+    this.eat(TT.LBRACE);
+    let refl: string | null = null;
+    let sym: string | null = null;
+    let trans: string | null = null;
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const key = this.eatIdent();
+      this.eat(TT.EQ);
+      const val = this.eatIdent();
+      if (key === "refl") refl = val;
+      else if (key === "sym") sym = val;
+      else if (key === "trans") trans = val;
+      else throw new ParseError(`Unknown setoid field '${key}', expected refl/sym/trans`, this.prev().line, this.prev().col);
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RBRACE);
+    if (!refl || !sym || !trans) {
+      throw new ParseError("setoid must declare refl, sym, and trans", this.prev().line, this.prev().col);
+    }
+    return { kind: "setoid", name, type, refl, sym, trans };
   }
 
   // ─── Coercion ────────────────────────────────────────────────────
