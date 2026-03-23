@@ -1,13 +1,13 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Updated**: 2026-03-23, post-Phase 19  
-**Current state**: ~20k LoC TypeScript · 614 tests · 5 built-in tactics · user-defined tactics  
-**Overall Rocq parity**: ~65% surface, ~45% depth
+**Updated**: 2026-03-23, post-Phase 29  
+**Current state**: ~32.5k LoC TypeScript · 741 tests · 5 built-in tactics · user-defined tactics  
+**Overall Rocq parity**: ~75% surface, ~60% depth
 
 ---
 
-## Completed Phases (1–19)
+## Completed Phases (1–29)
 
 | Phase | Feature | Commit |
 |-------|---------|--------|
@@ -31,18 +31,42 @@
 | 18 | Meta-agents | `c3cc341` |
 | 19 | Tactic-as-rules | `917d6c6` |
 | 19a | Unified tactic pipeline | `25db1ab` |
+| 20 | Tactic meta-agent primitives (CtxSearch, EqCheck) | `9e80c07` |
+| 21 | Mutual inductive types | `c837d65` |
+| 22 | Coinductive types (codata) | `8613b05` |
+| 23 | Well-founded recursion | `01b317d` |
+| 24 | Nested pattern matching | `03b74be` |
+| 25 | Sections & variables | `af14873` |
+| 26 | Notations | `54087c1` |
+| 27 | Coercions | `7d5b267` |
+| 28 | Setoid rewriting | `f4c8b8d` |
+| 29 | Ring / field solvers | `4028a04` |
 
 ---
 
-## Remaining Gaps
+## What's Implemented (Rocq Feature Map)
 
-| # | Gap | Impact | Current state |
-|---|-----|--------|--------------|
-| 1 | No tactic meta-agent primitives | User tactics can't normalize, search context, or check types | Only syntactic Tm* rewriting |
-| 2 | No coinductive types | No streams, bisimulation, productivity | Not in AST |
-| 3 | No mutual/nested recursion | Can't define Even/Odd mutually | Sequential prove blocks only |
-| 4 | No sections/variables | Must repeat params everywhere | No auto-abstraction |
-| 5 | No notations/coercions | Syntax is fixed | No user extensibility |
+| Rocq Feature | INet Equivalent | Depth |
+|---|---|---|
+| CIC type theory | Pi, Sigma, Let, Lambda, Metavar, Match exprs | Shallow — AST-level, no full CIC kernel |
+| Inductive types | `data` with params + indices, eliminators | Good — auto-eliminators, dependent matching |
+| Mutual inductives | `mutual { data ... data ... }` + joint positivity | Good |
+| Coinductive types | `codata` + guard agents + productivity checking | Good — observation-based |
+| Record types | `record` → single-constructor data + projections | Good |
+| Universe hierarchy | `Type(0) : Type(1) : ...`, cumulative subtyping | Basic — no SProp, no poly quantifiers |
+| Pattern matching | Nested deep patterns, with-clauses, overlap detection | Good |
+| Termination | Structural recursion + `{measure}` + `{wf}` | Good — `wf` is trusted |
+| Implicit args | `{x : A}` in prove params, unification-based inference | Basic — no canonical structures |
+| Unification | First-order unification with metavars | Basic — no higher-order unification |
+| Sections/Variables | `section S { variable(A : Type) ... }` with auto-abstraction | Good |
+| Notations | `notation "+" := add (prec 50, left)` | Basic — infix only, no mixfix |
+| Coercions | `coercion name = From -> To via func` | Good |
+| Tactics | assumption, simp, decide, omega, auto, calc, conv, rewrite, ring | Good breadth |
+| User-defined tactics | `tactic name { agents... rules... }` with meta-agent primitives | Good — CtxSearch, Normalize, EqCheck |
+| Setoid rewriting | `setoid R on T { refl, sym, trans }` + rewrite tactic | Basic |
+| Ring solver | `ring T { zero, add, mul }` + polynomial normalization | Basic — semiring, no field |
+| Quotation/Reflection | quote/unquote + term-encoding agents | Good |
+| Module system | system/extend/compose/open/export | Good — but no functors |
 
 ---
 
@@ -63,54 +87,53 @@ checker independently validate any proof term they produce. A buggy tactic
 can't break soundness.
 
 **User-defined tactics run as INet reductions** via `tactic name { agents... rules... }`.
-Currently limited to syntactic Tm* rewriting (no normalization, no context access).
-
-**Next step: meta-agent primitives** — expose Normalize, CtxSearch, EqCheck
-as MetaHandlers inside `runUserTactic`, giving user tactics the same
-power as built-in ones. Built-in tactics can optionally be ported to INet
-later once the primitives are proven.
+Meta-agent primitives (Normalize, CtxSearch, EqCheck) give user tactics
+the same power as built-in ones.
 
 ---
 
-## Roadmap (Phases 20–28)
+## Roadmap (Phases 30–46)
 
-### Tier 3a — Tactic Meta-Agents
+### Tier A — Foundational Holes (→ ~85%)
 
-Expose kernel operations to the INet tactic engine.
-
-| Phase | Feature | Description | Est. LoC |
-|-------|---------|-------------|----------|
-| **20** | **Tactic meta-agent primitives** | Normalize (reduce Tm* via compute rules), CtxSearch (inject proof context, search bindings matching goal), EqCheck (structural equality with α-renaming) as MetaHandlers in `runUserTactic`; pass ProveCtx into tactic graph | ~350 |
-
-### Tier 3b — Expressiveness
-
-Richer data types and recursion patterns.
+Features Rocq users reach for in every non-trivial development.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **21** | **Mutual inductive types** | `mutual { data Even ... data Odd ... }` with joint positivity | ~300 |
-| **22** | **Coinductive types** | `codata Stream(A) { head, tail }` + productivity checking | ~400 |
-| **23** | **Well-founded recursion** | `Function` with `{measure f}` or `{wf R}` | ~350 |
-| **24** | **Nested pattern matching** | Deep patterns, with-clauses, overlapping checks | ~250 |
+| **30** | **Typeclasses** | Rocq's primary abstraction mechanism. `class Monoid(A) { ... }` with `instance` declarations. Enables `Functor`, `DecidableEq`, etc. | ~500 |
+| **31** | **Instance search / hint databases** | Engine behind typeclasses. Extensible hint sets for `auto` and `simp`. Currently `auto` has no user-extensible hint DB. | ~400 |
+| **32** | **Definitional / propositional equality separation** | Enforce the boundary: `conv` checks definitional equality (conversion), `Eq` requires proof. Currently all equality is propositional `Eq(a, b)`. | ~300 |
+| **33** | **Prop / Set / Type sorting** | `Prop` is proof-irrelevant (enables extraction). Currently everything lives in `Type(n)`. Adding `Prop` unlocks erasure and singleton elimination. | ~350 |
 
-### Tier 4 — Scale & Usability
+### Tier B — Proof Ergonomics (→ ~90%)
 
-Module system, syntax, and ergonomics.
-
-| Phase | Feature | Description | Est. LoC |
-|-------|---------|-------------|----------|
-| **25** | **Sections & variables** | `section S { variable (A : Type) }` with auto-abstraction | ~200 |
-| **26** | **Notations** | `notation "x + y" := add(x, y)` with precedence | ~300 |
-| **27** | **Coercions** | Implicit type conversions registered per pair | ~200 |
-
-### Tier 5 — Automation Libraries (INet-native)
-
-Written as INet rule sets using meta-agent primitives from Phase 20.
+Features that make complex proofs feasible rather than theoretically possible.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **28** | **Setoid rewriting** | Rewrite under arbitrary equivalence relations (INet rules) | ~300 |
-| **29** | **Ring / field solvers** | Commutative ring normalization (INet rules) | ~350 |
+| **34** | **Tactic combinator language** | `try`, `repeat`, `first`, `all:`, `;` — compose tactics declaratively instead of writing INet agents. Ltac-lite. | ~450 |
+| **35** | **Rewriting with lemma databases** | `simp` rewrites with registered lemmas. `@[simp]` attributes on proves. Currently `simp` only uses compute rules. | ~350 |
+| **36** | **Canonical structures** | Unification hints that trigger during type inference. Alternative to typeclasses (used heavily in MathComp). | ~300 |
+| **37** | **Program / Equations** | Dependent pattern matching with proof obligations. Complex recursive definitions where `{measure}` isn't enough. | ~400 |
+
+### Tier C — Scale & Ecosystem (→ ~95%)
+
+| Phase | Feature | Description | Est. LoC |
+|-------|---------|-------------|----------|
+| **38** | **Module functors** | `Module Type`, `Module ... : SIG`, parameterized modules. Abstraction over module signatures beyond system/extend/compose. | ~400 |
+| **39** | **Mixfix notations** | `notation "if _ then _ else _" := ...`. Currently limited to binary infix operators. | ~250 |
+| **40** | **Standard library** | Core lemmas for Nat, Bool, List, Option, Sigma, Fin, Vec. Validates that the system works end-to-end. | ~800 |
+| **41** | **Code extraction** | Generate TypeScript/JS from verified programs. Erase propositions (requires Phase 33 Prop/Set). | ~500 |
+
+### Tier D — Advanced Theory (→ ~98%)
+
+| Phase | Feature | Description | Est. LoC |
+|-------|---------|-------------|----------|
+| **42** | **Higher-order unification** | Pattern-fragment unification for metavariables in dependent contexts. Currently first-order only — fails on `?f x = S x`. | ~500 |
+| **43** | **SProp (strict propositions)** | Definitional proof irrelevance. `(p : 0 = 0) = (q : 0 = 0)` definitionally. | ~300 |
+| **44** | **Primitive projections** | Records with definitional eta-expansion. `mkPair(fst(p), snd(p)) ≡ p` definitionally. | ~250 |
+| **45** | **Guard condition for cofixpoints** | Robust nested corecursive productivity checking (Rocq's guard condition is subtle). | ~300 |
+| **46** | **Native/VM compute** | Compilation of INet terms to optimized native reduction. Currently all computation is unoptimized INet reduction. | ~600 |
 
 ---
 
@@ -118,29 +141,35 @@ Written as INet rule sets using meta-agent primitives from Phase 20.
 
 | Tier | Phases | Est. LoC | Cumulative Rocq % |
 |------|--------|----------|-------------------|
-| Done (1–19a) | 20 | ~8,400 | ~65% |
-| Tier 3a: Meta-agents | 20 | ~350 | ~70% |
-| Tier 3b: Expressiveness | 21–24 | ~1,300 | ~80% |
-| Tier 4: Usability | 25–27 | ~700 | ~85% |
-| Tier 5: Automation libs | 28–29 | ~650 | ~90% |
+| Done (1–29) | 31 | ~12,000 | ~75% |
+| Tier A: Foundations | 30–33 | ~1,550 | ~85% |
+| Tier B: Proof ergonomics | 34–37 | ~1,500 | ~90% |
+| Tier C: Scale & ecosystem | 38–41 | ~1,950 | ~95% |
+| Tier D: Advanced theory | 42–46 | ~1,950 | ~98% |
 
-**Total remaining: ~3,000 LoC across 10 phases**
+**Total remaining: ~6,950 LoC across 17 phases**
 
-The remaining ~15% is Rocq's 30+ years of standard library, extraction
-machinery, and ecosystem (CoqIDE, SerAPI, coq-lsp, opam packages) —
-not necessary to replicate.
+The remaining ~2% is Rocq's 30+ years of standard library, extraction
+maturity, and ecosystem (CoqIDE, SerAPI, coq-lsp, opam packages,
+ssreflect, MathComp, Iris) — not necessary to replicate.
 
 ---
 
 ## Critical Path
 
 ```
-Phase 13 (let) ──→ Phase 14 (Pi/Sigma) ──→ Phase 15 (unification) ──┐
-                                                                      ├→ Phase 17 (quotation) → 18 → 19
-                                            Phase 16 (universes) ─────┘
-                                                                      ├→ Phase 20–23 (data types)
-                                                                      └→ Phase 24–28 (usability + libs)
+Phase 30 (typeclasses) ──→ Phase 31 (instance search) ──→ Phase 35 (simp lemma DB)
+Phase 33 (Prop/Set/Type) ──→ Phase 41 (extraction)
+Phase 32 (def/prop eq) ──→ Phase 42 (HO unification) ──→ Phase 43 (SProp)
+Phase 34 (tactic combinators) — independent
+Phase 38 (module functors) — independent
+Phase 40 (stdlib) — depends on Phases 30–33
 ```
 
-Phases 13–15 unlock everything. Phase 17 (quotation) is the architectural
-pivot that makes Tiers 4–5 dramatically cheaper.
+Phases 30–33 unlock everything. Typeclasses + Prop sorting is the
+foundation that the rest builds on. Recommended order:
+
+1. **30–31 first** (typeclasses + instance search) — highest user-facing impact
+2. **33 next** (Prop/Set) — required for extraction and proof irrelevance
+3. **34** (tactic combinators) — makes everything after it cheaper to build
+4. **40** in parallel with Tier B — a growing stdlib validates every new feature
