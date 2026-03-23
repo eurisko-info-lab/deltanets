@@ -24,6 +24,13 @@ export type {
 export type { ProofNode, ProofTree } from "./typecheck-prove.ts";
 export { universeLevel, typeUniverse, typeSubsumes } from "./typecheck-prove.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./proof-export.ts";
+export {
+  quoteExpr, unquoteStatements, buildGoalStatements,
+  registerQuotationAgents, containsQuote, containsUnquote,
+  QUOTE_AGENTS, TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM, TM_NIL, TM_CONS,
+  Q_GOAL, CTX_NIL, CTX_CONS,
+} from "./quotation.ts";
+export type { QuoteResult } from "./quotation.ts";
 export type * from "./types.ts";
 
 export function compile(

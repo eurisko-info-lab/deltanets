@@ -9,6 +9,7 @@ import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, resolveDecide, resolveOmega, resolveAuto, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
+import { registerQuotationAgents, quoteExpr, containsQuote, QUOTE_AGENTS } from "./quotation.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
@@ -97,6 +98,9 @@ export function evalBodyInto(
     if (item.kind === "record") {
       knownAgents.add(`mk${item.name}`);
       for (const f of item.fields) knownAgents.add(f.name);
+    }
+    if (item.kind === "open" && item.system === "Quote") {
+      for (const name of QUOTE_AGENTS) knownAgents.add(name);
     }
     if (item.kind === "open" && systems) {
       const source = systems.get(item.system);
@@ -225,6 +229,11 @@ export function evalBodyInto(
         break;
       }
       case "open": {
+        // Built-in "Quote" system: register quotation agents
+        if (item.system === "Quote") {
+          registerQuotationAgents(agents, rules);
+          break;
+        }
         // Import agents/rules/etc from another system
         if (!systems) throw new EvalError(`Cannot use 'open' without access to systems`);
         const source = systems.get(item.system);
@@ -450,6 +459,23 @@ function desugarProve(
       }
       if (expr.kind === "pi" || expr.kind === "sigma" || expr.kind === "lambda") {
         throw new EvalError(`prove ${prove.name}: ${expr.kind} expressions cannot be desugared into agents yet`);
+      }
+      // quote(body) → build Tm* agent net representing the quoted term
+      if (expr.kind === "call" && expr.name === "quote" && expr.args.length === 1) {
+        registerQuotationAgents(agents, []);
+        const qCounter = { value: counter };
+        const result = quoteExpr(expr.args[0], qCounter);
+        counter = qCounter.value;
+        stmts.push(...result.stmts);
+        return result.root;
+      }
+      // unquote(quote(body)) → collapse to body (compile-time roundtrip)
+      if (expr.kind === "call" && expr.name === "unquote" && expr.args.length === 1) {
+        const inner = expr.args[0];
+        if (inner.kind === "call" && inner.name === "quote" && inner.args.length === 1) {
+          return translateExpr(inner.args[0]);
+        }
+        throw new EvalError(`prove ${prove.name}: unquote requires a quote(...) argument at compile time`);
       }
       if (expr.kind === "ident") {
         if (copyQueues.has(expr.name)) { usedVars.add(expr.name); return copyQueues.get(expr.name)!.shift()!; }

@@ -807,6 +807,22 @@ function inferType(
   // call expressions
   const { name, args } = expr;
 
+  // quote(expr) → Term (quoted representation of the expression)
+  if (name === "quote" && args.length === 1) {
+    return { ok: true, type: ident("Term") };
+  }
+
+  // unquote(term) → extracts the proof term represented by a quoted Term
+  // At compile time, unquote requires the argument to be a literal quote(...)
+  if (name === "unquote" && args.length === 1) {
+    const inner = args[0];
+    if (inner.kind === "call" && inner.name === "quote" && inner.args.length === 1) {
+      // unquote(quote(e)) = e — roundtrip
+      return inferType(inner.args[0], ctx);
+    }
+    return { ok: false, error: "unquote: argument must be a quote(...) expression at compile time" };
+  }
+
   // Generalized congruence: cong_X(proof, c1, ..., cn) where X is a constructor.
   // The proof applies to the LAST position; c1..cn are constants for earlier positions.
   //   cong_succ(p)       : Eq(Succ(a), Succ(b))       when p : Eq(a, b)

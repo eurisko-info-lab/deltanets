@@ -26,6 +26,7 @@
 | 14 | Pi & Sigma types | `ab77d12` |
 | 15 | Unification engine | `a7b33a5` |
 | 16 | Universe polymorphism | `fbbbad7` |
+| 17 | Quotation & reflection | `97d6aaf` |
 
 ---
 

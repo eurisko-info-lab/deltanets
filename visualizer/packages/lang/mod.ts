@@ -3,6 +3,13 @@
 export { compileCore, compileView } from "./index.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
 export { universeLevel, typeUniverse, typeSubsumes } from "./core/typecheck-prove.ts";
+export {
+  quoteExpr, unquoteStatements, buildGoalStatements,
+  registerQuotationAgents, QUOTE_AGENTS,
+  TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM, TM_NIL, TM_CONS,
+  Q_GOAL, CTX_NIL, CTX_CONS,
+} from "./core/quotation.ts";
+export type { QuoteResult } from "./core/quotation.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
 export type {
