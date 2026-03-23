@@ -24,10 +24,11 @@ export type ComputeRule = {
 };
 
 /** Constructor typing info derived from data declarations.
- *  Maps constructor name → { typeName, fields } */
+ *  Maps constructor name → { typeName, params, fields } */
 export type ConstructorTyping = Map<string, {
   typeName: string;
-  fields: { name: string; type: string }[];
+  params: string[];
+  fields: { name: string; type: AST.ProveExpr }[];
 }>;
 
 // ─── Proof tree types ──────────────────────────────────────────────

@@ -162,6 +162,7 @@ export type ModeDecl = {
 export type DataDecl = {
   kind: "data";
   name: string;
+  params: string[];  // type parameters (e.g., ["A"] for List(A))
   constructors: DataConstructor[];
 };
 
@@ -172,7 +173,7 @@ export type DataConstructor = {
 
 export type DataField = {
   name: string;
-  type: string;
+  type: ProveExpr;
 };
 
 // ─── Compute declaration (type-level reduction rules) ──────────────

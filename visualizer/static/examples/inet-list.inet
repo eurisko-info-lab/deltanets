@@ -50,9 +50,9 @@ system "Nat" extend "Prelude" {
 # ─── List system (lists of Nats) ─────────────────────────────────
 
 system "List" extend "Nat" {
-  data List {
+  data List(A) {
     | Nil
-    | Cons(head : Nat, tail : List)
+    | Cons(head : A, tail : List(A))
   }
 
   agent length(principal, result)

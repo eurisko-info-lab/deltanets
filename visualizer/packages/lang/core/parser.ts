@@ -601,6 +601,14 @@ class Parser {
   parseDataDecl(): AST.DataDecl {
     this.eat(TT.DATA);
     const name = this.eatIdent();
+    const params: string[] = [];
+    if (this.check(TT.LPAREN)) {
+      this.advance();
+      if (!this.check(TT.RPAREN)) {
+        params.push(...this.parseCommaList(() => this.eatIdent()));
+      }
+      this.eat(TT.RPAREN);
+    }
     this.eat(TT.LBRACE);
     const constructors: AST.DataConstructor[] = [];
     while (this.check(TT.PIPE)) {
@@ -613,7 +621,7 @@ class Parser {
           fields.push(...this.parseCommaList(() => {
             const fieldName = this.eatIdent();
             this.eat(TT.COLON);
-            const fieldType = this.eatIdent();
+            const fieldType = this.parseProveExpr();
             return { name: fieldName, type: fieldType };
           }));
         }
@@ -622,7 +630,7 @@ class Parser {
       constructors.push({ name: consName, fields });
     }
     this.eat(TT.RBRACE);
-    return { kind: "data", name, constructors };
+    return { kind: "data", name, params, constructors };
   }
 
   // ─── Compute (type-level reduction rule) ─────────────────────────

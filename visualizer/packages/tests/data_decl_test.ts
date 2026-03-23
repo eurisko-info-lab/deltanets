@@ -296,3 +296,68 @@ Deno.test("data: prove works with data-declared constructors", () => {
   );
   assertEquals(pzrRules.length >= 2, true, "prove rules generated for Zero and Succ");
 });
+
+// ─── Parameterized data types ──────────────────────────────────────
+
+const DATA_PARAM_LIST = `
+include "prelude"
+
+system "Nat" extend "Prelude" {
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+}
+
+system "List" extend "Nat" {
+  data List(A) {
+    | Nil
+    | Cons(head : A, tail : List(A))
+  }
+}
+`;
+
+Deno.test("data: parameterized List(A) desugars agents", () => {
+  const core = compileAndAssert(DATA_PARAM_LIST);
+  const sys = core.systems.get("List")!;
+  assertEquals(sys.agents.has("Nil"), true);
+  assertEquals(sys.agents.has("Cons"), true);
+  assertEquals(sys.agents.get("Nil")!.ports.length, 1);
+  assertEquals(sys.agents.get("Cons")!.ports.length, 3);
+});
+
+Deno.test("data: parameterized List(A) desugars dup_list", () => {
+  const core = compileAndAssert(DATA_PARAM_LIST);
+  const sys = core.systems.get("List")!;
+  assertEquals(sys.agents.has("dup_list"), true);
+  const dupRules = sys.rules.filter(
+    (r) => r.agentA === "dup_list" || r.agentB === "dup_list",
+  );
+  assertEquals(dupRules.length, 2);
+});
+
+Deno.test("data: parameterized List(A) stores params in constructorTyping", () => {
+  const core = compileAndAssert(DATA_PARAM_LIST);
+  const sys = core.systems.get("List")!;
+  const nilInfo = sys.constructorTyping.get("Nil")!;
+  assertEquals(nilInfo.typeName, "List");
+  assertEquals(nilInfo.params, ["A"]);
+  assertEquals(nilInfo.fields.length, 0);
+
+  const consInfo = sys.constructorTyping.get("Cons")!;
+  assertEquals(consInfo.typeName, "List");
+  assertEquals(consInfo.params, ["A"]);
+  assertEquals(consInfo.fields.length, 2);
+  assertEquals(consInfo.fields[0].name, "head");
+  assertEquals(consInfo.fields[0].type, { kind: "ident", name: "A" });
+  assertEquals(consInfo.fields[1].name, "tail");
+  assertEquals(consInfo.fields[1].type, { kind: "call", name: "List", args: [{ kind: "ident", name: "A" }] });
+});
+
+Deno.test("data: non-parameterized data has empty params", () => {
+  const core = compileAndAssert(DATA_NAT);
+  const sys = core.systems.get("Nat")!;
+  const succInfo = sys.constructorTyping.get("Succ")!;
+  assertEquals(succInfo.params, []);
+  assertEquals(succInfo.fields[0].type, { kind: "ident", name: "Nat" });
+});

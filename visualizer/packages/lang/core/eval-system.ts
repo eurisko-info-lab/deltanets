@@ -49,7 +49,7 @@ export function evalBodyInto(
       constructorsByType.set(item.name, new Set(item.constructors.map((c) => c.name)));
       // Build constructor typing for the type checker
       for (const ctor of item.constructors) {
-        constructorTyping.set(ctor.name, { typeName: item.name, fields: ctor.fields });
+        constructorTyping.set(ctor.name, { typeName: item.name, params: item.params, fields: ctor.fields });
       }
     } else if (item.kind === "prove") {
       const firstParam = item.params[0];
@@ -562,6 +562,13 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
 //   rule dup_nat <> Zero -> { ... }
 //   rule dup_nat <> Succ -> { ... }
 
+/** Extract the base type name from a field type expression (lowercase). */
+function fieldTypeBaseName(type: AST.ProveExpr): string {
+  if (type.kind === "ident") return type.name.toLowerCase();
+  if (type.kind === "call") return type.name.toLowerCase();
+  return "unknown";
+}
+
 function desugarData(
   decl: AST.DataDecl,
   agents: Map<string, AgentDef>,
@@ -612,7 +619,7 @@ function buildDupRule(ctor: AST.DataConstructor, typeName: string): AST.CustomAc
   // For each field: create a sub-duplicator and wire it through
   for (let i = 0; i < ctor.fields.length; i++) {
     const field = ctor.fields[i];
-    const subDup = `dup_${field.type.toLowerCase()}`;
+    const subDup = `dup_${fieldTypeBaseName(field.type)}`;
     const varName = `_d${i}`;
     stmts.push({ kind: "let", varName, agentType: subDup });
     stmts.push({ kind: "relink", portA: { node: "right", port: field.name }, portB: { node: varName, port: "principal" } });
