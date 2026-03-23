@@ -16,7 +16,13 @@ export {
   META_AGENTS, META_MATCH_GOAL, META_APPLY_RULE, META_NORMALIZE,
   META_AGENT_DECLS,
 } from "./core/meta-agents.ts";
-export { normalize } from "./core/typecheck-prove.ts";
+export { normalize, computeGoalType } from "./core/typecheck-prove.ts";
+export {
+  registerBuiltinTactics, compileTactic, resolveUserTactics,
+  createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,
+  TACTIC_AGENTS, TACTIC_SIMP, TACTIC_DECIDE, TACTIC_OMEGA, TACTIC_AUTO,
+  TACTIC_AGENT_DECLS, BUILTIN_TACTIC_NAMES,
+} from "./core/tactics.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
 export type {
@@ -30,6 +36,7 @@ export type {
   ProofTree,
   RuleDef,
   SystemDef,
+  TacticDef,
 } from "./core/index.ts";
 export type { AgentRole, AgentStyleDef } from "./view/evaluator.ts";
 export {

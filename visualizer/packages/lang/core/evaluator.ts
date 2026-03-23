@@ -48,6 +48,13 @@ export type SystemDef = {
   computeRules: import("./typecheck-prove.ts").ComputeRule[];
   constructorTyping: import("./typecheck-prove.ts").ConstructorTyping;
   exports?: Set<string>; // if set, only these agents are visible to open/extend
+  tactics?: Map<string, TacticDef>; // user-defined tactics
+};
+
+export type TacticDef = {
+  name: string;
+  agents: Map<string, AgentDef>;
+  rules: RuleDef[];
 };
 
 export type GraphDef =
@@ -255,6 +262,11 @@ export function evaluate(
         case "lanes": {
           const view = evalLaneView(stmt);
           laneViews.set(view.name, view);
+          break;
+        }
+        case "tactic": {
+          // Top-level tactic: process via evalBodyInto
+          evalBodyInto([stmt], ambientAgents, ambientRules, ambientModes);
           break;
         }
       }

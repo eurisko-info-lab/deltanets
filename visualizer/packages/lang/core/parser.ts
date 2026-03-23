@@ -168,6 +168,8 @@ class Parser {
         return this.parseRecordDecl();
       case TT.COMPUTE:
         return this.parseComputeDecl();
+      case TT.TACTIC:
+        return this.parseTacticDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -323,8 +325,9 @@ class Parser {
       else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
       else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
+      else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/compute/open/export, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/compute/open/export/tactic, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -834,6 +837,31 @@ class Parser {
       return { kind: "ctor", name, args };
     }
     return { kind: "var", name };
+  }
+
+  // ─── Tactic (user-definable proof tactic) ────────────────────────
+  // tactic name { agent..., rule... }
+  // The tactic name is auto-declared as agent name(principal, result).
+
+  parseTacticDecl(): AST.TacticDecl {
+    this.eat(TT.TACTIC);
+    const name = this.eatIdent();
+    this.eat(TT.LBRACE);
+    const body: (AST.AgentDecl | AST.RuleDecl)[] = [];
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const tok = this.peek();
+      if (tok.type === TT.AGENT) body.push(this.parseAgentDecl());
+      else if (tok.type === TT.RULE) body.push(...this.parseRuleDecl());
+      else {
+        throw new ParseError(
+          `Expected agent/rule in tactic body, got '${tok.value}'`,
+          tok.line,
+          tok.col,
+        );
+      }
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "tactic", name, body };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

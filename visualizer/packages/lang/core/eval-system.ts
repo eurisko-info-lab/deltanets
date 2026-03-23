@@ -5,21 +5,22 @@
 
 import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
-import type { AgentDef, ModeDef, RuleDef, SystemDef } from "./evaluator.ts";
+import type { AgentDef, ModeDef, RuleDef, SystemDef, TacticDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, resolveDecide, resolveOmega, resolveAuto, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 import { registerQuotationAgents, quoteExpr, containsQuote, QUOTE_AGENTS } from "./quotation.ts";
 import { registerMetaAgents, META_AGENTS } from "./meta-agents.ts";
+import { registerBuiltinTactics, compileTactic, resolveUserTactics, TACTIC_AGENTS } from "./tactics.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined };
   return { sys, proofTrees };
 }
 
@@ -36,10 +37,11 @@ export function evalBodyInto(
   inheritedCompute?: ComputeRule[],
   inheritedCtorTyping?: ConstructorTyping,
   systems?: Map<string, SystemDef>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string> } {
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef> } {
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
+  const tactics = new Map<string, TacticDef>();
   // Pre-scan: collect constructor families and compute rules before processing
   // Inherit from parent systems if available
   const constructorsByType = new Map<string, Set<string>>();
@@ -105,6 +107,15 @@ export function evalBodyInto(
     }
     if (item.kind === "open" && item.system === "Meta") {
       for (const name of META_AGENTS) knownAgents.add(name);
+    }
+    if (item.kind === "open" && item.system === "Tactics") {
+      for (const name of TACTIC_AGENTS) knownAgents.add(name);
+    }
+    if (item.kind === "tactic") {
+      knownAgents.add(item.name);
+      for (const sub of item.body) {
+        if (sub.kind === "agent") knownAgents.add(sub.name);
+      }
     }
     if (item.kind === "open" && systems) {
       const source = systems.get(item.system);
@@ -195,6 +206,10 @@ export function evalBodyInto(
         prove = withNormTable(computeRules, () => resolveOmega(prove, provedCtx, computeRules));
         // Resolve auto tactic (depth-bounded proof search)
         prove = withNormTable(computeRules, () => resolveAuto(prove, provedCtx, computeRules));
+        // Resolve user-defined tactics
+        if (tactics.size > 0) {
+          prove = withNormTable(computeRules, () => resolveUserTactics(prove, provedCtx, computeRules, tactics, agents, rules));
+        }
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
@@ -243,6 +258,11 @@ export function evalBodyInto(
           registerMetaAgents(agents, rules, computeRules);
           break;
         }
+        // Built-in "Tactics" system: register built-in tactic agents
+        if (item.system === "Tactics") {
+          registerBuiltinTactics(agents, rules, provedCtx, computeRules);
+          break;
+        }
         // Import agents/rules/etc from another system
         if (!systems) throw new EvalError(`Cannot use 'open' without access to systems`);
         const source = systems.get(item.system);
@@ -280,6 +300,13 @@ export function evalBodyInto(
         // Handled below after loop
         break;
       }
+      case "tactic": {
+        const tacDef = compileTactic(item, agents);
+        tactics.set(tacDef.name, tacDef);
+        // Also add tactic rules to the system rules
+        for (const r of tacDef.rules) rules.push(r);
+        break;
+      }
     }
   }
   // Collect export declarations
@@ -287,7 +314,7 @@ export function evalBodyInto(
   const exports = exportNames.length > 0
     ? new Set(exportNames.flatMap(e => e.names))
     : undefined;
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -305,9 +332,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -372,9 +399,9 @@ export function evalCompose(
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────

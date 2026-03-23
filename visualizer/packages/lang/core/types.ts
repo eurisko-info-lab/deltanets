@@ -19,7 +19,8 @@ export type Statement =
   | ProveDecl
   | DataDecl
   | RecordDecl
-  | ComputeDecl;
+  | ComputeDecl
+  | TacticDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -46,7 +47,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -254,6 +255,21 @@ export type ComputeDecl = {
 export type ComputePattern =
   | { kind: "var"; name: string }
   | { kind: "ctor"; name: string; args: string[] };
+
+// ─── Tactic declaration (user-definable proof tactics) ─────────────
+// Defines a named tactic with its own agents and interaction rules.
+//
+//   tactic my_simp {
+//     rule my_simp <> TmApp -> { ... }
+//   }
+//
+// The tactic name is auto-declared as an agent with (principal, result) ports.
+
+export type TacticDecl = {
+  kind: "tactic";
+  name: string;
+  body: (AgentDecl | RuleDecl)[];
+};
 
 // graph name = term <lambda-expr>
 // graph name { let..., wire... }

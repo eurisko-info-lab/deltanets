@@ -28,6 +28,7 @@
 | 16 | Universe polymorphism | `fbbbad7` |
 | 17 | Quotation & reflection | `97d6aaf` |
 | 18 | Meta-agents | `c3cc341` |
+| 19 | Tactic-as-rules | `917d6c6` |
 
 ---
 

@@ -1412,6 +1412,16 @@ function caseCtx(
   };
 }
 
+/** Compute the goal type for a case arm (public API for tactic resolution). */
+export function computeGoalType(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  constructorTyping?: ConstructorTyping,
+): AST.ProveExpr {
+  return caseCtx(prove, caseArm, provedCtx, constructorTyping).expectedType;
+}
+
 /** Build a proof derivation tree for a typed prove block. */
 export function buildProofTree(
   prove: AST.ProveDecl,
