@@ -36,7 +36,7 @@ This watches the project directory and restarts on changes. Other tasks:
 
 ## Architecture
 
-The project is organized as a Deno workspace with four packages:
+The project is organized as a Deno workspace with five packages:
 
 ```
 packages/
@@ -50,10 +50,15 @@ packages/
       lambdacalc.ts      ← Tree-based λ-calculus system
       deltanets/         ← Δ-net interaction system (build, readback, redexes)
   lang/                  ← @deltanets/lang: .inet and .iview language compilers
-    core/                ← .inet compiler (lexer → parser → evaluator)
+    core/                ← .inet compiler (lexer → parser → evaluator → type checker)
+      types.ts           ← AST: DataDecl, ComputeDecl, ProveDecl, ProveExpr, ...
+      lexer.ts           ← Tokenizer with DATA, COMPUTE, PROVE keywords
+      parser.ts          ← Recursive descent parser for all .inet declarations
+      evaluator.ts       ← Top-level evaluation: include resolution, system building
+      eval-system.ts     ← System evaluation: desugar data/prove, build compute rules
+      typecheck-prove.ts ← Dependent type checker for prove blocks + proof trees
     view/                ← .iview compiler (lexer → parser → evaluator)
     bridge.ts            ← Connects .inet compilation to the visualizer
-    examples/            ← Example .inet and .iview files
   render/                ← @deltanets/render: SVG rendering primitives and agents
     core.ts              ← Node2D scene tree, bounds, SVG helpers
     primitives.ts        ← Drawing primitives (circles, triangles, etc.)
@@ -64,6 +69,9 @@ packages/
     index.ts             ← Method registry (lambdacalc, deltanets)
     lambdacalc.ts        ← Tree-stepping method with render
     deltanets/           ← Graph-stepping method with render pipeline
+  tests/                 ← @deltanets/tests: test suite (443 tests)
+    helpers.ts           ← System fixtures, compile/reduce helpers
+    *_test.ts            ← Per-feature tests (nat, bool, list, eq, dep_types, ...)
 
 islands/App.tsx          ← Main app shell, composes editor + graph + toolbar
 islands/Graph.tsx        ← SVG canvas with pan/zoom/drag (D3)
@@ -116,9 +124,9 @@ with real-time note highlighting.
 ## The .inet Language
 
 The `.inet` format defines custom interaction net systems with agents, rules,
-modes, and graphs:
+modes, definitions, and graphs:
 
-```
+```inet
 system "Example" {
   agent abs(principal, body, bind)
   agent app(func, result, arg)
@@ -133,6 +141,64 @@ system "Example" {
 def I = \x.x
 graph identity = term I
 ```
+
+### Data Declarations
+
+Define inductive types with named constructors and typed fields. Auto-generates
+constructor agents, a duplicator agent, and duplication rules:
+
+```inet
+data Nat {
+  | Zero
+  | Succ(pred : Nat)
+}
+
+data Bool {
+  | True
+  | False
+}
+
+data List {
+  | Nil
+  | Cons(head : Nat, tail : List)
+}
+```
+
+### Compute Declarations
+
+Define normalization equations for type-level reduction during proof checking.
+Patterns match constructors in the first argument:
+
+```inet
+compute add(Zero, y) = y
+compute add(Succ(k), y) = Succ(add(k, y))
+
+compute append(Nil, ys) = ys
+compute append(Cons(h, t), ys) = Cons(h, append(t, ys))
+```
+
+### Prove Declarations
+
+Write typed proofs by structural induction. The type checker verifies each case
+arm against the declared proposition, using `compute` rules for normalization:
+
+```inet
+prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+  | Zero -> refl
+  | Succ(k) -> cong_succ(plus_zero_right(k))
+}
+
+prove plus_comm(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+  | Zero -> sym(plus_zero_right(m))
+  | Succ(k) -> trans(cong_succ(plus_comm(k, m)), sym(plus_succ_right(m, k)))
+}
+```
+
+Available proof constructs: `refl`, `sym`, `trans`, `cong_X` (generalized
+congruence), `subst` (transport), `pair`/`fst`/`snd` (Σ-types), `exact`,
+`apply`, `rewrite`, `assumption`, and recursive inductive-hypothesis calls.
+
+### Visual Presentation (.iview)
 
 The `.iview` format defines visual presentation (themes, agent styles, wire
 styles, palettes):
@@ -149,12 +215,12 @@ render abs {
 }
 ```
 
-See `packages/lang/examples/` for complete examples.
+See `static/examples/` for complete examples.
 
 ## Tests
 
 ```
-deno task test        # All tests
+deno task test        # All tests (443 tests)
 deno task test:core   # Core package (reductions, readback, build, redexes, typechecker)
 deno task test:lang   # Lang package (compiler, examples, lanes, music)
 ```
