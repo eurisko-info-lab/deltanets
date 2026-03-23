@@ -420,6 +420,10 @@ function inferType(
     if (expr.name === "assumption") {
       return { ok: false, error: "assumption: no matching hypothesis found in context" };
     }
+    // conv — proves goal by definitional equality (normalization)
+    if (expr.name === "conv") {
+      return { ok: true, type: ident("conv") };
+    }
     // Nullary constructor: infer type from data declaration
     const ctorInfo = ctx.constructorTyping.get(expr.name);
     if (ctorInfo) {
@@ -567,6 +571,20 @@ function inferType(
   // rewrite(proof) — returns proof's type; typecheckProve validates contextually
   if (name === "rewrite" && args.length === 1) {
     return inferType(args[0], ctx);
+  }
+
+  // calc(step1, step2, ...) — chained transitivity: calc(p1, p2) = trans(p1, p2)
+  if (name === "calc" && args.length >= 2) {
+    let acc = args[0];
+    for (let i = 1; i < args.length; i++) {
+      acc = app("trans", acc, args[i]);
+    }
+    return inferType(acc, ctx);
+  }
+
+  // conv — proves goal by definitional equality (normalization)
+  if (name === "conv" && args.length === 0) {
+    return { ok: true, type: ident("conv") };
   }
 
   // Cross-lemma call: look up previously proved proposition
@@ -757,6 +775,9 @@ function buildNode(
   if (expr.kind === "ident" && expr.name === "refl") {
     return { rule: "refl", term, conclusion, children: [] };
   }
+  if (expr.kind === "ident" && expr.name === "conv") {
+    return { rule: "conv", term, conclusion, children: [] };
+  }
   if (expr.kind === "ident") {
     return { rule: "?", term, conclusion, children: [] };
   }
@@ -859,6 +880,14 @@ function buildNode(
   }
   if (name === "rewrite" && args.length === 1) {
     return { rule: "rewrite", term, conclusion, children: [buildNode(args[0], ctx)] };
+  }
+  if (name === "calc" && args.length >= 2) {
+    let acc = args[0];
+    for (let i = 1; i < args.length; i++) acc = app("trans", acc, args[i]);
+    return buildNode(acc, ctx, expected);
+  }
+  if (name === "conv" && args.length === 0) {
+    return { rule: "conv", term, conclusion, children: [] };
   }
   if (name === ctx.prove.name) {
     return { rule: "IH", term, conclusion, children: [] };
@@ -990,16 +1019,30 @@ export function buildProofTree(
 }
 
 // ─── Tactic sugar stripping ────────────────────────────────────────
-// Recursively rewrites exact(e) → e, apply(f, a, b) → f(a, b).
+// Recursively rewrites exact(e) → e, apply(f, a, b) → f(a, b),
+// calc(p1, p2, ...) → trans(trans(p1, p2), ...).
 
 function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripTacticSugar(c.body) })) };
   }
+  if (expr.kind === "ident" && expr.name === "conv") {
+    return { kind: "ident", name: "refl" };
+  }
   if (expr.kind !== "call") return expr;
   if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
+  }
+  if (expr.name === "calc" && expr.args.length >= 2) {
+    let acc = stripTacticSugar(expr.args[0]);
+    for (let i = 1; i < expr.args.length; i++) {
+      acc = { kind: "call", name: "trans", args: [acc, stripTacticSugar(expr.args[i])] };
+    }
+    return acc;
+  }
+  if (expr.name === "conv" && expr.args.length === 0) {
+    return { kind: "ident", name: "refl" };
   }
   return { kind: "call", name: expr.name, args: expr.args.map(stripTacticSugar) };
 }
@@ -1168,8 +1211,19 @@ export function typecheckProve(
   for (const caseArm of prove.cases) {
     const { ctx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
-    const body = stripTacticSugar(caseArm.body);
+    const rawBody = caseArm.body;
     const reqEq = extractEq(requiredType);
+
+    // Handle conv — goal proved by definitional equality (both sides normalize to same term)
+    // Check on raw body BEFORE stripTacticSugar (which would convert conv → refl)
+    if ((rawBody.kind === "ident" && rawBody.name === "conv") ||
+        (rawBody.kind === "call" && rawBody.name === "conv" && rawBody.args.length === 0)) {
+      if (reqEq && exprEqual(normalize(reqEq.left), normalize(reqEq.right))) continue;
+      errors.push(`${prefix}: conv failed — sides are not definitionally equal\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    const body = stripTacticSugar(rawBody);
 
     // Handle rewrite(proof) — contextual goal-rewriting check
     if (body.kind === "call" && body.name === "rewrite" && body.args.length === 1) {

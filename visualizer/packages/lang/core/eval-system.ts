@@ -578,10 +578,23 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripExprTactics(c.body) })) };
   }
+  if (expr.kind === "ident" && expr.name === "conv") {
+    return { kind: "ident", name: "refl" };
+  }
   if (expr.kind !== "call") return expr;
   if (expr.name === "exact" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripExprTactics) };
+  }
+  if (expr.name === "calc" && expr.args.length >= 2) {
+    let acc = stripExprTactics(expr.args[0]);
+    for (let i = 1; i < expr.args.length; i++) {
+      acc = { kind: "call", name: "trans", args: [acc, stripExprTactics(expr.args[i])] };
+    }
+    return acc;
+  }
+  if (expr.name === "conv" && expr.args.length === 0) {
+    return { kind: "ident", name: "refl" };
   }
   return { kind: "call", name: expr.name, args: expr.args.map(stripExprTactics) };
 }
