@@ -49,7 +49,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -63,6 +63,20 @@ export type OpenDecl = {
 export type ExportDecl = {
   kind: "export";
   names: string[];
+};
+
+// section "name" { variable(A : Type) ... declarations ... }
+// Variables are auto-abstracted as implicit params on enclosed proves.
+export type SectionDecl = {
+  kind: "section";
+  name: string;
+  variables: SectionVariable[];
+  body: SystemBody[];
+};
+
+export type SectionVariable = {
+  name: string;
+  type: ProveExpr;
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

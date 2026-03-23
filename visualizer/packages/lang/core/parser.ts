@@ -362,8 +362,9 @@ class Parser {
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
+      else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1005,6 +1006,50 @@ class Parser {
       );
     }
     return { kind: "mutual", data, proves };
+  }
+
+  // ─── Section ─────────────────────────────────────────────────────
+
+  parseSectionDecl(): AST.SectionDecl {
+    this.eat(TT.SECTION);
+    const name = this.eatIdent();
+    this.eat(TT.LBRACE);
+    const variables: AST.SectionVariable[] = [];
+    while (this.check(TT.VARIABLE)) {
+      this.advance();
+      this.eat(TT.LPAREN);
+      const varName = this.eatIdent();
+      this.eat(TT.COLON);
+      const type = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      variables.push({ name: varName, type });
+    }
+    // Parse remaining declarations as system body items
+    const body: AST.SystemBody[] = [];
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const tok = this.peek();
+      if (tok.type === TT.AGENT) body.push(this.parseAgentDecl());
+      else if (tok.type === TT.RULE) body.push(...this.parseRuleDecl());
+      else if (tok.type === TT.MODE) body.push(this.parseModeDecl());
+      else if (tok.type === TT.PROVE) body.push(this.parseProveDecl());
+      else if (tok.type === TT.DATA) body.push(this.parseDataDecl());
+      else if (tok.type === TT.RECORD) body.push(this.parseRecordDecl());
+      else if (tok.type === TT.CODATA) body.push(this.parseCodataDecl());
+      else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
+      else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
+      else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
+      else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
+      else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
+      else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
+      else {
+        throw new ParseError(
+          `Expected declaration in section body, got '${tok.value}'`,
+          tok.line, tok.col,
+        );
+      }
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "section", name, variables, body };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

@@ -38,6 +38,8 @@ export const TT = {
   TACTIC: "TACTIC",
   MUTUAL: "MUTUAL",
   CODATA: "CODATA",
+  SECTION: "SECTION",
+  VARIABLE: "VARIABLE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -108,6 +110,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   tactic: TT.TACTIC,
   mutual: TT.MUTUAL,
   codata: TT.CODATA,
+  section: TT.SECTION,
+  variable: TT.VARIABLE,
 };
 
 export class LexError extends Error {

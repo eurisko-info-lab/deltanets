@@ -27,8 +27,60 @@ export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
 // existing collections, used by extend and compose.
 // Returns any proof trees generated from typed prove blocks.
-export function evalBodyInto(
+// ─── Section expansion ──────────────────────────────────────────
+// Flatten section declarations, prepending section variables as implicit
+// params on prove/data/mutual items inside the section.
+function expandSections(
   body: AST.SystemBody[],
+  sectionVars: AST.SectionVariable[] = [],
+): AST.SystemBody[] {
+  const result: AST.SystemBody[] = [];
+  for (const item of body) {
+    if (item.kind === "section") {
+      // Accumulate section variables, then recurse into body
+      const combined = [...sectionVars, ...item.variables];
+      result.push(...expandSections(item.body, combined));
+    } else if (sectionVars.length > 0) {
+      // Prepend section variables as implicit params
+      if (item.kind === "prove") {
+        const implicitParams: AST.ProveParam[] = sectionVars.map((v) => ({
+          name: v.name,
+          type: v.type,
+          implicit: true,
+        }));
+        result.push({ ...item, params: [...implicitParams, ...item.params] });
+      } else if (item.kind === "data") {
+        const extraParams = sectionVars.map((v) => v.name);
+        result.push({ ...item, params: [...extraParams, ...item.params] });
+      } else if (item.kind === "mutual") {
+        const expandedData = item.data.map((d) => ({
+          ...d,
+          params: [...sectionVars.map((v) => v.name), ...d.params],
+        }));
+        const expandedProves = item.proves.map((p) => ({
+          ...p,
+          params: [
+            ...sectionVars.map((v): AST.ProveParam => ({
+              name: v.name,
+              type: v.type,
+              implicit: true,
+            })),
+            ...p.params,
+          ],
+        }));
+        result.push({ ...item, data: expandedData, proves: expandedProves });
+      } else {
+        result.push(item);
+      }
+    } else {
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+export function evalBodyInto(
+  rawBody: AST.SystemBody[],
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
   modes: Map<string, ModeDef>,
@@ -38,6 +90,7 @@ export function evalBodyInto(
   inheritedCtorTyping?: ConstructorTyping,
   systems?: Map<string, SystemDef>,
 ): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef> } {
+  const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
