@@ -321,8 +321,10 @@ class Parser {
       else if (tok.type === TT.DATA) body.push(this.parseDataDecl());
       else if (tok.type === TT.RECORD) body.push(this.parseRecordDecl());
       else if (tok.type === TT.COMPUTE) body.push(this.parseComputeDecl());
+      else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
+      else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/compute, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/compute/open/export, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -725,6 +727,30 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "record", name, params, fields };
+  }
+
+  // ─── Open (import from another system) ───────────────────────────
+  // open "SystemName"
+  // open "SystemName" use AgentA, AgentB
+
+  parseOpenDecl(): AST.OpenDecl {
+    this.eat(TT.OPEN);
+    const system = this.eat(TT.STRING).value;
+    let names: string[] | undefined;
+    if (this.check(TT.USE)) {
+      this.advance();
+      names = this.parseCommaList(() => this.eatIdent());
+    }
+    return { kind: "open", system, names };
+  }
+
+  // ─── Export (visibility control) ─────────────────────────────────
+  // export AgentA, AgentB
+
+  parseExportDecl(): AST.ExportDecl {
+    this.eat(TT.EXPORT);
+    const names = this.parseCommaList(() => this.eatIdent());
+    return { kind: "export", names };
   }
 
   // ─── Compute (type-level reduction rule) ─────────────────────────

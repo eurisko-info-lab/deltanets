@@ -47,6 +47,7 @@ export type SystemDef = {
   constructorsByType: Map<string, Set<string>>;
   computeRules: import("./typecheck-prove.ts").ComputeRule[];
   constructorTyping: import("./typecheck-prove.ts").ConstructorTyping;
+  exports?: Set<string>; // if set, only these agents are visible to open/extend
 };
 
 export type GraphDef =
@@ -156,7 +157,7 @@ export function evaluate(
     try {
       switch (stmt.kind) {
         case "system": {
-          const { sys, proofTrees: trees } = evalSystem(stmt);
+          const { sys, proofTrees: trees } = evalSystem(stmt, systems);
           systems.set(sys.name, sys);
           for (const t of trees) proofTrees.set(t.name, t);
           break;

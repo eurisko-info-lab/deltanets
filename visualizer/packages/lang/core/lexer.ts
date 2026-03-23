@@ -30,6 +30,9 @@ export const TT = {
   DATA: "DATA",
   RECORD: "RECORD",
   COMPUTE: "COMPUTE",
+  OPEN: "OPEN",
+  EXPORT: "EXPORT",
+  USE: "USE",
   PIPE: "PIPE",
   // Operators
   INTERACT: "INTERACT", // <>
@@ -94,6 +97,9 @@ const KEYWORDS: Record<string, TokenKind> = {
   data: TT.DATA,
   record: TT.RECORD,
   compute: TT.COMPUTE,
+  open: TT.OPEN,
+  export: TT.EXPORT,
+  use: TT.USE,
 };
 
 export class LexError extends Error {

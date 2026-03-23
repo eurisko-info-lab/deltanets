@@ -10,14 +10,15 @@ import { EvalError } from "./evaluator.ts";
 import { buildProofTree, type ProvedContext, type ProofTree, resolveAssumptions, resolveSimp, typecheckProve, withNormTable } from "./typecheck-prove.ts";
 import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
 
-export function evalSystem(decl: AST.SystemDecl): { sys: SystemDef; proofTrees: ProofTree[] } {
+export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports };
+  return { sys, proofTrees };
 }
 
 // Helper: evaluate a system body (agents/rules/modes/prove) and merge into
@@ -32,7 +33,8 @@ export function evalBodyInto(
   inheritedConstructors?: Map<string, Set<string>>,
   inheritedCompute?: ComputeRule[],
   inheritedCtorTyping?: ConstructorTyping,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping } {
+  systems?: Map<string, SystemDef>,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string> } {
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
@@ -95,6 +97,26 @@ export function evalBodyInto(
     if (item.kind === "record") {
       knownAgents.add(`mk${item.name}`);
       for (const f of item.fields) knownAgents.add(f.name);
+    }
+    if (item.kind === "open" && systems) {
+      const source = systems.get(item.system);
+      if (source) {
+        const visible = getVisibleAgents(source, item.names);
+        for (const name of source.agents.keys()) {
+          if (visible.has(name)) knownAgents.add(name);
+        }
+        // Also pre-populate constructorsByType from opened system
+        for (const [type, ctors] of source.constructorsByType) {
+          if (!constructorsByType.has(type)) constructorsByType.set(type, new Set());
+          for (const c of ctors) {
+            if (visible.has(c)) constructorsByType.get(type)!.add(c);
+          }
+        }
+        // Pre-populate constructorTyping from opened system
+        for (const [name, info] of source.constructorTyping) {
+          if (visible.has(name)) constructorTyping.set(name, info);
+        }
+      }
     }
   }
   // Pre-scan: collect compute rules so they're available for type checking
@@ -196,9 +218,52 @@ export function evalBodyInto(
         // Already pre-scanned into computeRules above
         break;
       }
+      case "open": {
+        // Import agents/rules/etc from another system
+        if (!systems) throw new EvalError(`Cannot use 'open' without access to systems`);
+        const source = systems.get(item.system);
+        if (!source) throw new EvalError(`Cannot open unknown system '${item.system}'`);
+        const visible = getVisibleAgents(source, item.names);
+        for (const [name, agent] of source.agents) {
+          if (visible.has(name)) agents.set(name, agent);
+        }
+        for (const rule of source.rules) {
+          if (visible.has(rule.agentA) && visible.has(rule.agentB)) {
+            rules.push(rule);
+          }
+        }
+        for (const [name, mode] of source.modes) {
+          modes.set(name, mode);
+        }
+        for (const [name, entry] of source.provedCtx) {
+          provedCtx.set(name, entry);
+        }
+        for (const [type, ctors] of source.constructorsByType) {
+          if (!constructorsByType.has(type)) constructorsByType.set(type, new Set());
+          for (const c of ctors) {
+            if (visible.has(c)) constructorsByType.get(type)!.add(c);
+          }
+        }
+        for (const cr of source.computeRules) {
+          computeRules.push(cr);
+        }
+        for (const [name, info] of source.constructorTyping) {
+          if (visible.has(name)) constructorTyping.set(name, info);
+        }
+        break;
+      }
+      case "export": {
+        // Handled below after loop
+        break;
+      }
     }
   }
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping };
+  // Collect export declarations
+  const exportNames = body.filter((b): b is AST.ExportDecl => b.kind === "export");
+  const exports = exportNames.length > 0
+    ? new Set(exportNames.flatMap(e => e.names))
+    : undefined;
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -216,9 +281,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -283,9 +348,9 @@ export function evalCompose(
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports }, proofTrees };
 }
 
 // ─── Agent evaluation ──────────────────────────────────────────────
@@ -845,6 +910,23 @@ function generateProjectionRules(decl: AST.RecordDecl): ComputeRule[] {
     });
   }
   return rules;
+}
+
+// ─── Open/Export helpers ───────────────────────────────────────────
+
+/** Get the set of agent names visible from a system, respecting exports and selective open. */
+function getVisibleAgents(source: SystemDef, selectNames?: string[]): Set<string> {
+  // Start with all agent names from the source
+  let visible = new Set(source.agents.keys());
+  // If the source has export restrictions, apply them
+  if (source.exports) {
+    visible = new Set([...visible].filter(n => source.exports!.has(n)));
+  }
+  // If selective import (open "X" use A, B), filter further
+  if (selectNames) {
+    visible = new Set(selectNames.filter(n => visible.has(n)));
+  }
+  return visible;
 }
 
 // ─── Compute rule conversion ───────────────────────────────────────

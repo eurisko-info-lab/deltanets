@@ -46,7 +46,21 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl;
+
+// open "SystemName" — import all agents/rules from another system
+// open "SystemName" use AgentA, AgentB — selective import
+export type OpenDecl = {
+  kind: "open";
+  system: string;
+  names?: string[]; // undefined = import all, string[] = selective
+};
+
+// export AgentA, AgentB — restrict visible agents for extend/open consumers
+export type ExportDecl = {
+  kind: "export";
+  names: string[];
+};
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }
 // Desugars into an AgentDecl + RuleDecl[] during evaluation.
