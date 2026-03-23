@@ -20,7 +20,8 @@ export type Statement =
   | DataDecl
   | RecordDecl
   | ComputeDecl
-  | TacticDecl;
+  | TacticDecl
+  | MutualDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -47,7 +48,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -231,6 +232,20 @@ export type DataField = {
 //   data Pair(A, B) { | mkPair(fst : A, snd : B) }
 //   compute fst(mkPair(x, y)) = x
 //   compute snd(mkPair(x, y)) = y
+
+// ─── Mutual declaration (mutual inductive types / mutual proofs) ──
+// Groups multiple data or prove declarations for mutual references.
+//
+//   mutual {
+//     data Even { | EZero | ESucc(pred : Odd) }
+//     data Odd { | OSucc(pred : Even) }
+//   }
+
+export type MutualDecl = {
+  kind: "mutual";
+  data: DataDecl[];
+  proves: ProveDecl[];
+};
 
 export type RecordDecl = {
   kind: "record";

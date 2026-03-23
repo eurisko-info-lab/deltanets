@@ -170,6 +170,8 @@ class Parser {
         return this.parseComputeDecl();
       case TT.TACTIC:
         return this.parseTacticDecl();
+      case TT.MUTUAL:
+        return this.parseMutualDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -326,8 +328,9 @@ class Parser {
       else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
+      else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/compute/open/export/tactic, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/compute/open/export/tactic/mutual, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -862,6 +865,37 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "tactic", name, body };
+  }
+
+  // ─── Mutual (mutual inductive types / mutual proves) ─────────────
+  // mutual { data ... data ... prove ... prove ... }
+
+  parseMutualDecl(): AST.MutualDecl {
+    this.eat(TT.MUTUAL);
+    this.eat(TT.LBRACE);
+    const data: AST.DataDecl[] = [];
+    const proves: AST.ProveDecl[] = [];
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const tok = this.peek();
+      if (tok.type === TT.DATA) data.push(this.parseDataDecl());
+      else if (tok.type === TT.PROVE) proves.push(this.parseProveDecl());
+      else {
+        throw new ParseError(
+          `Expected data/prove in mutual block, got '${tok.value}'`,
+          tok.line,
+          tok.col,
+        );
+      }
+    }
+    this.eat(TT.RBRACE);
+    if (data.length + proves.length < 2) {
+      throw new ParseError(
+        `mutual block must contain at least 2 declarations`,
+        this.peek().line,
+        this.peek().col,
+      );
+    }
+    return { kind: "mutual", data, proves };
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

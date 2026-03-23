@@ -64,6 +64,34 @@ export function evalBodyInto(
           returnIndices: ctor.returnIndices,
         });
       }
+    } else if (item.kind === "mutual") {
+      for (const d of item.data) {
+        constructorsByType.set(d.name, new Set(d.constructors.map((c) => c.name)));
+        for (const ctor of d.constructors) {
+          constructorTyping.set(ctor.name, {
+            typeName: d.name,
+            params: d.params,
+            indices: d.indices,
+            fields: ctor.fields,
+            returnIndices: ctor.returnIndices,
+          });
+        }
+      }
+      for (const p of item.proves) {
+        const firstParam = inductionParam(p.params);
+        if (firstParam?.type) {
+          const typeName = firstParam.type.kind === "ident"
+            ? firstParam.type.name
+            : firstParam.type.kind === "call"
+            ? firstParam.type.name
+            : null;
+          if (typeName) {
+            if (!constructorsByType.has(typeName)) constructorsByType.set(typeName, new Set());
+            const set = constructorsByType.get(typeName)!;
+            for (const c of p.cases) set.add(c.pattern);
+          }
+        }
+      }
     } else if (item.kind === "record") {
       const ctorName = `mk${item.name}`;
       constructorsByType.set(item.name, new Set([ctorName]));
@@ -97,6 +125,12 @@ export function evalBodyInto(
     if (item.kind === "agent") knownAgents.add(item.name);
     if (item.kind === "data") {
       for (const ctor of item.constructors) knownAgents.add(ctor.name);
+    }
+    if (item.kind === "mutual") {
+      for (const d of item.data) {
+        for (const ctor of d.constructors) knownAgents.add(ctor.name);
+      }
+      for (const p of item.proves) knownAgents.add(p.name);
     }
     if (item.kind === "record") {
       knownAgents.add(`mk${item.name}`);
@@ -148,6 +182,9 @@ export function evalBodyInto(
   for (const item of body) {
     if (item.kind === "data") {
       computeRules.push(...generateEliminatorRules(item));
+    }
+    if (item.kind === "mutual" && item.data.length > 0) {
+      computeRules.push(...generateMutualEliminatorRules(item.data));
     }
   }
   // Auto-generate projection compute rules for records
@@ -293,6 +330,71 @@ export function evalBodyInto(
         tactics.set(tacDef.name, tacDef);
         // Also add tactic rules to the system rules
         for (const r of tacDef.rules) rules.push(r);
+        break;
+      }
+      case "mutual": {
+        // Phase 21: mutual inductive types and mutual prove blocks
+
+        // 1. Joint positivity check on data declarations
+        if (item.data.length > 0) {
+          const posErrors = checkMutualPositivity(item.data);
+          if (posErrors.length > 0) throw new EvalError(posErrors.join("\n"));
+        }
+
+        // 2. Desugar all data types in the group
+        for (const d of item.data) {
+          desugarData(d, agents, rules, constructorsByType);
+        }
+
+        // 3. Register all mutual prove signatures BEFORE type-checking any
+        const mutualNames = new Set<string>();
+        for (const p of item.proves) {
+          mutualNames.add(p.name);
+          if (p.returnType) {
+            provedCtx.set(p.name, {
+              params: p.params,
+              returnType: p.returnType,
+            });
+          }
+          // Pre-register agent stub so cross-prove references resolve during desugaring
+          const auxParams = getAuxParams(p.params).map((pp) => pp.name);
+          const ports: AST.PortDef[] = [
+            { name: "principal", variadic: false },
+            { name: "result", variadic: false },
+            ...auxParams.map((n) => ({ name: n, variadic: false })),
+          ];
+          agents.set(p.name, evalAgent({ kind: "agent", name: p.name, ports }));
+        }
+
+        // 4. Process each prove in the group
+        for (const p of item.proves) {
+          let prove = p;
+          if (p.induction && p.cases.length === 0) {
+            prove = expandInduction(p, agents, constructorsByType);
+          }
+          prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules));
+          const hasHoles = proveContainsHole(prove);
+          const hasRewrites = proveContainsRewrite(prove);
+          const hasMatch = proveContainsMatch(prove);
+          if (!hasHoles && !hasRewrites && !hasMatch) {
+            const stripped = stripProveTactics(prove);
+            const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
+            const agent = evalAgent(agentDecl);
+            agents.set(agent.name, agent);
+            for (const r of ruleDecls) {
+              rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+            }
+          }
+          const linearityErrors = checkProveLinearity(prove, agents, modes);
+          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping);
+          const termErrors = checkMutualTermination(prove, mutualNames);
+          const allErrors = [...linearityErrors, ...typeErrors, ...termErrors];
+          if (allErrors.length > 0) {
+            throw new EvalError(allErrors.join("\n"));
+          }
+          const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
+          if (tree) proofTrees.push(tree);
+        }
         break;
       }
     }
@@ -803,6 +905,15 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
   return { kind: "call", name: expr.name, args: expr.args.map(stripExprTactics) };
 }
 
+// ─── Expression pretty-printing (for error messages) ───────────────
+function exprToString(e: AST.ProveExpr): string {
+  if (e.kind === "ident") return e.name;
+  if (e.kind === "call") return `${e.name}(${e.args.map(exprToString).join(", ")})`;
+  if (e.kind === "hole") return "?";
+  if (e.kind === "pi") return `(${e.param} : ${exprToString(e.domain)}) -> ${exprToString(e.codomain)}`;
+  return e.kind;
+}
+
 // ─── Data desugaring (syntactic sugar) ─────────────────────────────
 // Expands a `data` declaration into constructor agents, a duplicator
 // agent, and one duplicator rule per constructor.
@@ -941,6 +1052,211 @@ function generateEliminatorRules(decl: AST.DataDecl): ComputeRule[] {
     rules.push({ funcName: recName, args, result });
   }
   return rules;
+}
+
+// ─── Mutual eliminator generation ──────────────────────────────────
+// Cross-type aware eliminators: each recursor takes methods for ALL
+// constructors across the entire mutual group.
+//   Even_rec(EZero, ez_m, es_m, os_m)      = ez_m
+//   Even_rec(ESucc(p), ez_m, es_m, os_m)    = es_m(p, Odd_rec(p, ez_m, es_m, os_m))
+//   Odd_rec(OSucc(p), ez_m, es_m, os_m)     = os_m(p, Even_rec(p, ez_m, es_m, os_m))
+
+function generateMutualEliminatorRules(group: AST.DataDecl[]): ComputeRule[] {
+  const rules: ComputeRule[] = [];
+  const groupNames = new Set(group.map((d) => d.name));
+
+  // Collect method names across all constructors in all types
+  const allMethods: string[] = [];
+  for (const decl of group) {
+    for (let ci = 0; ci < decl.constructors.length; ci++) {
+      allMethods.push(`_m${allMethods.length}`);
+    }
+  }
+  const methodPatterns: AST.ComputePattern[] = allMethods.map((n) => ({
+    kind: "var" as const,
+    name: n,
+  }));
+
+  let methodIdx = 0;
+  for (const decl of group) {
+    const recName = `${decl.name}_rec`;
+    for (let ci = 0; ci < decl.constructors.length; ci++) {
+      const ctor = decl.constructors[ci];
+      const fieldVars = ctor.fields.map((_, fi) => `_f${fi}`);
+
+      const scrutineePattern: AST.ComputePattern = {
+        kind: "ctor" as const,
+        name: ctor.name,
+        args: fieldVars,
+      };
+      const args = [scrutineePattern, ...methodPatterns];
+
+      // Method for this constructor
+      const mi = allMethods[methodIdx + ci];
+      const resultArgs: AST.ProveExpr[] = [];
+      for (let fi = 0; fi < ctor.fields.length; fi++) {
+        const f = ctor.fields[fi];
+        const baseName = f.type.kind === "ident"
+          ? f.type.name
+          : f.type.kind === "call"
+          ? f.type.name
+          : "";
+        if (groupNames.has(baseName)) {
+          // Cross-type (or self) recursive field: call baseName_rec
+          const crossRec: AST.ProveExpr = {
+            kind: "call",
+            name: `${baseName}_rec`,
+            args: [
+              { kind: "ident", name: fieldVars[fi] },
+              ...allMethods.map((n): AST.ProveExpr => ({ kind: "ident", name: n })),
+            ],
+          };
+          resultArgs.push(crossRec);
+        } else {
+          resultArgs.push({ kind: "ident", name: fieldVars[fi] });
+        }
+      }
+
+      const result: AST.ProveExpr = resultArgs.length > 0
+        ? { kind: "call", name: mi, args: resultArgs }
+        : { kind: "ident", name: mi };
+
+      rules.push({ funcName: recName, args, result });
+    }
+    methodIdx += decl.constructors.length;
+  }
+  return rules;
+}
+
+// ─── Joint positivity checking ─────────────────────────────────────
+// Verifies that none of the type names in the mutual group appear in
+// a negative position (left side of Pi/→) in any constructor field.
+
+function checkMutualPositivity(group: AST.DataDecl[]): string[] {
+  const errors: string[] = [];
+  const groupNames = new Set(group.map((d) => d.name));
+
+  function occursNegative(expr: AST.ProveExpr, names: Set<string>): boolean {
+    if (expr.kind === "ident") return false;
+    if (expr.kind === "call") {
+      // args are type parameters, not function arguments → still positive
+      return expr.args.some((a) => occursNegative(a, names));
+    }
+    if (expr.kind === "pi" || expr.kind === "sigma") {
+      // domain is negative position; check if any group name appears there
+      if (mentionsAny(expr.domain, names)) return true;
+      return occursNegative(expr.codomain, names);
+    }
+    if (expr.kind === "lambda") {
+      if (mentionsAny(expr.paramType, names)) return true;
+      return occursNegative(expr.body, names);
+    }
+    return false;
+  }
+
+  function mentionsAny(expr: AST.ProveExpr, names: Set<string>): boolean {
+    if (expr.kind === "ident") return names.has(expr.name);
+    if (expr.kind === "call") {
+      return names.has(expr.name) || expr.args.some((a) => mentionsAny(a, names));
+    }
+    if (expr.kind === "pi" || expr.kind === "sigma") {
+      return mentionsAny(expr.domain, names) || mentionsAny(expr.codomain, names);
+    }
+    if (expr.kind === "lambda") {
+      return mentionsAny(expr.paramType, names) || mentionsAny(expr.body, names);
+    }
+    if (expr.kind === "let") {
+      return mentionsAny(expr.value, names) || mentionsAny(expr.body, names);
+    }
+    if (expr.kind === "match") {
+      return expr.cases.some((c) => mentionsAny(c.body, names));
+    }
+    return false;
+  }
+
+  for (const decl of group) {
+    for (const ctor of decl.constructors) {
+      for (const field of ctor.fields) {
+        if (occursNegative(field.type, groupNames)) {
+          errors.push(
+            `mutual positivity: type ${decl.name}, constructor ${ctor.name}, ` +
+            `field ${field.name} — a mutual type appears in negative position in ${exprToString(field.type)}`,
+          );
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+// ─── Mutual termination checking ───────────────────────────────────
+// Checks that cross-calls within a mutual prove group use at least
+// one structurally decreasing argument (a case binding).
+
+function checkMutualTermination(
+  prove: AST.ProveDecl,
+  mutualNames: Set<string>,
+): string[] {
+  const errors: string[] = [];
+  // Sibling names: all mutual names except self (self is handled by regular checkTermination)
+  const siblings = new Set([...mutualNames].filter((n) => n !== prove.name));
+  if (siblings.size === 0) return errors;
+
+  for (const caseArm of prove.cases) {
+    if (caseArm.body.kind === "hole") continue;
+    const topBindings = new Set(caseArm.bindings);
+    const calls = collectCrossRecCalls(caseArm.body, siblings, topBindings);
+    for (const { call, bindings } of calls) {
+      if (call.kind !== "call" || call.args.length === 0) continue;
+      const hasDecreasing = call.args.some(
+        (a) => a.kind === "ident" && bindings.has(a.name),
+      );
+      if (!hasDecreasing) {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: mutual call ` +
+          `${call.name}(${call.args.map(exprToString).join(", ")}) ` +
+          `is not structurally decreasing — at least one argument must be a case binding` +
+          (bindings.size > 0 ? ` (${[...bindings].join(", ")})` : ``),
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+function collectCrossRecCalls(
+  expr: AST.ProveExpr,
+  funcNames: Set<string>,
+  activeBindings: Set<string>,
+): { call: AST.ProveExpr; bindings: Set<string> }[] {
+  const calls: { call: AST.ProveExpr; bindings: Set<string> }[] = [];
+  function walk(e: AST.ProveExpr, bindings: Set<string>) {
+    if (e.kind === "call") {
+      if (funcNames.has(e.name)) calls.push({ call: e, bindings });
+      for (const a of e.args) walk(a, bindings);
+    }
+    if (e.kind === "let") {
+      walk(e.value, bindings);
+      walk(e.body, bindings);
+    }
+    if (e.kind === "pi" || e.kind === "sigma") {
+      walk(e.domain, bindings);
+      walk(e.codomain, bindings);
+    }
+    if (e.kind === "lambda") {
+      walk(e.paramType, bindings);
+      walk(e.body, bindings);
+    }
+    if (e.kind === "match") {
+      for (const c of e.cases) {
+        const inner = new Set(bindings);
+        for (const b of c.bindings) inner.add(b);
+        walk(c.body, inner);
+      }
+    }
+  }
+  walk(expr, activeBindings);
+  return calls;
 }
 
 // ─── Record desugaring ─────────────────────────────────────────────
