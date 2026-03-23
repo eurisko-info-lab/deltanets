@@ -538,6 +538,8 @@ class Parser {
     this.eat(TT.LBRACE);
     const cases: AST.ProveCase[] = [];
     let induction: string | undefined;
+    let measure: AST.ProveExpr | undefined;
+    let wf: string | undefined;
     // Check for induction(var) sugar — auto-generates case arms
     if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
         this.check(TT.IDENT) && this.peek().value === "induction") {
@@ -545,6 +547,48 @@ class Parser {
       this.eat(TT.LPAREN);
       induction = this.eatIdent();
       this.eat(TT.RPAREN);
+    } else if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
+               this.check(TT.IDENT) && this.peek().value === "measure") {
+      this.advance(); // eat 'measure'
+      this.eat(TT.LPAREN);
+      measure = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      // Parse case arms after measure annotation
+      while (this.check(TT.PIPE)) {
+        this.advance();
+        const pattern = this.eatIdent();
+        const bindings: string[] = [];
+        if (this.check(TT.LPAREN)) {
+          this.advance();
+          if (!this.check(TT.RPAREN))
+            bindings.push(...this.parseCommaList(() => this.eatIdent()));
+          this.eat(TT.RPAREN);
+        }
+        this.eat(TT.ARROW);
+        const body = this.parseProveExpr();
+        cases.push({ pattern, bindings, body });
+      }
+    } else if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
+               this.check(TT.IDENT) && this.peek().value === "wf") {
+      this.advance(); // eat 'wf'
+      this.eat(TT.LPAREN);
+      wf = this.eatIdent();
+      this.eat(TT.RPAREN);
+      // Parse case arms after wf annotation
+      while (this.check(TT.PIPE)) {
+        this.advance();
+        const pattern = this.eatIdent();
+        const bindings: string[] = [];
+        if (this.check(TT.LPAREN)) {
+          this.advance();
+          if (!this.check(TT.RPAREN))
+            bindings.push(...this.parseCommaList(() => this.eatIdent()));
+          this.eat(TT.RPAREN);
+        }
+        this.eat(TT.ARROW);
+        const body = this.parseProveExpr();
+        cases.push({ pattern, bindings, body });
+      }
     } else {
       while (this.check(TT.PIPE)) {
         this.advance(); // eat |
@@ -562,7 +606,7 @@ class Parser {
       }
     }
     this.eat(TT.RBRACE);
-    return { kind: "prove", name, params, returnType, cases, induction };
+    return { kind: "prove", name, params, returnType, cases, induction, measure, wf };
   }
 
   parseProveParam(): AST.ProveParam {

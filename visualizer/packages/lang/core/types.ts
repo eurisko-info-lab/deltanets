@@ -75,6 +75,8 @@ export type ProveDecl = {
   returnType?: ProveExpr; // optional: the proposition being proved
   cases: ProveCase[];
   induction?: string; // if set, auto-expand cases for this variable's type
+  measure?: ProveExpr; // {measure expr} — well-founded recursion via measure function
+  wf?: string; // {wf R} — well-founded recursion via named relation (trusted)
 };
 
 export type ProveParam = {

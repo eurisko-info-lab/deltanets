@@ -1725,6 +1725,84 @@ function collectUnguardedRecCalls(
   return calls;
 }
 
+// ─── Measure-based termination checking ────────────────────────────
+// For `prove f(params) { measure(expr) | ... }`:
+// At each recursive call f(args), substitute args into the measure
+// expression and check that it's strictly smaller than the original.
+
+function checkMeasureTermination(
+  prove: AST.ProveDecl,
+  measureExpr: AST.ProveExpr,
+): string[] {
+  const errors: string[] = [];
+  const paramNames = prove.params.filter((p) => !p.implicit).map((p) => p.name);
+
+  for (const caseArm of prove.cases) {
+    if (caseArm.body.kind === "hole") continue;
+    const topBindings = new Set(caseArm.bindings);
+    const recCalls = collectRecursiveCalls(caseArm.body, prove.name, topBindings);
+
+    // Build the original measure: substitute case pattern for the induction variable
+    const inductVar = paramNames[0];
+    const patternExpr: AST.ProveExpr = caseArm.bindings.length > 0
+      ? { kind: "call", name: caseArm.pattern, args: caseArm.bindings.map((b) => ({ kind: "ident" as const, name: b })) }
+      : { kind: "ident", name: caseArm.pattern };
+    const originalMeasure = normalize(substitute(measureExpr, inductVar, patternExpr));
+
+    for (const { call, bindings } of recCalls) {
+      if (call.kind !== "call" || call.args.length === 0) continue;
+
+      // Build the new measure: substitute call args for params
+      const callBindings = new Map<string, AST.ProveExpr>();
+      for (let i = 0; i < Math.min(call.args.length, paramNames.length); i++) {
+        callBindings.set(paramNames[i], call.args[i]);
+      }
+      const newMeasure = normalize(substituteAll(measureExpr, callBindings));
+
+      // Check: new measure must be strictly smaller than original
+      if (!measureStrictlySmaller(newMeasure, originalMeasure, bindings)) {
+        errors.push(
+          `prove ${prove.name}, case ${caseArm.pattern}: recursive call ` +
+          `${prove.name}(${call.args.map(exprToString).join(", ")}) ` +
+          `— measure ${exprToString(newMeasure)} is not smaller than ${exprToString(originalMeasure)}`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+/** Check if `a` is strictly smaller than `b` as a natural number measure.
+ *  - Zero < Succ(_) ✓
+ *  - Succ(x) < Succ(y) iff x < y
+ *  - x < Succ(x) when syntactically equal ✓
+ *  - Any ident that is a case binding is considered smaller (structural fallback) */
+function measureStrictlySmaller(
+  a: AST.ProveExpr,
+  b: AST.ProveExpr,
+  bindings: Set<string>,
+): boolean {
+  // Case binding fallback: a binding is smaller than any Succ-wrapped expression
+  if (a.kind === "ident" && bindings.has(a.name) &&
+      b.kind === "call" && b.name === "Succ") return true;
+
+  // Zero < Succ(_)
+  if (a.kind === "ident" && a.name === "Zero" &&
+      b.kind === "call" && b.name === "Succ") return true;
+
+  // Succ(x) < Succ(y) iff x < y
+  if (a.kind === "call" && a.name === "Succ" && a.args.length === 1 &&
+      b.kind === "call" && b.name === "Succ" && b.args.length === 1) {
+    return measureStrictlySmaller(a.args[0], b.args[0], bindings);
+  }
+
+  // x < Succ(x) when syntactically equal
+  if (b.kind === "call" && b.name === "Succ" && b.args.length === 1 &&
+      exprEqual(a, b.args[0])) return true;
+
+  return false;
+}
+
 // ─── Exhaustiveness checking ───────────────────────────────────────
 // When the first param has a type annotation (e.g., n : Nat) and we
 // know the constructors for that type, check that all are covered.
@@ -1832,7 +1910,12 @@ export function typecheckProve(
        : prove.returnType.kind === "call" ? prove.returnType.name : null)
     : null;
   const isCodata = returnTypeName != null && codataTypes != null && codataTypes.has(returnTypeName);
-  const termErrors = isCodata
+  // Choose termination strategy: wf (trusted), measure, codata productivity, or structural
+  const termErrors = prove.wf
+    ? [] // wf: trusted — no termination check
+    : prove.measure
+    ? checkMeasureTermination(prove, prove.measure)
+    : isCodata
     ? checkProductivity(prove, returnTypeName)
     : checkTermination(prove);
   if (!prove.returnType) return [...exhaustErrors, ...termErrors];

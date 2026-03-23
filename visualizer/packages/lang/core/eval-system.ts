@@ -1220,6 +1220,7 @@ function checkMutualTermination(
   prove: AST.ProveDecl,
   mutualNames: Set<string>,
 ): string[] {
+  if (prove.wf) return []; // trusted — skip mutual termination check
   const errors: string[] = [];
   // Sibling names: all mutual names except self (self is handled by regular checkTermination)
   const siblings = new Set([...mutualNames].filter((n) => n !== prove.name));
