@@ -102,7 +102,10 @@ export type ProveExpr =
   | { kind: "call"; name: string; args: ProveExpr[] } // agent application
   | { kind: "hole" } // unfilled goal placeholder (?)
   | { kind: "match"; scrutinee: string; cases: ProveCase[] } // nested case analysis
-  | { kind: "let"; name: string; value: ProveExpr; body: ProveExpr }; // let x = e in body
+  | { kind: "let"; name: string; value: ProveExpr; body: ProveExpr } // let x = e in body
+  | { kind: "pi"; param: string; domain: ProveExpr; codomain: ProveExpr } // forall(x : A, B)
+  | { kind: "sigma"; param: string; domain: ProveExpr; codomain: ProveExpr } // exists(x : A, B)
+  | { kind: "lambda"; param: string; paramType: ProveExpr; body: ProveExpr }; // fun(x : A, body)
 
 // agent name(port, port, ..variadicPort)
 export type AgentDecl = {

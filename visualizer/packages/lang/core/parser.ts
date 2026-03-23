@@ -593,6 +593,52 @@ class Parser {
       const body = this.parseProveExpr();
       return { kind: "let", name, value, body };
     }
+    // forall(x : A, B) — Pi type
+    if (this.check(TT.IDENT) && this.peek().value === "forall") {
+      this.advance();
+      this.eat(TT.LPAREN);
+      const param = this.eatIdent();
+      this.eat(TT.COLON);
+      const domain = this.parseProveExpr();
+      this.eat(TT.COMMA);
+      const codomain = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      return { kind: "pi", param, domain, codomain };
+    }
+    // exists(x : A, B) — Sigma type
+    if (this.check(TT.IDENT) && this.peek().value === "exists") {
+      this.advance();
+      this.eat(TT.LPAREN);
+      const param = this.eatIdent();
+      this.eat(TT.COLON);
+      const domain = this.parseProveExpr();
+      this.eat(TT.COMMA);
+      const codomain = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      return { kind: "sigma", param, domain, codomain };
+    }
+    // fun(x : A, body) — lambda
+    if (this.check(TT.IDENT) && this.peek().value === "fun") {
+      this.advance();
+      this.eat(TT.LPAREN);
+      const param = this.eatIdent();
+      this.eat(TT.COLON);
+      const paramType = this.parseProveExpr();
+      this.eat(TT.COMMA);
+      const body = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+      return { kind: "lambda", param, paramType, body };
+    }
+    // \x:A.body — lambda (backslash syntax)
+    if (this.check(TT.BACKSLASH)) {
+      this.advance();
+      const param = this.eatIdent();
+      this.eat(TT.COLON);
+      const paramType = this.parseProveExpr();
+      this.eat(TT.DOT);
+      const body = this.parseProveExpr();
+      return { kind: "lambda", param, paramType, body };
+    }
     const name = this.eatIdent();
     // match(scrutinee) { | Pat(bindings) -> body ... }
     if (name === "match") {

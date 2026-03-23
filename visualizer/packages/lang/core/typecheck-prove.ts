@@ -86,6 +86,18 @@ function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
     return a.name === b.name && exprEqual(a.value, b.value) && exprEqual(a.body, b.body);
   }
   if (a.kind === "let" || b.kind === "let") return false;
+  if (a.kind === "pi" && b.kind === "pi") {
+    return exprEqual(a.domain, b.domain) && exprEqual(substitute(a.codomain, a.param, ident(b.param)), b.codomain);
+  }
+  if (a.kind === "sigma" && b.kind === "sigma") {
+    return exprEqual(a.domain, b.domain) && exprEqual(substitute(a.codomain, a.param, ident(b.param)), b.codomain);
+  }
+  if (a.kind === "lambda" && b.kind === "lambda") {
+    return exprEqual(a.paramType, b.paramType) && exprEqual(substitute(a.body, a.param, ident(b.param)), b.body);
+  }
+  if (a.kind === "pi" || b.kind === "pi") return false;
+  if (a.kind === "sigma" || b.kind === "sigma") return false;
+  if (a.kind === "lambda" || b.kind === "lambda") return false;
   if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
   if (a.kind === "call" && b.kind === "call") {
     if (a.name !== b.name || a.args.length !== b.args.length) return false;
@@ -103,6 +115,9 @@ function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
   if (e.kind === "match") return `match(${e.scrutinee}) { ... }`;
   if (e.kind === "let") return `let ${e.name} = ${exprToString(e.value)} in ${exprToString(e.body)}`;
+  if (e.kind === "pi") return `∀(${e.param} : ${exprToString(e.domain)}), ${exprToString(e.codomain)}`;
+  if (e.kind === "sigma") return `Σ(${e.param} : ${exprToString(e.domain)}), ${exprToString(e.codomain)}`;
+  if (e.kind === "lambda") return `λ(${e.param} : ${exprToString(e.paramType)}). ${exprToString(e.body)}`;
   if (e.kind === "ident") {
     if (e.name === "Type") return "Type" + toSubscript(0);
     const m = e.name.match(/^Type(\d+)$/);
@@ -133,6 +148,21 @@ function substitute(
     // Shadowing: if the let-bound name matches, don't substitute in body
     if (expr.name === varName) return { kind: "let", name: expr.name, value: newValue, body: expr.body };
     return { kind: "let", name: expr.name, value: newValue, body: substitute(expr.body, varName, value) };
+  }
+  if (expr.kind === "pi") {
+    const newDomain = substitute(expr.domain, varName, value);
+    if (expr.param === varName) return { kind: "pi", param: expr.param, domain: newDomain, codomain: expr.codomain };
+    return { kind: "pi", param: expr.param, domain: newDomain, codomain: substitute(expr.codomain, varName, value) };
+  }
+  if (expr.kind === "sigma") {
+    const newDomain = substitute(expr.domain, varName, value);
+    if (expr.param === varName) return { kind: "sigma", param: expr.param, domain: newDomain, codomain: expr.codomain };
+    return { kind: "sigma", param: expr.param, domain: newDomain, codomain: substitute(expr.codomain, varName, value) };
+  }
+  if (expr.kind === "lambda") {
+    const newType = substitute(expr.paramType, varName, value);
+    if (expr.param === varName) return { kind: "lambda", param: expr.param, paramType: newType, body: expr.body };
+    return { kind: "lambda", param: expr.param, paramType: newType, body: substitute(expr.body, varName, value) };
   }
   if (expr.kind === "match") {
     return {
@@ -166,6 +196,24 @@ function substituteAll(
     const innerBindings = new Map(bindings);
     innerBindings.delete(expr.name);
     return { kind: "let", name: expr.name, value: newValue, body: substituteAll(expr.body, innerBindings) };
+  }
+  if (expr.kind === "pi") {
+    const newDomain = substituteAll(expr.domain, bindings);
+    const innerBindings = new Map(bindings);
+    innerBindings.delete(expr.param);
+    return { kind: "pi", param: expr.param, domain: newDomain, codomain: substituteAll(expr.codomain, innerBindings) };
+  }
+  if (expr.kind === "sigma") {
+    const newDomain = substituteAll(expr.domain, bindings);
+    const innerBindings = new Map(bindings);
+    innerBindings.delete(expr.param);
+    return { kind: "sigma", param: expr.param, domain: newDomain, codomain: substituteAll(expr.codomain, innerBindings) };
+  }
+  if (expr.kind === "lambda") {
+    const newType = substituteAll(expr.paramType, bindings);
+    const innerBindings = new Map(bindings);
+    innerBindings.delete(expr.param);
+    return { kind: "lambda", param: expr.param, paramType: newType, body: substituteAll(expr.body, innerBindings) };
   }
   if (expr.kind === "match") {
     const replacement = bindings.get(expr.scrutinee);
@@ -214,6 +262,15 @@ function substituteComputeResult(
 ): AST.ProveExpr {
   if (expr.kind === "hole" || expr.kind === "match") return expr;
   if (expr.kind === "ident") return bindings.get(expr.name) ?? expr;
+  if (expr.kind === "let") {
+    return { kind: "let", name: expr.name, value: substituteComputeResult(expr.value, bindings), body: substituteComputeResult(expr.body, bindings) };
+  }
+  if (expr.kind === "pi" || expr.kind === "sigma") {
+    return { kind: expr.kind, param: expr.param, domain: substituteComputeResult(expr.domain, bindings), codomain: substituteComputeResult(expr.codomain, bindings) };
+  }
+  if (expr.kind === "lambda") {
+    return { kind: "lambda", param: expr.param, paramType: substituteComputeResult(expr.paramType, bindings), body: substituteComputeResult(expr.body, bindings) };
+  }
   const newArgs = expr.args.map((a) => substituteComputeResult(a, bindings));
   const replacement = bindings.get(expr.name);
   const newName = replacement?.kind === "ident" ? replacement.name : expr.name;
@@ -308,6 +365,15 @@ function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     const normValue = normalize(expr.value);
     return normalize(substitute(expr.body, expr.name, normValue));
   }
+  if (expr.kind === "pi") {
+    return { kind: "pi", param: expr.param, domain: normalize(expr.domain), codomain: normalize(expr.codomain) };
+  }
+  if (expr.kind === "sigma") {
+    return { kind: "sigma", param: expr.param, domain: normalize(expr.domain), codomain: normalize(expr.codomain) };
+  }
+  if (expr.kind === "lambda") {
+    return { kind: "lambda", param: expr.param, paramType: normalize(expr.paramType), body: normalize(expr.body) };
+  }
 
   const args = expr.args.map(normalize);
   const e: AST.ProveExpr = { kind: "call", name: expr.name, args };
@@ -387,6 +453,27 @@ function substituteExprPattern(
       body: substituteExprPattern(expr.body, pattern, replacement),
     };
   }
+  if (expr.kind === "pi") {
+    return {
+      kind: "pi", param: expr.param,
+      domain: substituteExprPattern(expr.domain, pattern, replacement),
+      codomain: substituteExprPattern(expr.codomain, pattern, replacement),
+    };
+  }
+  if (expr.kind === "sigma") {
+    return {
+      kind: "sigma", param: expr.param,
+      domain: substituteExprPattern(expr.domain, pattern, replacement),
+      codomain: substituteExprPattern(expr.codomain, pattern, replacement),
+    };
+  }
+  if (expr.kind === "lambda") {
+    return {
+      kind: "lambda", param: expr.param,
+      paramType: substituteExprPattern(expr.paramType, pattern, replacement),
+      body: substituteExprPattern(expr.body, pattern, replacement),
+    };
+  }
   if (expr.kind === "match") {
     return {
       kind: "match",
@@ -432,6 +519,26 @@ function inferType(
     innerBindings.set(expr.name, valResult.type);
     const innerCtx: ProveCtx = { ...ctx, caseBindings: innerBindings };
     return inferType(expr.body, innerCtx);
+  }
+
+  // Pi type → its type is a universe
+  if (expr.kind === "pi") {
+    return { ok: true, type: app("Type", ident("0")) };
+  }
+
+  // Sigma type → its type is a universe
+  if (expr.kind === "sigma") {
+    return { ok: true, type: app("Type", ident("0")) };
+  }
+
+  // Lambda → infer Pi type: fun(x : A, body) : forall(x : A, typeof body)
+  if (expr.kind === "lambda") {
+    const innerBindings = new Map(ctx.caseBindings);
+    innerBindings.set(expr.param, expr.paramType);
+    const innerCtx: ProveCtx = { ...ctx, caseBindings: innerBindings };
+    const bodyResult = inferType(expr.body, innerCtx);
+    if (!bodyResult.ok) return bodyResult;
+    return { ok: true, type: { kind: "pi", param: expr.param, domain: expr.paramType, codomain: bodyResult.type } };
   }
 
   // Match → infer type by checking each case arm; return first arm's type.
@@ -682,6 +789,11 @@ function extractEq(
 function extractSigma(
   type: AST.ProveExpr,
 ): { domain: AST.ProveExpr; boundVar: string; predicate: AST.ProveExpr } | null {
+  // First-class sigma kind: exists(x : A, B)
+  if (type.kind === "sigma") {
+    return { domain: type.domain, boundVar: type.param, predicate: type.codomain };
+  }
+  // Legacy call form: Sigma(A, x, P)
   if (
     type.kind === "call" && type.name === "Sigma" && type.args.length === 3 &&
     type.args[1].kind === "ident"
@@ -866,6 +978,16 @@ function buildNode(
   }
   if (expr.kind === "ident") {
     return { rule: "?", term, conclusion, children: [] };
+  }
+
+  if (expr.kind === "pi" || expr.kind === "sigma") {
+    const domChild = buildNode(expr.domain, ctx, undefined);
+    const codomChild = buildNode(expr.codomain, ctx, undefined);
+    return { rule: expr.kind, term, conclusion, children: [domChild, codomChild] };
+  }
+  if (expr.kind === "lambda") {
+    const bodyChild = buildNode(expr.body, ctx, undefined);
+    return { rule: "lambda", term, conclusion, children: [bodyChild] };
   }
 
   const { name, args } = expr;
@@ -1112,6 +1234,15 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "let") {
     return { kind: "let", name: expr.name, value: stripTacticSugar(expr.value), body: stripTacticSugar(expr.body) };
   }
+  if (expr.kind === "pi") {
+    return { kind: "pi", param: expr.param, domain: stripTacticSugar(expr.domain), codomain: stripTacticSugar(expr.codomain) };
+  }
+  if (expr.kind === "sigma") {
+    return { kind: "sigma", param: expr.param, domain: stripTacticSugar(expr.domain), codomain: stripTacticSugar(expr.codomain) };
+  }
+  if (expr.kind === "lambda") {
+    return { kind: "lambda", param: expr.param, paramType: stripTacticSugar(expr.paramType), body: stripTacticSugar(expr.body) };
+  }
   if (expr.kind === "match") {
     return { kind: "match", scrutinee: expr.scrutinee, cases: expr.cases.map((c) => ({ ...c, body: stripTacticSugar(c.body) })) };
   }
@@ -1167,8 +1298,15 @@ function collectRecursiveCalls(
       walk(e.value, bindings);
       walk(e.body, bindings);
     }
+    if (e.kind === "pi" || e.kind === "sigma") {
+      walk(e.domain, bindings);
+      walk(e.codomain, bindings);
+    }
+    if (e.kind === "lambda") {
+      walk(e.paramType, bindings);
+      walk(e.body, bindings);
+    }
     if (e.kind === "match") {
-      walk(e.scrutinee, bindings);
       for (const c of e.cases) {
         const inner = new Set(bindings);
         for (const b of c.bindings) inner.add(b);
@@ -1557,6 +1695,11 @@ function resolveSimpExpr(
     if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
     return expr;
   }
+  if (expr.kind === "lambda") {
+    const newBody = resolveSimpExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
+    return expr;
+  }
   if (expr.kind === "match") {
     let changed = false;
     const newCases = expr.cases.map((c) => {
@@ -1666,6 +1809,8 @@ function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveEx
   if (expr.kind === "ident") return !caseBindings.has(expr.name);
   if (expr.kind === "call") return expr.args.every(a => isGroundTerm(a, caseBindings));
   if (expr.kind === "let") return isGroundTerm(expr.value, caseBindings) && isGroundTerm(expr.body, caseBindings);
+  if (expr.kind === "pi" || expr.kind === "sigma") return isGroundTerm(expr.domain, caseBindings) && isGroundTerm(expr.codomain, caseBindings);
+  if (expr.kind === "lambda") return isGroundTerm(expr.paramType, caseBindings) && isGroundTerm(expr.body, caseBindings);
   return false;
 }
 
@@ -1696,14 +1841,18 @@ function resolveDecideExpr(
     if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
     return expr;
   }
+  if (expr.kind === "lambda") {
+    const newBody = resolveDecideExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
+    return expr;
+  }
   if (expr.kind === "match") {
     let changed = false;
     const newCases = expr.cases.map((c) => {
       const r = resolveDecideExpr(c.body, prove, caseArm, provedCtx, computeRules);
       if (r !== c.body) changed = true;
       return { ...c, body: r };
-    });
-    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
+    });    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
   }
   if (expr.kind === "call") {
     let changed = false;
@@ -1784,6 +1933,11 @@ function resolveOmegaExpr(
     const newValue = resolveOmegaExpr(expr.value, prove, caseArm, provedCtx, computeRules);
     const newBody = resolveOmegaExpr(expr.body, prove, caseArm, provedCtx, computeRules);
     if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
+  }
+  if (expr.kind === "lambda") {
+    const newBody = resolveOmegaExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
     return expr;
   }
   if (expr.kind === "match") {
@@ -1878,6 +2032,11 @@ function resolveAutoExpr(
     const newValue = resolveAutoExpr(expr.value, prove, caseArm, provedCtx, computeRules);
     const newBody = resolveAutoExpr(expr.body, prove, caseArm, provedCtx, computeRules);
     if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
+    return expr;
+  }
+  if (expr.kind === "lambda") {
+    const newBody = resolveAutoExpr(expr.body, prove, caseArm, provedCtx, computeRules);
+    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
     return expr;
   }
   if (expr.kind === "match") {
