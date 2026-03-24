@@ -54,6 +54,7 @@ export type SystemDef = {
   classes?: Map<string, ClassDef>; // typeclass declarations
   instances?: InstanceDef[]; // typeclass instances
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
+  dataSorts?: Map<string, "Prop" | "Set">; // type name → declared sort (Prop or Set)
 };
 
 export type ClassDef = {

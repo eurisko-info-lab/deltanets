@@ -23,7 +23,7 @@ export type {
   TacticDef,
 } from "./evaluator.ts";
 export type { ProofNode, ProofTree, ConversionResult } from "./typecheck-prove.ts";
-export { universeLevel, typeUniverse, typeSubsumes } from "./typecheck-prove.ts";
+export { universeLevel, typeUniverse, typeSubsumes, isPropSort, sortOf } from "./typecheck-prove.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./proof-export.ts";
 export {
   quoteExpr, unquoteStatements, buildGoalStatements,

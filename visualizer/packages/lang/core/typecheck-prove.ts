@@ -555,9 +555,11 @@ export function withNormTable<T>(rules: ComputeRule[], fn: () => T): T {
 }
 
 export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
-  // Universe level normalization: Type → Type(0), Type1 → Type(1), etc.
+  // Universe / sort normalization
   if (expr.kind === "ident") {
     if (expr.name === "Type") return app("Type", ident("0"));
+    if (expr.name === "Set") return app("Type", ident("0")); // Set = Type₀
+    if (expr.name === "Prop") return ident("Prop"); // Prop is a distinct sort
     const m = expr.name.match(/^Type(\d+)$/);
     if (m) return app("Type", ident(m[1]));
     return expr;
@@ -609,9 +611,11 @@ export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
 // Cumulative universe hierarchy: Type₀ : Type₁ : Type₂ : …
 
 /** Parse universe level from a type expression.
- *  Returns the level (≥ 0) if the expression is a universe, or -1 otherwise. */
+ *  Returns the level (≥ 0) if the expression is a universe Type(n), or -1 otherwise.
+ *  Prop returns -2 (it's a sort but not Type(n)). */
 export function universeLevel(type: AST.ProveExpr): number {
   const n = normalize(type);
+  if (n.kind === "ident" && n.name === "Prop") return -2;
   if (n.kind === "call" && n.name === "Type" && n.args.length === 1 &&
       n.args[0].kind === "ident" && /^\d+$/.test(n.args[0].name)) {
     return parseInt(n.args[0].name);
@@ -619,10 +623,17 @@ export function universeLevel(type: AST.ProveExpr): number {
   return -1;
 }
 
+/** Is this expression the sort Prop? */
+export function isPropSort(type: AST.ProveExpr): boolean {
+  const n = normalize(type);
+  return n.kind === "ident" && n.name === "Prop";
+}
+
 /** Compute which universe level a type expression inhabits.
- *  Type₀ → 1, Type₁ → 2, Nat → 0, Eq(a,b) → 0, Sigma → max of components. */
+ *  Type₀ → 1, Type₁ → 2, Prop → 0, Nat → 0, Eq(a,b) → 0, Sigma → max of components. */
 export function typeUniverse(type: AST.ProveExpr): number {
   const uLevel = universeLevel(type);
+  if (uLevel === -2) return 0; // Prop : Type₀
   if (uLevel >= 0) return uLevel + 1;
   const n = normalize(type);
   if (n.kind === "ident") return 0;
@@ -645,19 +656,54 @@ export function typeUniverse(type: AST.ProveExpr): number {
 }
 
 /** Cumulative subtype check: `sub` is a subtype of `sup`.
- *  Type(i) ≤ Type(j) when i ≤ j. For non-universe types, uses
- *  syntactic equality after normalization. */
+ *  Prop ≤ Type(n) for all n ≥ 0. Type(i) ≤ Type(j) when i ≤ j.
+ *  For non-universe types, uses syntactic equality after normalization. */
 export function typeSubsumes(
   sub: AST.ProveExpr,
   sup: AST.ProveExpr,
 ): boolean {
   const a = normalize(sub);
   const b = normalize(sup);
+  const aIsProp = isPropSort(a);
+  const bIsProp = isPropSort(b);
+  // Prop ≤ Prop
+  if (aIsProp && bIsProp) return true;
+  // Prop ≤ Type(n) for any n
+  if (aIsProp && universeLevel(b) >= 0) return true;
+  // Type(n) is NOT ≤ Prop
+  if (bIsProp) return false;
   // Universe cumulativity: Type(i) ≤ Type(j) when i ≤ j
   const aLevel = universeLevel(a);
   const bLevel = universeLevel(b);
   if (aLevel >= 0 && bLevel >= 0) return aLevel <= bLevel;
   return exprEqual(a, b);
+}
+
+/** Determine the sort of a type expression.
+ *  Returns "Prop" if the type lives in Prop, or the universe level (number) for Set/Type.
+ *  dataSorts maps type names to their declared sort ("Prop" or "Set"). */
+export function sortOf(
+  type: AST.ProveExpr,
+  dataSorts?: Map<string, "Prop" | "Set">,
+): "Prop" | number {
+  const n = normalize(type);
+  // Eq is always in Prop
+  if (n.kind === "call" && n.name === "Eq") return "Prop";
+  // User-declared data sort
+  if (n.kind === "ident" && dataSorts?.has(n.name)) {
+    return dataSorts.get(n.name) === "Prop" ? "Prop" : 0;
+  }
+  if (n.kind === "call" && dataSorts?.has(n.name)) {
+    return dataSorts.get(n.name) === "Prop" ? "Prop" : 0;
+  }
+  // Impredicativity: Pi with Prop codomain stays in Prop
+  if (n.kind === "pi") {
+    const codSort = sortOf(n.codomain, dataSorts);
+    if (codSort === "Prop") return "Prop";
+  }
+  // Sort literals
+  if (isPropSort(n)) return "Prop";
+  return typeUniverse(type);
 }
 
 // ─── Expression-level pattern substitution ────────────────────────
@@ -724,6 +770,7 @@ type ProveCtx = {
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // relation → setoid def
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
   instances?: import("./evaluator.ts").InstanceDef[]; // typeclass instances
+  dataSorts?: Map<string, "Prop" | "Set">; // type name → declared sort
 };
 
 type TypeResult =
@@ -754,8 +801,10 @@ function inferType(
     return inferType(expr.body, innerCtx);
   }
 
-  // Pi type → its type is a universe (max of domain and codomain universes)
+  // Pi type → its type is a universe. Impredicative: if codomain is Prop, result is Prop.
   if (expr.kind === "pi") {
+    const codSort = sortOf(expr.codomain, ctx.dataSorts);
+    if (codSort === "Prop") return { ok: true, type: ident("Prop") };
     const domULevel = typeUniverse(expr.domain);
     const codULevel = typeUniverse(expr.codomain);
     return { ok: true, type: app("Type", ident(String(Math.max(domULevel, codULevel)))) };
@@ -1561,6 +1610,7 @@ function caseCtx(
   constructorsByType?: Map<string, Set<string>>,
   hints?: Map<string, Set<string>>,
   instances?: import("./evaluator.ts").InstanceDef[],
+  dataSorts?: Map<string, "Prop" | "Set">,
 ): { ctx: ProveCtx; expectedType: AST.ProveExpr } {
   const consExpr: AST.ProveExpr = caseArm.bindings.length > 0
     ? app(caseArm.pattern, ...caseArm.bindings.map(ident))
@@ -1577,6 +1627,7 @@ function caseCtx(
       constructorsByType,
       hints,
       instances,
+      dataSorts,
     },
     expectedType: normalize(substitute(prove.returnType!, inductionParam(prove.params)!.name, consExpr)),
   };
@@ -2123,6 +2174,7 @@ export function typecheckProve(
   rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>,
   hints?: Map<string, Set<string>>,
   instances?: import("./evaluator.ts").InstanceDef[],
+  dataSorts?: Map<string, "Prop" | "Set">,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -2149,7 +2201,7 @@ export function typecheckProve(
   const errors: string[] = [];
 
   for (const caseArm of prove.cases) {
-    const { ctx: baseCtx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType);
+    const { ctx: baseCtx, expectedType: requiredType } = caseCtx(prove, caseArm, provedCtx, ctorTyping, constructorsByType, undefined, undefined, dataSorts);
     let ctx: ProveCtx = baseCtx;
     if (setoids) ctx = { ...ctx, setoids };
     if (hints) ctx = { ...ctx, hints };

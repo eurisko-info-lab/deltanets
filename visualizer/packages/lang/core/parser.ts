@@ -864,6 +864,17 @@ class Parser {
       }
       this.eat(TT.RPAREN);
     }
+    // Optional sort annotation: data X : Prop { ... } or data X : Set { ... }
+    let sort: "Prop" | "Set" | undefined;
+    if (this.check(TT.COLON)) {
+      this.advance();
+      const sortName = this.eatIdent();
+      if (sortName === "Prop" || sortName === "Set") {
+        sort = sortName;
+      } else {
+        throw new Error(`Expected 'Prop' or 'Set' after ':' in data declaration, got '${sortName}'`);
+      }
+    }
     this.eat(TT.LBRACE);
     const constructors: AST.DataConstructor[] = [];
     while (this.check(TT.PIPE)) {
@@ -896,7 +907,7 @@ class Parser {
       constructors.push({ name: consName, fields, returnIndices });
     }
     this.eat(TT.RBRACE);
-    return { kind: "data", name, params, indices, constructors };
+    return { kind: "data", name, params, indices, constructors, sort };
   }
 
   // ─── Record (single-constructor data type with projections) ──────

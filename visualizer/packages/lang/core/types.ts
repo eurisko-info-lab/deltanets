@@ -294,12 +294,16 @@ export type ModeDecl = {
 //     | Succ(pred : Nat)
 //   }
 
+/** The sort of a type: Prop (proof-irrelevant), Set (= Type₀), or Type(n). */
+export type Sort = "Prop" | "Set" | "Type";
+
 export type DataDecl = {
   kind: "data";
   name: string;
   params: string[];  // type parameters (e.g., ["A"] for List(A))
   indices: DataIndex[];  // value indices (e.g., [{ name: "n", type: Nat }] for Vec(A, n : Nat))
   constructors: DataConstructor[];
+  sort?: "Prop" | "Set";  // explicit sort annotation: data X : Prop { ... } or data X : Set { ... }
 };
 
 export type DataIndex = {
