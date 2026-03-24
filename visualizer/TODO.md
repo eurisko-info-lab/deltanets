@@ -1,8 +1,8 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Updated**: 2026-03-24, post-Phase 46  
-**Current state**: ~13k LoC TypeScript (49 files) · 950 tests · strategy-based tactic protocol  
+**Updated**: 2026-03-24, post-Phase 47  
+**Current state**: ~13k LoC TypeScript (49 files) · 957 tests · strategy-based tactic protocol  
 **Overall Rocq parity**: ~87% surface, ~77% depth
 
 ---
@@ -56,6 +56,8 @@
 | 42 | Module functors | `6137fe4` |
 | 43 | Mixfix notations | `137ac9d` |
 | 44 | Higher-order unification | `923b77c` |
+| 45 | Code extraction | `dfb75f6` |
+| 46 | SProp | `5a36af1` |
 
 ---
 
@@ -67,7 +69,7 @@
 | Inductive types | `data` with params + indices, eliminators | Good — auto-eliminators, dependent matching |
 | Mutual inductives | `mutual { data ... data ... }` + joint positivity | Good |
 | Coinductive types | `codata` + guard agents + productivity checking | Good — observation-based |
-| Record types | `record` → single-constructor data + projections | Good |
+| Record types | `record` → single-constructor data + projections | Good — primitive projections with definitional eta |
 | Universe hierarchy | `Type(0) : Type(1) : ...`, Prop, Set, SProp, cumulative | Good — impredicative Prop + SProp, definitional proof irrelevance |
 | Pattern matching | Nested deep patterns, with-clauses, overlap detection | Good |
 | Termination | Structural recursion + `{measure}` + `{wf}` | Good — `wf` is trusted |
@@ -281,7 +283,7 @@ are currently stalled on ergonomics.
 | **44** | **Higher-order unification** | Pattern-fragment unification. Handles `?f x = S x`. Required for serious dependent types. | ~500 |
 | **45** | **Code extraction** | ~~Generate TypeScript/JS from verified programs. Erase Prop.~~ **DONE** | ~500 |
 | **46** | **SProp** | ~~Strict propositions — definitional proof irrelevance.~~ **DONE** | ~300 |
-| **47** | **Primitive projections** | Records with definitional eta. `mk(fst(p), snd(p)) ≡ p`. | ~250 |
+| **47** | **Primitive projections** | ~~Records with definitional eta. `mk(fst(p), snd(p)) ≡ p`.~~ **DONE** | ~250 |
 
 ### Tier C — Performance & Scale (→ ~98%)
 

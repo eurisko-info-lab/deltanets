@@ -57,6 +57,7 @@ export type SystemDef = {
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
   canonicals?: CanonicalDef[]; // canonical structure instances
   dataSorts?: Map<string, "Prop" | "Set" | "SProp">; // type name → declared sort (Prop, Set, or SProp)
+  recordDefs?: Map<string, import("./normalize.ts").RecordDef>; // ctor name → record metadata for eta
   strategies?: Map<string, import("./types.ts").StrategyExpr>; // named proof strategies
 };
 

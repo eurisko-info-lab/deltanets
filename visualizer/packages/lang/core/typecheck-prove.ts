@@ -1505,6 +1505,7 @@ export function buildProofTree(
   provedCtx: ProvedContext = new Map(),
   computeRules?: ComputeRule[],
   constructorTyping?: ConstructorTyping,
+  recordDefs?: Map<string, import("./normalize.ts").RecordDef>,
 ): ProofTree | null {
   if (!prove.returnType) return null;
 
@@ -1525,7 +1526,7 @@ export function buildProofTree(
     cases,
     hasHoles: cases.some((c) => nodeHasHoles(c.tree)),
   };
-  }); // end withNormTable
+  }, undefined, recordDefs); // end withNormTable
 }
 
 // ─── Tactic sugar stripping ────────────────────────────────────────
@@ -1675,6 +1676,7 @@ export function typecheckProve(
   instances?: import("./evaluator.ts").InstanceDef[],
   dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
   canonicals?: import("./evaluator.ts").CanonicalDef[],
+  recordDefs?: Map<string, import("./normalize.ts").RecordDef>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -1913,7 +1915,7 @@ export function typecheckProve(
   }
 
   return [...exhaustErrors, ...overlapErrors, ...termErrors, ...errors];
-  }, canonicals); // end withNormTable
+  }, canonicals, recordDefs); // end withNormTable
 }
 
 /** Parse a simple proof-term string like "cong_succ(pzr(k))" into a ProveExpr. */

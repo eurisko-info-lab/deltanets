@@ -108,3 +108,117 @@ Deno.test("record: projection compute rules available to normalizer", () => {
   `);
   assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
 });
+
+// ─── Primitive projections: eta-reduction ──────────────────────────
+// mkR(f1(p), f2(p), ..., fn(p)) ≡ p
+
+Deno.test("record: eta-reduction in normalize — mkPair(fst(p), snd(p)) = p", async () => {
+  const { normalize, withNormTable } = await import("../lang/core/normalize.ts");
+  const recordDefs = new Map<string, { ctor: string; fields: string[] }>([
+    ["mkPair", { ctor: "mkPair", fields: ["fst", "snd"] }],
+  ]);
+  const result = withNormTable([], () => {
+    return normalize({
+      kind: "call", name: "mkPair", args: [
+        { kind: "call", name: "fst", args: [{ kind: "ident", name: "p" }] },
+        { kind: "call", name: "snd", args: [{ kind: "ident", name: "p" }] },
+      ],
+    });
+  }, undefined, recordDefs);
+  assertEquals(result.kind, "ident");
+  assertEquals((result as any).name, "p");
+});
+
+Deno.test("record: eta-reduction does NOT fire with mismatched base", async () => {
+  const { normalize, withNormTable } = await import("../lang/core/normalize.ts");
+  const recordDefs = new Map<string, { ctor: string; fields: string[] }>([
+    ["mkPair", { ctor: "mkPair", fields: ["fst", "snd"] }],
+  ]);
+  const result = withNormTable([], () => {
+    return normalize({
+      kind: "call", name: "mkPair", args: [
+        { kind: "call", name: "fst", args: [{ kind: "ident", name: "p" }] },
+        { kind: "call", name: "snd", args: [{ kind: "ident", name: "q" }] },
+      ],
+    });
+  }, undefined, recordDefs);
+  assertEquals(result.kind, "call");
+  assertEquals((result as any).name, "mkPair");
+});
+
+Deno.test("record: eta-reduction does NOT fire with wrong projection order", async () => {
+  const { normalize, withNormTable } = await import("../lang/core/normalize.ts");
+  const recordDefs = new Map<string, { ctor: string; fields: string[] }>([
+    ["mkPair", { ctor: "mkPair", fields: ["fst", "snd"] }],
+  ]);
+  const result = withNormTable([], () => {
+    return normalize({
+      kind: "call", name: "mkPair", args: [
+        { kind: "call", name: "snd", args: [{ kind: "ident", name: "p" }] },
+        { kind: "call", name: "fst", args: [{ kind: "ident", name: "p" }] },
+      ],
+    });
+  }, undefined, recordDefs);
+  assertEquals(result.kind, "call");
+  assertEquals((result as any).name, "mkPair");
+});
+
+Deno.test("record: eta in prove — mkPair(fst(p), snd(p)) ≡ p", () => {
+  const result = compile(`
+    system "T" extend "Nat" {
+      record Pair(A, B) { fst : A, snd : B }
+
+      prove eta_pair(p : Pair(Nat, Nat)) -> Eq(mkPair(fst(p), snd(p)), p) {
+        | mkPair(a, b) -> conv
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("record: eta 3-field record — mk(f1(p), f2(p), f3(p)) ≡ p", () => {
+  const result = compile(`
+    system "T" extend "Nat" {
+      record Triple(A, B, C) { first : A, second : B, third : C }
+
+      prove eta_triple(p : Triple(Nat, Nat, Nat)) -> Eq(mkTriple(first(p), second(p), third(p)), p) {
+        | mkTriple(a, b, c) -> conv
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("record: eta for Point — mkPoint(x(p), y(p)) ≡ p", () => {
+  const result = compile(`
+    system "T" extend "Nat" {
+      record Point { x : Nat, y : Nat }
+
+      prove eta_point(p : Point) -> Eq(mkPoint(x(p), y(p)), p) {
+        | mkPoint(a, b) -> conv
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("record: beta-eta round-trip", () => {
+  const result = compile(`
+    system "T" extend "Nat" {
+      record Pair(A, B) { fst : A, snd : B }
+
+      compute add(Zero, y) = y
+      compute add(Succ(k), y) = Succ(add(k, y))
+
+      prove beta_fst(n : Nat, m : Nat) -> Eq(fst(mkPair(n, m)), n) {
+        | Zero -> conv
+        | Succ(k) -> conv
+      }
+
+      prove eta_pair(p : Pair(Nat, Nat)) -> Eq(mkPair(fst(p), snd(p)), p) {
+        | mkPair(a, b) -> conv
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});

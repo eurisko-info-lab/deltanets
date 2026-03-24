@@ -6,6 +6,11 @@
 import type * as AST from "./types.ts";
 import type { CanonicalDef } from "./evaluator.ts";
 
+// ─── Record metadata (for eta-reduction of primitive projections) ──
+
+/** Metadata for a record type: constructor name and ordered field (projection) names. */
+export type RecordDef = { ctor: string; fields: string[] };
+
 // ─── Shared types ──────────────────────────────────────────────────
 
 // Context of previously proved propositions for cross-lemma resolution
@@ -401,18 +406,25 @@ export function buildNormTable(computeRules: ComputeRule[]): NormTable {
 
 let activeNormTable: NormTable = BUILTIN_NORM_RULES;
 let activeCanonicals: CanonicalDef[] = [];
+let activeRecordDefs: Map<string, RecordDef> = new Map();
 
 export function getActiveCanonicals(): CanonicalDef[] {
   return activeCanonicals;
 }
 
-export function withNormTable<T>(rules: ComputeRule[], fn: () => T, canonicals?: CanonicalDef[]): T {
+export function getActiveRecordDefs(): Map<string, RecordDef> {
+  return activeRecordDefs;
+}
+
+export function withNormTable<T>(rules: ComputeRule[], fn: () => T, canonicals?: CanonicalDef[], recordDefs?: Map<string, RecordDef>): T {
   const prev = activeNormTable;
   const prevCanonicals = activeCanonicals;
+  const prevRecordDefs = activeRecordDefs;
   activeNormTable = rules.length > 0 ? buildNormTable(rules) : BUILTIN_NORM_RULES;
   activeCanonicals = canonicals ?? [];
+  activeRecordDefs = recordDefs ?? prevRecordDefs;
   try { return fn(); }
-  finally { activeNormTable = prev; activeCanonicals = prevCanonicals; }
+  finally { activeNormTable = prev; activeCanonicals = prevCanonicals; activeRecordDefs = prevRecordDefs; }
 }
 
 export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
@@ -466,6 +478,29 @@ export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     e.args[1].kind === "ident"
   ) {
     return normalize(app(e.args[1].name, ...e.args[0].args));
+  }
+
+  // Record eta-reduction: mkR(f1(x), f2(x), ..., fn(x)) → x
+  // when mkR is a record constructor and f1..fn are its ordered projections
+  // applied to the same argument x.
+  const recDef = activeRecordDefs.get(e.name);
+  if (recDef && recDef.ctor === e.name && e.args.length === recDef.fields.length && e.args.length > 0) {
+    let base: AST.ProveExpr | null = null;
+    let isEta = true;
+    for (let i = 0; i < e.args.length; i++) {
+      const ai = e.args[i];
+      if (ai.kind !== "call" || ai.name !== recDef.fields[i] || ai.args.length !== 1) {
+        isEta = false;
+        break;
+      }
+      if (base === null) {
+        base = ai.args[0];
+      } else if (!exprEqual(base, ai.args[0])) {
+        isEta = false;
+        break;
+      }
+    }
+    if (isEta && base) return base;
   }
 
   return e;
