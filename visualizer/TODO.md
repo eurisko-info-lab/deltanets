@@ -289,7 +289,7 @@ are currently stalled on ergonomics.
 
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
-| **48** | **Interactive proof mode** | LSP-style step-through. Show goals, apply tactics incrementally. | ~800 |
+| **48** | **Interactive proof mode** | ~~LSP-style step-through. Show goals, apply tactics incrementally.~~ **DONE** | ~450 |
 | **49** | **Bytecode / VM compute** | Compile INet terms for fast reduction. 10-100x speedup. | ~600 |
 | **50** | **Guard condition for cofixpoints** | Robust nested corecursive productivity checking. | ~300 |
 
@@ -301,8 +301,8 @@ are currently stalled on ergonomics.
 |------|--------|----------|-------------------|
 | Done (1–39) | 41 | ~12,100 | ~85% |
 | Tier A: Ergonomics | 40–43 | ~2,950 | ~90% |
-| Tier B: Depth & power | 44–45 done, 46–47 remain | ~1,550 | ~95% |
-| Tier C: Performance | 48–50 | ~1,700 | ~98% |
+| Tier B: Depth & power | 44–47 done | ~1,550 | ~95% |
+| Tier C: Performance | 48 done, 49–50 remain | ~1,700 | ~98% |
 
 **Total remaining: ~6,200 LoC across 11 phases**
 

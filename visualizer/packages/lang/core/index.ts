@@ -50,6 +50,17 @@ export {
   compileTactic, resolveAllTactics, runStrategy,
   BUILTIN_TACTIC_NAMES,
 } from "./tactics.ts";
+export {
+  startProofSession, getSession, getGoals,
+  applyTactic as applySessionTactic,
+  applyProofTerm, applyProofString,
+  undoTactic, redoTactic,
+  closeSession, listSessions,
+  exportSessionText, createSessionsForSystem,
+} from "./interactive-proof.ts";
+export type {
+  ProofGoal, GoalBinding, TacticResult, ProofSession,
+} from "./interactive-proof.ts";
 export type * from "./types.ts";
 
 export function compile(
