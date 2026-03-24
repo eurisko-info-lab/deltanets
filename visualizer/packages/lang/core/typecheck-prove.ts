@@ -1817,7 +1817,14 @@ function stripTacticSugar(expr: AST.ProveExpr): AST.ProveExpr {
   if (expr.kind === "ident" && expr.name === "ring") {
     return { kind: "ident", name: "refl" };
   }
-  if (expr.kind !== "call") return expr;  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if (expr.kind !== "call") return expr;
+  // Strip tactic combinators: unwrap to inner content
+  if (expr.name === "try" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if (expr.name === "first" && expr.args.length >= 1) return stripTacticSugar(expr.args[0]);
+  if (expr.name === "repeat" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if ((expr.name === "then" || expr.name === "seq") && expr.args.length === 2) return stripTacticSugar(expr.args[1]);
+  if (expr.name === "all" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
+  if (expr.name === "exact" && expr.args.length === 1) return stripTacticSugar(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripTacticSugar) };
   }
@@ -2264,6 +2271,21 @@ export function typecheckProve(
     // Handle auto — should have been resolved before type checking; if still present, it failed
     if (rawBody.kind === "ident" && rawBody.name === "auto") {
       errors.push(`${prefix}: auto failed — could not find a proof\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle failed tactic combinators (Phase 34)
+    if (rawBody.kind === "call" && rawBody.name === "first") {
+      const inner = rawBody.args.map((a) => a.kind === "ident" ? a.name : "...").join(", ");
+      errors.push(`${prefix}: first(${inner}) failed — no alternative succeeded\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+    if (rawBody.kind === "call" && rawBody.name === "repeat") {
+      errors.push(`${prefix}: repeat failed — tactic could not make progress\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+    if (rawBody.kind === "call" && rawBody.name === "all") {
+      errors.push(`${prefix}: all failed — tactic could not resolve goal\n  goal: ${exprToString(requiredType)}`);
       continue;
     }
 

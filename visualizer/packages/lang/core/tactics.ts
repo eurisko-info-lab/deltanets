@@ -46,6 +46,9 @@ const BUILTIN_TACTIC_MAP: Record<string, string> = {
 
 export const BUILTIN_TACTIC_NAMES = new Set([...Object.keys(BUILTIN_TACTIC_MAP), "assumption"]);
 
+/** Tactic combinator keywords (Phase 34). */
+export const TACTIC_COMBINATORS = new Set(["try", "first", "repeat", "then", "seq", "all"]);
+
 /** AST-level resolver for each built-in tactic keyword. */
 type BuiltinResolver = (
   prove: AST.ProveDecl,
@@ -389,9 +392,56 @@ function resolveUserTacticExpr(
     return ch ? { kind: "match", scrutinee: expr.scrutinee, cases: nc } : expr;
   }
   if (expr.kind === "call") {
+    // ─── Tactic combinators (Phase 34) ────────────────────────────
+    const resolve = (e: AST.ProveExpr) =>
+      resolveUserTacticExpr(e, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+
+    // try(t) — attempt t; if it doesn't resolve, return hole (no error)
+    if (expr.name === "try" && expr.args.length === 1) {
+      const result = resolve(expr.args[0]);
+      return result !== expr.args[0] ? result : { kind: "hole" };
+    }
+
+    // first(t1, t2, ...) — try each alternative until one resolves
+    if (expr.name === "first" && expr.args.length >= 1) {
+      for (const arg of expr.args) {
+        const result = resolve(arg);
+        if (result !== arg) return result;
+      }
+      return expr; // none resolved — leave for error reporting
+    }
+
+    // repeat(t) — iterate t until no change (max 100 iterations)
+    if (expr.name === "repeat" && expr.args.length === 1) {
+      let current: AST.ProveExpr = expr.args[0];
+      for (let i = 0; i < 100; i++) {
+        const next = resolve(current);
+        if (next === current) break;
+        current = next;
+      }
+      return current !== expr.args[0] ? current : expr;
+    }
+
+    // then(t1, t2) / seq(t1, t2) — resolve t1, then resolve t2 on result
+    if ((expr.name === "then" || expr.name === "seq") && expr.args.length === 2) {
+      const first = resolve(expr.args[0]);
+      return resolve(first !== expr.args[0] ? first : expr.args[1]);
+    }
+
+    // all(t) — apply t recursively to all sub-expressions
+    if (expr.name === "all" && expr.args.length === 1) {
+      const tac = expr.args[0];
+      // First try resolving the tactic itself
+      const top = resolve(tac);
+      if (top !== tac) return top;
+      // Otherwise return unchanged
+      return expr;
+    }
+
+    // ─── Generic call: resolve arguments ──────────────────────────
     let ch = false;
     const na = expr.args.map((a) => {
-      const r = resolveUserTacticExpr(a, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+      const r = resolve(a);
       if (r !== a) ch = true;
       return r;
     });

@@ -1078,6 +1078,12 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
     return { kind: "ident", name: "refl" };
   }
   if (expr.kind !== "call") return expr;
+  // Strip tactic combinators: unwrap to inner content
+  if (expr.name === "try" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
+  if (expr.name === "first" && expr.args.length >= 1) return stripExprTactics(expr.args[0]);
+  if (expr.name === "repeat" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
+  if ((expr.name === "then" || expr.name === "seq") && expr.args.length === 2) return stripExprTactics(expr.args[1]);
+  if (expr.name === "all" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
   if (expr.name === "exact" && expr.args.length === 1) return stripExprTactics(expr.args[0]);
   if (expr.name === "apply" && expr.args.length >= 1 && expr.args[0].kind === "ident") {
     return { kind: "call", name: expr.args[0].name, args: expr.args.slice(1).map(stripExprTactics) };
