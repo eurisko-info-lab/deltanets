@@ -221,6 +221,8 @@ class Parser {
         return this.parseInstanceDecl();
       case TT.HINT:
         return this.parseHintDecl();
+      case TT.CANONICAL:
+        return this.parseCanonicalDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -387,6 +389,7 @@ class Parser {
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
+      else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
       else if (tok.type === TT.AT) {
         // @[simp] prove ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
@@ -402,7 +405,7 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1135,6 +1138,7 @@ class Parser {
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
+      else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,
@@ -1322,6 +1326,25 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "instance", className, args, methods };
+  }
+
+  // canonical Name : StructName { field = value, ... }
+  parseCanonicalDecl(): AST.CanonicalDecl {
+    this.eat(TT.CANONICAL);
+    const name = this.eatIdent();
+    this.eat(TT.COLON);
+    const structName = this.eatIdent();
+    this.eat(TT.LBRACE);
+    const fields: { name: string; value: string }[] = [];
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const key = this.eatIdent();
+      this.eat(TT.EQ);
+      const val = this.eatIdent();
+      fields.push({ name: key, value: val });
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "canonical", name, structName, fields };
   }
 
   // hint auto : lemmaName

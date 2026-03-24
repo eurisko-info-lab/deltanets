@@ -47,6 +47,7 @@ export const TT = {
   CLASS: "CLASS",
   INSTANCE: "INSTANCE",
   HINT: "HINT",
+  CANONICAL: "CANONICAL",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -129,6 +130,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   class: TT.CLASS,
   instance: TT.INSTANCE,
   hint: TT.HINT,
+  canonical: TT.CANONICAL,
 };
 
 export class LexError extends Error {

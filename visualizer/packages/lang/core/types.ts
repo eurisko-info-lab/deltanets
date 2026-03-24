@@ -30,7 +30,8 @@ export type Statement =
   | RingDecl
   | ClassDecl
   | InstanceDecl
-  | HintDecl;
+  | HintDecl
+  | CanonicalDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -57,7 +58,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -154,6 +155,16 @@ export type HintDecl = {
   kind: "hint";
   db: string;    // database name (e.g., "auto", "simp")
   lemma: string; // lemma/prove name to add as hint
+};
+
+// canonical Name : StructName { field = value, ... }
+// Registers a canonical structure: a unification hint that fires when
+// projection(?M) = concrete_value during type inference.
+export type CanonicalDecl = {
+  kind: "canonical";
+  name: string;           // instance name (e.g., "NatMonoid")
+  structName: string;     // structure/record name (e.g., "Monoid")
+  fields: { name: string; value: string }[]; // field projections
 };
 
 // prove name(param [: Type], ...) [-> Proposition] { | Constructor -> expr ... }

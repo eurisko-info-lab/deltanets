@@ -54,6 +54,7 @@ export type SystemDef = {
   classes?: Map<string, ClassDef>; // typeclass declarations
   instances?: InstanceDef[]; // typeclass instances
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
+  canonicals?: CanonicalDef[]; // canonical structure instances
   dataSorts?: Map<string, "Prop" | "Set">; // type name → declared sort (Prop or Set)
 };
 
@@ -67,6 +68,12 @@ export type InstanceDef = {
   className: string;
   args: string[];
   methods: Map<string, string>; // method name → implementation agent name
+};
+
+export type CanonicalDef = {
+  name: string;         // instance name
+  structName: string;   // structure/record name
+  projections: Map<string, string>; // projection (field) name → concrete value
 };
 
 export type TacticDef = {

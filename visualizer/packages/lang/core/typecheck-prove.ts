@@ -170,8 +170,21 @@ export function unify(a: AST.ProveExpr, b: AST.ProveExpr, ctx: UnifCtx): boolean
 
   // Calls
   if (a.kind === "call" && b.kind === "call") {
-    if (a.name !== b.name || a.args.length !== b.args.length) return false;
-    return a.args.every((arg, i) => unify(arg, b.args[i], ctx));
+    if (a.name === b.name && a.args.length === b.args.length) {
+      return a.args.every((arg, i) => unify(arg, b.args[i], ctx));
+    }
+    // Canonical structure resolution: proj(?M) vs concrete
+    if (resolveCanonical(a, b, ctx)) return true;
+    if (resolveCanonical(b, a, ctx)) return true;
+    return false;
+  }
+
+  // Canonical structure: call(proj, [metavar]) vs ident
+  if (a.kind === "call" && b.kind === "ident") {
+    if (resolveCanonical(a, b, ctx)) return true;
+  }
+  if (b.kind === "call" && a.kind === "ident") {
+    if (resolveCanonical(b, a, ctx)) return true;
   }
 
   // Pi
@@ -192,6 +205,51 @@ export function unify(a: AST.ProveExpr, b: AST.ProveExpr, ctx: UnifCtx): boolean
     return unify(substitute(a.body, a.param, ident(b.param)), b.body, ctx);
   }
 
+  return false;
+}
+
+/**
+ * Canonical structure resolution.
+ * When `projSide` is `call(proj, [..., metavar, ...])` and `valueSide` is a
+ * concrete expression, search canonical structures for proj→value mapping.
+ * If found, assign the metavar to the canonical instance and re-unify.
+ */
+function resolveCanonical(
+  projSide: AST.ProveExpr,
+  valueSide: AST.ProveExpr,
+  ctx: UnifCtx,
+): boolean {
+  if (activeCanonicals.length === 0) return false;
+  if (projSide.kind !== "call") return false;
+  const projName = projSide.name;
+  // Look for a metavar among the args
+  const metaIdx = projSide.args.findIndex(
+    (a) => zonk(a, ctx).kind === "metavar",
+  );
+  if (metaIdx < 0) return false;
+  const meta = zonk(projSide.args[metaIdx], ctx);
+  if (meta.kind !== "metavar") return false;
+
+  // Get the concrete value string for matching
+  const valueStr = valueSide.kind === "ident"
+    ? valueSide.name
+    : valueSide.kind === "call"
+    ? valueSide.name
+    : null;
+  if (!valueStr) return false;
+
+  // Search canonical structures for a match: proj → value
+  for (const cs of activeCanonicals) {
+    const csValue = cs.projections.get(projName);
+    if (csValue === valueStr) {
+      // Found: assign the metavar to the canonical instance name
+      if (occursIn(meta.id, ident(cs.name), ctx)) continue;
+      ctx.set(meta.id, ident(cs.name));
+      // Re-unify (substitution resolves the metavar now)
+      const resolved = zonk(projSide, ctx);
+      return unify(resolved, valueSide, ctx);
+    }
+  }
   return false;
 }
 
@@ -546,12 +604,15 @@ function buildNormTable(computeRules: ComputeRule[]): NormTable {
 // Module-level active norm table — set by entry points before type-checking.
 // Safe because all type-checking is synchronous and single-threaded.
 let activeNormTable: NormTable = BUILTIN_NORM_RULES;
+let activeCanonicals: import("./evaluator.ts").CanonicalDef[] = [];
 
-export function withNormTable<T>(rules: ComputeRule[], fn: () => T): T {
+export function withNormTable<T>(rules: ComputeRule[], fn: () => T, canonicals?: import("./evaluator.ts").CanonicalDef[]): T {
   const prev = activeNormTable;
+  const prevCanonicals = activeCanonicals;
   activeNormTable = rules.length > 0 ? buildNormTable(rules) : BUILTIN_NORM_RULES;
+  activeCanonicals = canonicals ?? [];
   try { return fn(); }
-  finally { activeNormTable = prev; }
+  finally { activeNormTable = prev; activeCanonicals = prevCanonicals; }
 }
 
 export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
@@ -770,6 +831,7 @@ type ProveCtx = {
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // relation → setoid def
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
   instances?: import("./evaluator.ts").InstanceDef[]; // typeclass instances
+  canonicals?: import("./evaluator.ts").CanonicalDef[]; // canonical structures
   dataSorts?: Map<string, "Prop" | "Set">; // type name → declared sort
 };
 
@@ -2182,6 +2244,7 @@ export function typecheckProve(
   hints?: Map<string, Set<string>>,
   instances?: import("./evaluator.ts").InstanceDef[],
   dataSorts?: Map<string, "Prop" | "Set">,
+  canonicals?: import("./evaluator.ts").CanonicalDef[],
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -2415,7 +2478,7 @@ export function typecheckProve(
   }
 
   return [...exhaustErrors, ...overlapErrors, ...termErrors, ...errors];
-  }); // end withNormTable
+  }, canonicals); // end withNormTable
 }
 
 // ─── Assumption resolution ─────────────────────────────────────────
