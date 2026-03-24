@@ -1,8 +1,8 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Updated**: 2026-03-24, post-Phase 44  
-**Current state**: ~12k LoC TypeScript (46 files) · 902 tests · strategy-based tactic protocol  
+**Updated**: 2026-03-24, post-Phase 45  
+**Current state**: ~13k LoC TypeScript (48 files) · 923 tests · strategy-based tactic protocol  
 **Overall Rocq parity**: ~85% surface, ~75% depth
 
 ---
@@ -55,6 +55,7 @@
 | 41 | Standard library | `12700b1` |
 | 42 | Module functors | `6137fe4` |
 | 43 | Mixfix notations | `137ac9d` |
+| 44 | Higher-order unification | `923b77c` |
 
 ---
 
@@ -62,7 +63,7 @@
 
 | Rocq Feature | INet Equivalent | Depth |
 |---|---|---|
-| CIC type theory | Pi, Sigma, Let, Lambda, Metavar, Match exprs | Good — full dependent types, no extraction kernel |
+| CIC type theory | Pi, Sigma, Let, Lambda, Metavar, Match exprs | Good — full dependent types, Prop-erasing extraction |
 | Inductive types | `data` with params + indices, eliminators | Good — auto-eliminators, dependent matching |
 | Mutual inductives | `mutual { data ... data ... }` + joint positivity | Good |
 | Coinductive types | `codata` + guard agents + productivity checking | Good — observation-based |
@@ -71,7 +72,7 @@
 | Pattern matching | Nested deep patterns, with-clauses, overlap detection | Good |
 | Termination | Structural recursion + `{measure}` + `{wf}` | Good — `wf` is trusted |
 | Implicit args | `{x : A}` in prove params, unification-based inference | Good — with canonical structure resolution |
-| Unification | First-order + Miller's pattern fragment (higher-order) | Good — handles `?f x = S x` |
+| Unification | First-order + Miller's pattern fragment (higher-order) | Good — handles `?f x = S x`, flex-flex |
 | Sections/Variables | `section S { variable(A : Type) ... }` with auto-abstraction | Good |
 | Notations | `notation "+" := add (prec 50, left)` | Basic — infix only, no mixfix |
 | Coercions | `coercion name = From -> To via func` | Good |
@@ -135,12 +136,14 @@ major declaration form exists (data, record, codata, class, instance,
 canonical, section, notation, coercion, setoid, ring, program). What's
 missing is not breadth but **depth and practicality**:
 
-1. **No extraction.** Verified code stays inside the prover. Rocq's
-   raison d'être is extracting OCaml/Haskell — without it, proofs are
-   academic exercises.
+1. **No extraction.** ~~Verified code stays inside the prover.~~ **DONE (Phase 45).** 
+   `extractSystem()` generates TypeScript/JS from verified programs,
+   erasing Prop-typed definitions. Tagged unions for data types,
+   pattern-matching functions for compute rules.
 
-2. **First-order unification only.** `?f x = S x` fails. Rocq's
-   pattern-fragment unification handles this. Many dependent types need it.
+2. **~~First-order~~ Higher-order unification.** **DONE (Phase 44).**
+   Pattern-fragment unification handles `?f x = S x`, flex-flex pairs,
+   and occurs-check. Replaces the first-order-only engine.
 
 3. **No interactive mode.** Every proof is batch-verified. Rocq users
    develop proofs incrementally, inspecting intermediate goals. This is
@@ -276,7 +279,7 @@ are currently stalled on ergonomics.
 | Phase | Feature | Description | Est. LoC |
 |-------|---------|-------------|----------|
 | **44** | **Higher-order unification** | Pattern-fragment unification. Handles `?f x = S x`. Required for serious dependent types. | ~500 |
-| **45** | **Code extraction** | Generate TypeScript/JS from verified programs. Erase Prop. Requires stdlib. | ~500 |
+| **45** | **Code extraction** | ~~Generate TypeScript/JS from verified programs. Erase Prop.~~ **DONE** | ~500 |
 | **46** | **SProp** | Strict propositions — definitional proof irrelevance. | ~300 |
 | **47** | **Primitive projections** | Records with definitional eta. `mk(fst(p), snd(p)) ≡ p`. | ~250 |
 
@@ -296,7 +299,7 @@ are currently stalled on ergonomics.
 |------|--------|----------|-------------------|
 | Done (1–39) | 41 | ~12,100 | ~85% |
 | Tier A: Ergonomics | 40–43 | ~2,950 | ~90% |
-| Tier B: Depth & power | 44–47 | ~1,550 | ~95% |
+| Tier B: Depth & power | 44–45 done, 46–47 remain | ~1,550 | ~95% |
 | Tier C: Performance | 48–50 | ~1,700 | ~98% |
 
 **Total remaining: ~6,200 LoC across 11 phases**
@@ -305,7 +308,7 @@ are currently stalled on ergonomics.
 
 The proof term language is the gating factor. Without it:
 - Standard library is infeasible (Phase 41)
-- Extraction has nothing to extract (Phase 45)
+- ~~Extraction has nothing to extract (Phase 45)~~ Done
 - Interactive mode has no ergonomic front-end (Phase 48)
 
 With it, INet becomes a practical proof assistant rather than a

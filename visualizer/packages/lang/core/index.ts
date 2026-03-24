@@ -27,6 +27,8 @@ export type {
 export type { ProofNode, ProofTree, ConversionResult } from "./typecheck-prove.ts";
 export { universeLevel, typeUniverse, typeSubsumes, isPropSort, sortOf } from "./typecheck-prove.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./proof-export.ts";
+export { extractSystem, renderTypeScript, renderJavaScript } from "./extract.ts";
+export type { ExtractionResult, ExtractedType, ExtractedFunction } from "./extract.ts";
 export {
   quoteExpr, unquoteStatements, buildGoalStatements,
   registerQuotationAgents, containsQuote, containsUnquote,
