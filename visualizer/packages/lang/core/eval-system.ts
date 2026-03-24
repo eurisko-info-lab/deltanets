@@ -375,6 +375,22 @@ export function evalBodyInto(
         // Notations are applied during parsing; nothing to do at eval time
         break;
       }
+      case "alias": {
+        // alias newName = existingAgent — creates a new agent with same ports
+        const target = agents.get(item.target);
+        if (!target) throw new EvalError(`alias '${item.name}': unknown agent '${item.target}'`);
+        agents.set(item.name, { ...target, name: item.name });
+        // Copy all rules involving the target — create parallel rules for the alias
+        for (const r of [...rules]) {
+          if (r.agentA === item.target) {
+            rules.push({ agentA: item.name, agentB: r.agentB, action: r.action });
+          }
+          if (r.agentB === item.target) {
+            rules.push({ agentA: r.agentA, agentB: item.name, action: r.action });
+          }
+        }
+        break;
+      }
       case "coercion": {
         // Register implicit type conversion
         if (!coercions.has(item.from)) coercions.set(item.from, new Map());

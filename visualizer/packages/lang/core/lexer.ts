@@ -56,6 +56,8 @@ export const TT = {
   BY: "BY",
   EXAMPLE: "EXAMPLE",
   WHERE: "WHERE",
+  MODULE: "MODULE",
+  ALIAS: "ALIAS",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -149,6 +151,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   by: TT.BY,
   example: TT.EXAMPLE,
   where: TT.WHERE,
+  module: TT.MODULE,
+  alias: TT.ALIAS,
 };
 
 export class LexError extends Error {

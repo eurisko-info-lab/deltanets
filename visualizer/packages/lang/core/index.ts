@@ -14,10 +14,12 @@ export { EvalError, evaluate } from "./evaluator.ts";
 export type {
   AgentDef,
   CoreResult,
+  FunctorDef,
   GraphDef,
   IncludeResolver,
   LaneViewDef,
   ModeDef,
+  ModuleTypeDef,
   RuleDef,
   SystemDef,
   TacticDef,
@@ -66,6 +68,8 @@ export function compile(
         laneViews: new Map(),
         proofTrees: new Map(),
         definitions: new Map(),
+        moduleTypes: new Map(),
+        functors: new Map(),
         errors: [e.message],
       };
     }
@@ -75,6 +79,8 @@ export function compile(
       laneViews: new Map(),
       proofTrees: new Map(),
       definitions: new Map(),
+      moduleTypes: new Map(),
+      functors: new Map(),
       errors: [`Internal error: ${(e as Error).message}`],
     };
   }

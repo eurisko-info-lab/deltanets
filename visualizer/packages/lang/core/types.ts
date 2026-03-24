@@ -33,20 +33,27 @@ export type Statement =
   | InstanceDecl
   | HintDecl
   | CanonicalDecl
-  | ProgramDecl;
+  | ProgramDecl
+  | ModuleTypeDecl
+  | FunctorDecl
+  | FunctorAppDecl;
 
 // system "name" { agent..., rule..., mode... }
+// system "name" : "Sig" { ... } — sealed by a module type
 export type SystemDecl = {
   kind: "system";
   name: string;
+  sig?: string; // optional module type to seal against
   body: SystemBody[];
 };
 
 // system "B" extend "A" { agent..., rule..., mode... }
+// system "B" : "Sig" extend "A" { ... } — sealed + extended
 export type ExtendDecl = {
   kind: "extend";
   name: string; // new system name
   base: string; // system to extend
+  sig?: string; // optional module type to seal against
   body: SystemBody[];
 };
 
@@ -60,7 +67,14 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl | AliasDecl;
+
+// alias e = Zero — agent name alias (used to satisfy module type signatures)
+export type AliasDecl = {
+  kind: "alias";
+  name: string; // new name
+  target: string; // existing agent name
+};
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -582,4 +596,35 @@ export type TypeArrow = {
 
 export type TypeHole = {
   kind: "type-hole";
+};
+
+// ─── Module system ─────────────────────────────────────────────────
+
+// module type "Monoid" { agent e(principal) | agent op(principal, result, second) }
+export type ModuleTypeDecl = {
+  kind: "module-type";
+  name: string;
+  specs: AgentSpec[];
+};
+
+export type AgentSpec = {
+  name: string;
+  ports: string[];
+};
+
+// module "F" (M : "Sig") [extend "Base"] { body }
+export type FunctorDecl = {
+  kind: "functor";
+  name: string;
+  params: { name: string; sig: string }[];
+  base?: string;
+  body: SystemBody[];
+};
+
+// module "X" := "F"("Arg1", "Arg2")
+export type FunctorAppDecl = {
+  kind: "functor-app";
+  name: string;
+  functor: string;
+  args: string[];
 };

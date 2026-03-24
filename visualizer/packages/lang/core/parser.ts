@@ -230,6 +230,8 @@ class Parser {
       case TT.THEOREM:
       case TT.LEMMA:
         return this.parseTheoremDecl();
+      case TT.MODULE:
+        return this.parseModuleDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -345,12 +347,19 @@ class Parser {
     this.eat(TT.SYSTEM);
     const name = this.eat(TT.STRING).value;
 
-    // system "B" extend "A" { ... }
+    // Optional seal: system "X" : "Sig" ...
+    let sig: string | undefined;
+    if (this.check(TT.COLON)) {
+      this.advance();
+      sig = this.eat(TT.STRING).value;
+    }
+
+    // system "B" extend "A" { ... }  or  system "B" : "Sig" extend "A" { ... }
     if (this.check(TT.EXTEND)) {
       this.advance();
       const base = this.eat(TT.STRING).value;
       const body = this.parseSystemBody();
-      return { kind: "extend", name, base, body };
+      return { kind: "extend", name, base, sig, body };
     }
 
     // system "C" = compose "A" + "B" + ... { ... }
@@ -366,9 +375,9 @@ class Parser {
       return { kind: "compose", name, components, body };
     }
 
-    // system "X" { ... }
+    // system "X" { ... }  or  system "X" : "Sig" { ... }
     const body = this.parseSystemBody();
-    return { kind: "system", name, body };
+    return { kind: "system", name, sig, body };
   }
 
   parseSystemBody(): AST.SystemBody[] {
@@ -400,6 +409,7 @@ class Parser {
       else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
       else if (tok.type === TT.PROGRAM) body.push(this.parseProgramDecl());
       else if (tok.type === TT.THEOREM || tok.type === TT.LEMMA) body.push(this.parseTheoremDecl());
+      else if (tok.type === TT.ALIAS) body.push(this.parseAliasDecl());
       else if (tok.type === TT.AT) {
         // @[simp] prove/theorem/lemma ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
@@ -419,13 +429,80 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program/alias, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
     }
     this.eat(TT.RBRACE);
     return body;
+  }
+
+  // ─── Module (module type / functor / functor app) ──────────────
+
+  parseModuleDecl(): AST.ModuleTypeDecl | AST.FunctorDecl | AST.FunctorAppDecl {
+    this.eat(TT.MODULE);
+
+    // module type "Name" { agent specs... }
+    if (this.check(TT.IDENT) && this.peek().value === "type") {
+      this.advance(); // consume 'type'
+      const name = this.eat(TT.STRING).value;
+      this.eat(TT.LBRACE);
+      const specs: AST.AgentSpec[] = [];
+      while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+        this.eat(TT.AGENT);
+        const agentName = this.eatIdent();
+        this.eat(TT.LPAREN);
+        const ports = this.check(TT.RPAREN)
+          ? [] : this.parseCommaList(() => this.eatIdent());
+        this.eat(TT.RPAREN);
+        specs.push({ name: agentName, ports });
+      }
+      this.eat(TT.RBRACE);
+      return { kind: "module-type", name, specs };
+    }
+
+    const name = this.eat(TT.STRING).value;
+
+    // module "X" := "F"("Arg1", ...)
+    if (this.check(TT.WALRUS)) {
+      this.advance();
+      const functor = this.eat(TT.STRING).value;
+      this.eat(TT.LPAREN);
+      const args = this.parseCommaList(() => this.eat(TT.STRING).value);
+      this.eat(TT.RPAREN);
+      return { kind: "functor-app", name, functor, args };
+    }
+
+    // module "F" (M : "Sig", ...) [extend "Base"] { body }
+    this.eat(TT.LPAREN);
+    const params: { name: string; sig: string }[] = [];
+    if (!this.check(TT.RPAREN)) {
+      params.push(...this.parseCommaList(() => {
+        const pname = this.eatIdent();
+        this.eat(TT.COLON);
+        const sig = this.eat(TT.STRING).value;
+        return { name: pname, sig };
+      }));
+    }
+    this.eat(TT.RPAREN);
+    let base: string | undefined;
+    if (this.check(TT.EXTEND)) {
+      this.advance();
+      base = this.eat(TT.STRING).value;
+    }
+    const body = this.parseSystemBody();
+    return { kind: "functor", name, params, base, body };
+  }
+
+  // ─── Alias ─────────────────────────────────────────────────────
+
+  parseAliasDecl(): AST.AliasDecl {
+    this.eat(TT.ALIAS);
+    const name = this.eatIdent();
+    this.eat(TT.EQ);
+    const target = this.eatIdent();
+    return { kind: "alias", name, target };
   }
 
   // ─── Agent ───────────────────────────────────────────────────────
