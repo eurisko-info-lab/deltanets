@@ -16,6 +16,7 @@ import {
 } from "./eval-system.ts";
 import { evalGraph } from "./eval-graph.ts";
 import { PRELUDE_SOURCE } from "./prelude.ts";
+import { STDLIB_SOURCE, STDLIB_NAT, STDLIB_BOOL, STDLIB_EQ, STDLIB_OPTION, STDLIB_LIST, STDLIB_SIGMA } from "./stdlib.ts";
 import { tokenize } from "./lexer.ts";
 import { parse } from "./parser.ts";
 
@@ -129,6 +130,13 @@ export type IncludeResolver = (path: string) => string | null;
 /** Built-in resolver that handles `include "prelude"`. */
 function builtinResolver(path: string): string | null {
   if (path === "prelude") return PRELUDE_SOURCE;
+  if (path === "stdlib") return STDLIB_SOURCE;
+  if (path === "stdlib/nat") return `include "prelude"\n${STDLIB_NAT}`;
+  if (path === "stdlib/bool") return `include "prelude"\n${STDLIB_BOOL}`;
+  if (path === "stdlib/eq") return `include "prelude"\n${STDLIB_EQ}`;
+  if (path === "stdlib/option") return `include "prelude"\n${STDLIB_OPTION}`;
+  if (path === "stdlib/list") return `include "prelude"\n${STDLIB_LIST}`;
+  if (path === "stdlib/sigma") return `include "prelude"\n${STDLIB_SIGMA}`;
   return null;
 }
 
