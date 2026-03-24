@@ -207,3 +207,142 @@ Deno.test("notation: notation must be declared before use", () => {
   `);
   assertNotEquals(result.errors.length, 0, "should fail: notation declared after use");
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase 43: Mixfix notations
+// ═══════════════════════════════════════════════════════════════════
+
+const { assert } = await import("$std/assert/mod.ts");
+
+// ─── Prefix mixfix ─────────────────────────────────────────────────
+
+Deno.test("mixfix: prefix ternary if-then-else", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent ite(principal, result, ifTrue, ifFalse)
+      notation "if _ then _ else _" = ite
+
+      prove test(n : Nat) -> Eq(if n then Zero else Zero, ite(n, Zero, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("mixfix: prefix binary 'not _'", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent myNot(principal, result)
+      notation "not _" = myNot
+
+      prove test(n : Nat) -> Eq(not n, myNot(n)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("mixfix: prefix with func call args in holes", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent ite(principal, result, ifTrue, ifFalse)
+      notation "if _ then _ else _" = ite
+
+      prove test(n : Nat) -> Eq(if n then Succ(Zero) else Zero, ite(n, Succ(Zero), Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+// ─── Infix mixfix ───────────────────────────────────────────────────
+
+Deno.test("mixfix: infix keyword operator '_ cons _'", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent myCons(principal, head, tail)
+      notation "_ cons _" = myCons (prec 40, right)
+
+      prove test(n : Nat) -> Eq(n cons Zero, myCons(n, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+Deno.test("mixfix: infix ternary '_ choose _ or _'", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent cond(principal, result, ifTrue, ifFalse)
+      notation "_ choose _ or _" = cond
+
+      prove test(n : Nat) -> Eq(n choose Zero or Zero, cond(n, Zero, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+// ─── Mixfix keyword stopping ────────────────────────────────────────
+
+Deno.test("mixfix: keywords not consumed as identifiers", () => {
+  // 'then' and 'else' should not parse as variable names
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent ite(principal, result, ifTrue, ifFalse)
+      notation "if _ then _ else _" = ite
+
+      prove test(n : Nat) -> Eq(if Zero then n else n, ite(Zero, n, n)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+// ─── Mixfix with precedence ─────────────────────────────────────────
+
+Deno.test("mixfix: prefix with explicit precedence", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent ite(principal, result, ifTrue, ifFalse)
+      notation "if _ then _ else _" = ite (prec 10, left)
+
+      prove test(n : Nat) -> Eq(if n then Zero else Zero, ite(n, Zero, Zero)) {
+        | Zero -> refl
+        | Succ(k) -> refl
+      }
+    }
+  `);
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});
+
+// ─── Mixfix coexisting with binary infix ────────────────────────────
+
+Deno.test("mixfix: coexists with binary infix +", () => {
+  const result = compile(`
+    system "T" extend "NatEq" {
+      agent ite(principal, result, ifTrue, ifFalse)
+      notation "+" = add (prec 50, left)
+      notation "if _ then _ else _" = ite (prec 10, left)
+
+      prove test(n : Nat) -> Eq(if n then n + Zero else Zero, ite(n, add(n, Zero), Zero)) {
+        | Zero -> refl
+        | Succ(k) -> ?
+      }
+    }
+  `);
+  // Even if proof has holes, the parsing should succeed
+  assertEquals(result.errors.length, 0, `errors: ${result.errors}`);
+});

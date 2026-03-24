@@ -87,10 +87,17 @@ function flattenDeepPatterns(
   return { bindings, body: wrappedBody };
 }
 
+type MixfixPart = { kind: "kw"; value: string } | { kind: "hole" };
+type ParsedMixfix = { parts: MixfixPart[]; func: string; prec: number };
+
 class Parser {
   pos = 0;
   private deepPatternCounter = { value: 0 };
   private notations = new Map<string, { func: string; precedence: number; assoc: "left" | "right" }>();
+  // Mixfix: prefix patterns keyed by leading keyword, infix patterns keyed by keyword after first hole
+  private prefixMixfix = new Map<string, ParsedMixfix[]>();
+  private infixMixfix = new Map<string, ParsedMixfix[]>();
+  private mixfixKeywords = new Set<string>();
   constructor(private tokens: Token[]) {}
 
   peek(): Token {
@@ -1013,17 +1020,74 @@ class Parser {
     let left = this.parsePrimaryProveExpr();
     // Infix notation loop (Pratt parsing)
     while (true) {
+      // Standard binary infix operators (+, -, *, /)
       const sym = this.tokenToNotationSymbol();
-      if (!sym) break;
-      const nota = this.notations.get(sym);
-      if (!nota) break;
-      if (nota.precedence < minPrec) break;
-      this.advance(); // consume operator token
-      const nextPrec = nota.assoc === "left" ? nota.precedence + 1 : nota.precedence;
-      const right = this.parseProveExprPrec(nextPrec);
-      left = { kind: "call", name: nota.func, args: [left, right] };
+      if (sym) {
+        const nota = this.notations.get(sym);
+        if (nota && nota.precedence >= minPrec) {
+          this.advance(); // consume operator token
+          const nextPrec = nota.assoc === "left" ? nota.precedence + 1 : nota.precedence;
+          const right = this.parseProveExprPrec(nextPrec);
+          left = { kind: "call", name: nota.func, args: [left, right] };
+          continue;
+        }
+      }
+      // Infix mixfix: e.g. "_ :: _" or "_ ? _ : _"
+      if (this.check(TT.IDENT) && this.infixMixfix.has(this.peek().value)) {
+        const key = this.peek().value;
+        const patterns = this.infixMixfix.get(key)!;
+        let matched = false;
+        for (const mx of patterns) {
+          if (mx.prec < minPrec) continue;
+          const result = this.tryMatchInfixMixfix(mx, left);
+          if (result) { left = result; matched = true; break; }
+        }
+        if (matched) continue;
+      }
+      break;
     }
     return left;
+  }
+
+  /** Try to match a prefix mixfix pattern (starts with keyword). Returns null if no match. */
+  private tryMatchMixfix(mx: ParsedMixfix): AST.ProveExpr | null {
+    const save = this.pos;
+    const args: AST.ProveExpr[] = [];
+    for (const part of mx.parts) {
+      if (part.kind === "kw") {
+        if (this.check(TT.IDENT) && this.peek().value === part.value) {
+          this.advance();
+        } else {
+          this.pos = save;
+          return null;
+        }
+      } else {
+        // hole: parse subexpression at prec 0 (delimited by next keyword or end)
+        args.push(this.parseProveExprPrec(mx.prec + 1));
+      }
+    }
+    return { kind: "call", name: mx.func, args };
+  }
+
+  /** Try to match an infix mixfix pattern (starts with _ hole). left is the already-parsed first arg. */
+  private tryMatchInfixMixfix(mx: ParsedMixfix, left: AST.ProveExpr): AST.ProveExpr | null {
+    const save = this.pos;
+    const args: AST.ProveExpr[] = [left]; // first hole is already parsed
+    // Skip first part (it's a hole, already consumed as `left`)
+    for (let i = 1; i < mx.parts.length; i++) {
+      const part = mx.parts[i];
+      if (part.kind === "kw") {
+        if (this.check(TT.IDENT) && this.peek().value === part.value) {
+          this.advance();
+        } else {
+          this.pos = save;
+          return null;
+        }
+      } else {
+        args.push(this.parseProveExprPrec(mx.prec + 1));
+      }
+    }
+    return { kind: "call", name: mx.func, args };
   }
 
   private parsePrimaryProveExpr(): AST.ProveExpr {
@@ -1121,6 +1185,23 @@ class Parser {
     if (this.check(TT.RING)) {
       this.advance();
       return { kind: "ident", name: "ring" };
+    }
+    // Prefix mixfix: check if current ident starts a registered pattern
+    if (this.check(TT.IDENT) && this.prefixMixfix.has(this.peek().value)) {
+      const key = this.peek().value;
+      const patterns = this.prefixMixfix.get(key)!;
+      // Try longest pattern first (most specific match)
+      for (const mx of patterns) {
+        const result = this.tryMatchMixfix(mx);
+        if (result) return result;
+      }
+    }
+    // Stop at mixfix keywords — don't consume them as regular identifiers
+    if (this.check(TT.IDENT) && this.mixfixKeywords.has(this.peek().value)) {
+      throw new ParseError(
+        `Unexpected mixfix keyword '${this.peek().value}'`,
+        this.peek().line, this.peek().col,
+      );
     }
     const name = this.eatIdent();
     // match(scrutinee) { | Pat(bindings) -> body ... }
@@ -1584,7 +1665,30 @@ class Parser {
       this.eat(TT.RPAREN);
     }
     // Register in parser's notation table for subsequent expressions
-    this.notations.set(symbol, { func, precedence, assoc });
+    // Detect mixfix patterns (contain "_" holes)
+    const parts = symbol.split(/\s+/).filter(s => s.length > 0);
+    const hasHoles = parts.includes("_");
+    if (hasHoles) {
+      const parsed: MixfixPart[] = parts.map(p => p === "_" ? { kind: "hole" as const } : { kind: "kw" as const, value: p });
+      const mx: ParsedMixfix = { parts: parsed, func, prec: precedence };
+      if (parsed[0].kind === "kw") {
+        // Prefix mixfix: e.g. "if _ then _ else _"
+        const key = parsed[0].value;
+        if (!this.prefixMixfix.has(key)) this.prefixMixfix.set(key, []);
+        this.prefixMixfix.get(key)!.push(mx);
+      } else if (parsed.length >= 2 && parsed[1].kind === "kw") {
+        // Infix mixfix: e.g. "_ :: _" or "_ ? _ : _"
+        const key = parsed[1].value;
+        if (!this.infixMixfix.has(key)) this.infixMixfix.set(key, []);
+        this.infixMixfix.get(key)!.push(mx);
+      }
+      // Register all keyword parts so they stop expression parsing
+      for (const p of parsed) {
+        if (p.kind === "kw") this.mixfixKeywords.add(p.value);
+      }
+    } else {
+      this.notations.set(symbol, { func, precedence, assoc });
+    }
     return { kind: "notation", symbol, func, precedence, assoc };
   }
 
