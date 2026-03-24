@@ -1,8 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
-// Tactics — Phase 19 + Phase 20 (meta-agent primitives in user tactics)
-// Built-in tactic agents (Simp, Decide, Omega, Auto) as INet
-// meta-handlers, and user-definable tactics via
-// `tactic name { agents... rules... }`.
+// Tactics — Strategy-based tactic resolution + user-definable tactics
+// via `tactic name { agents... rules... }`.
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
@@ -11,7 +9,6 @@ import { evalAgent } from "./eval-system.ts";
 import type { ComputeRule, ProvedContext, StrategyContext } from "./typecheck-prove.ts";
 import {
   withNormTable, normalize, computeGoalType,
-  tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto,
   makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch,
 } from "./typecheck-prove.ts";
 import {
@@ -19,6 +16,7 @@ import {
   createCtxSearchHandler, createNormalizeHandler, createEqCheckHandler,
   META_CTX_SEARCH, META_NORMALIZE, META_EQ_CHECK,
   META_AGENT_DECLS,
+  STRAT_AGENT_DECLS, collectStrategyRules, runStrategyGraph,
 } from "./meta-agents.ts";
 import {
   TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM,
@@ -26,74 +24,98 @@ import {
 import type { Node, Graph, AgentPortDefs, MetaHandler, InteractionRule } from "@deltanets/core";
 import { link, removeFromArrayIf, getRedexes } from "@deltanets/core";
 
-// ─── Tactic agent names ────────────────────────────────────────────
-
-export const TACTIC_SIMP = "TacSimp";
-export const TACTIC_DECIDE = "TacDecide";
-export const TACTIC_OMEGA = "TacOmega";
-export const TACTIC_AUTO = "TacAuto";
-
-export const TACTIC_AGENTS = [
-  TACTIC_SIMP, TACTIC_DECIDE, TACTIC_OMEGA, TACTIC_AUTO,
-] as const;
-
-// Map from prove-level tactic name → INet agent name
-const BUILTIN_TACTIC_MAP: Record<string, string> = {
-  simp: TACTIC_SIMP,
-  decide: TACTIC_DECIDE,
-  omega: TACTIC_OMEGA,
-  auto: TACTIC_AUTO,
-};
-
-export const BUILTIN_TACTIC_NAMES = new Set([...Object.keys(BUILTIN_TACTIC_MAP), "assumption"]);
+/** Built-in tactic keyword names. */
+export const BUILTIN_TACTIC_NAMES = new Set(["assumption", "simp", "decide", "omega", "auto"]);
 
 /** Tactic combinator keywords (Phase 34). */
 export const TACTIC_COMBINATORS = new Set(["try", "first", "repeat", "then", "seq", "all"]);
 
-/** AST-level resolver for each built-in tactic keyword. */
-type BuiltinResolver = (
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-  hints?: Map<string, Set<string>>,
-  instances?: InstanceDef[],
-) => AST.ProveExpr | null;
-
-const BUILTIN_RESOLVERS = new Map<string, BuiltinResolver>([
-  ["assumption", tryResolveAssumption],
-  ["simp", tryResolveSimp],
-  ["decide", tryResolveDecide],
-  ["omega", tryResolveOmega],
-  ["auto", tryResolveAuto],
-]);
-
 // ─── Strategy interpreter (Phase 38) ──────────────────────────────
 // Evaluates strategy expressions by composing proof primitives.
 
-export const DEFAULT_STRATEGIES = new Map<string, AST.StrategyExpr>([
-  ["assumption", { kind: "ident", name: "ctx_search" }],
-  ["simp", { kind: "first", alts: [
-    { kind: "ident", name: "conv" },
-    { kind: "ident", name: "ctx_search" },
-    { kind: "ident", name: "rewrite" },
-  ]}],
-  ["decide", { kind: "ident", name: "ground" }],
-  ["omega", { kind: "first", alts: [
-    { kind: "ident", name: "conv" },
-    { kind: "cong", ctor: "Succ", inner: { kind: "ident", name: "omega" } },
-    { kind: "ident", name: "rewrite" },
-    { kind: "cong", ctor: "Succ", inner: { kind: "ident", name: "rewrite" } },
-  ]}],
-  ["auto", { kind: "search", depth: 3 }],
-]);
-
 const STRATEGY_PRIMITIVES = new Set(["conv", "ctx_search", "rewrite", "ground"]);
 
+/** Check if a strategy expression is recursive (references itself via the strategies map). */
+function isRecursiveStrategy(
+  expr: AST.StrategyExpr,
+  strategies: Map<string, AST.StrategyExpr>,
+  visited: Set<string> = new Set(),
+): boolean {
+  switch (expr.kind) {
+    case "ident": {
+      if (STRATEGY_PRIMITIVES.has(expr.name)) return false;
+      if (visited.has(expr.name)) return true;
+      const ref = strategies.get(expr.name);
+      if (!ref) return false;
+      visited.add(expr.name);
+      return isRecursiveStrategy(ref, strategies, visited);
+    }
+    case "first":
+      return expr.alts.some(a => isRecursiveStrategy(a, strategies, visited));
+    case "cong":
+      return isRecursiveStrategy(expr.inner, strategies, visited);
+    case "search":
+      return false;
+  }
+}
+
+/**
+ * Run a strategy expression as an INet graph reduction.
+ * Builds the strategy agent graph, injects judgment rules, reduces, reads result.
+ * Falls back to the TS interpreter for recursive strategies (which can't be
+ * statically unrolled into a finite graph).
+ */
 export function runStrategy(
   expr: AST.StrategyExpr,
   sctx: StrategyContext,
   strategies: Map<string, AST.StrategyExpr>,
   depth: number = 20,
+  _extra?: {
+    prove: AST.ProveDecl;
+    caseArm: AST.ProveCase;
+    provedCtx: ProvedContext;
+    computeRules: ComputeRule[];
+  },
+): AST.ProveExpr | null {
+  if (depth <= 0) return null;
+
+  // If full context is available AND strategy is non-recursive, use INet graph-based reduction
+  if (_extra && !isRecursiveStrategy(expr, strategies)) {
+    const { prove, caseArm, provedCtx, computeRules } = _extra;
+    // Build agentPorts for strategy agents + Tm* agents
+    const agentPorts: AgentPortDefs = new Map();
+    for (const decl of STRAT_AGENT_DECLS) {
+      const portIndex = new Map<string, number>();
+      decl.ports.forEach((p, i) => portIndex.set(p.name, i));
+      agentPorts.set(decl.name, portIndex);
+    }
+    for (const decl of META_AGENT_DECLS) {
+      if (!agentPorts.has(decl.name)) {
+        const portIndex = new Map<string, number>();
+        decl.ports.forEach((p, i) => portIndex.set(p.name, i));
+        agentPorts.set(decl.name, portIndex);
+      }
+    }
+    // Add CongWrap port defs
+    agentPorts.set("CongWrap", new Map([["principal", 0], ["output", 1]]));
+    // Add root/era port defs
+    agentPorts.set("root", new Map([["principal", 0]]));
+    agentPorts.set("era", new Map([["principal", 0]]));
+
+    const allRules = collectStrategyRules(prove, caseArm, provedCtx, computeRules);
+    return runStrategyGraph(expr, sctx.goal, strategies, allRules, agentPorts);
+  }
+
+  // Fallback: TypeScript interpreter (for recursive strategies or callers without full context)
+  return runStrategyTS(expr, sctx, strategies, depth);
+}
+
+/** TypeScript-interpreted strategy fallback. */
+function runStrategyTS(
+  expr: AST.StrategyExpr,
+  sctx: StrategyContext,
+  strategies: Map<string, AST.StrategyExpr>,
+  depth: number,
 ): AST.ProveExpr | null {
   if (depth <= 0) return null;
 
@@ -106,14 +128,14 @@ export function runStrategy(
         case "ground": return primGround(sctx);
         default: {
           const ref = strategies.get(expr.name);
-          if (ref) return runStrategy(ref, sctx, strategies, depth - 1);
+          if (ref) return runStrategyTS(ref, sctx, strategies, depth - 1);
           return null;
         }
       }
     }
     case "first": {
       for (const alt of expr.alts) {
-        const result = runStrategy(alt, sctx, strategies, depth);
+        const result = runStrategyTS(alt, sctx, strategies, depth);
         if (result) return result;
       }
       return null;
@@ -122,7 +144,7 @@ export function runStrategy(
       const decomp = primCong(expr.ctor, sctx);
       if (!decomp) return null;
       const subSctx: StrategyContext = { ...sctx, goal: decomp.subGoal };
-      const subProof = runStrategy(expr.inner, subSctx, strategies, depth - 1);
+      const subProof = runStrategyTS(expr.inner, subSctx, strategies, depth - 1);
       if (!subProof) return null;
       return decomp.wrap(subProof);
     }
@@ -132,7 +154,7 @@ export function runStrategy(
   }
 }
 
-// ─── Agent declarations ────────────────────────────────────────────
+// ─── Graph helpers ─────────────────────────────────────────────────
 
 function mkAgent(name: string, portNames: string[]): AST.AgentDecl {
   return {
@@ -142,210 +164,12 @@ function mkAgent(name: string, portNames: string[]): AST.AgentDecl {
   };
 }
 
-export const TACTIC_AGENT_DECLS: AST.AgentDecl[] = [
-  mkAgent(TACTIC_SIMP, ["principal", "result"]),
-  mkAgent(TACTIC_DECIDE, ["principal", "result"]),
-  mkAgent(TACTIC_OMEGA, ["principal", "result"]),
-  mkAgent(TACTIC_AUTO, ["principal", "result"]),
-];
-
-// ─── Simplified proof helpers ──────────────────────────────────────
-
-function extractEq(
-  type: AST.ProveExpr,
-): { left: AST.ProveExpr; right: AST.ProveExpr } | null {
-  if (type.kind === "call" && type.name === "Eq" && type.args.length === 2) {
-    return { left: type.args[0], right: type.args[1] };
-  }
-  return null;
-}
-
-function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
-  if (a.kind === "ident" && b.kind === "ident") return a.name === b.name;
-  if (a.kind === "call" && b.kind === "call") {
-    if (a.name !== b.name || a.args.length !== b.args.length) return false;
-    return a.args.every((arg, i) => exprEqual(arg, b.args[i]));
-  }
-  if (a.kind === "pi" && b.kind === "pi") {
-    return exprEqual(a.domain, b.domain) && exprEqual(a.codomain, b.codomain);
-  }
-  if (a.kind === "sigma" && b.kind === "sigma") {
-    return exprEqual(a.domain, b.domain) && exprEqual(a.codomain, b.codomain);
-  }
-  if (a.kind === "lambda" && b.kind === "lambda") {
-    return exprEqual(a.paramType, b.paramType) && exprEqual(a.body, b.body);
-  }
-  if (a.kind === "let" && b.kind === "let") {
-    return a.name === b.name && exprEqual(a.value, b.value) && exprEqual(a.body, b.body);
-  }
-  return false;
-}
-
-// ─── Graph helpers ─────────────────────────────────────────────────
-
 function mkNode(type: string, label: string | undefined, portCount: number): Node {
   const node: Node = { type, label, ports: [] };
   for (let i = 0; i < portCount; i++) {
     node.ports.push({ node, port: i });
   }
   return node;
-}
-
-/** Common tactic pattern: read goal, try to prove, write result back. */
-function tacticResolve(
-  tacAgent: Node,
-  tmAgent: Node,
-  graph: Graph,
-  tryProve: (goal: AST.ProveExpr) => AST.ProveExpr | null,
-): void {
-  const goal = readTermFromGraph(tmAgent);
-  const proof = tryProve(goal);
-
-  // Remove old term tree
-  const oldNodes = collectTermTree(tmAgent);
-  removeFromArrayIf(graph, (n) => oldNodes.has(n));
-
-  // Write proof (or original goal if no proof found)
-  const newRoot = writeTermToGraph(proof ?? goal, graph);
-  link({ node: newRoot, port: 0 }, tacAgent.ports[1]);
-  removeFromArrayIf(graph, (n) => n === tacAgent);
-}
-
-// ─── Built-in tactic MetaHandlers ──────────────────────────────────
-
-/** Simp: normalize both sides of Eq, check equality → refl. */
-export function createSimpHandler(
-  _provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): MetaHandler {
-  return (left, right, graph, _agentPorts) => {
-    const tacAgent = left.type === TACTIC_SIMP ? left : right;
-    const tmAgent = left.type === TACTIC_SIMP ? right : left;
-    tacticResolve(tacAgent, tmAgent, graph, (goal) =>
-      withNormTable(computeRules, () => {
-        const eq = extractEq(normalize(goal));
-        if (!eq) return null;
-        if (exprEqual(normalize(eq.left), normalize(eq.right))) {
-          return { kind: "ident", name: "refl" };
-        }
-        return null;
-      })
-    );
-  };
-}
-
-/** Decide: ground-term equality via normalization → refl. */
-export function createDecideHandler(
-  computeRules: ComputeRule[],
-): MetaHandler {
-  return (left, right, graph, _agentPorts) => {
-    const tacAgent = left.type === TACTIC_DECIDE ? left : right;
-    const tmAgent = left.type === TACTIC_DECIDE ? right : left;
-    tacticResolve(tacAgent, tmAgent, graph, (goal) =>
-      withNormTable(computeRules, () => {
-        const eq = extractEq(normalize(goal));
-        if (!eq) return null;
-        if (exprEqual(normalize(eq.left), normalize(eq.right))) {
-          return { kind: "ident", name: "refl" };
-        }
-        return null;
-      })
-    );
-  };
-}
-
-/** Omega: normalize + congruence on Succ. */
-export function createOmegaHandler(
-  _provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): MetaHandler {
-  return (left, right, graph, _agentPorts) => {
-    const tacAgent = left.type === TACTIC_OMEGA ? left : right;
-    const tmAgent = left.type === TACTIC_OMEGA ? right : left;
-    tacticResolve(tacAgent, tmAgent, graph, (goal) =>
-      withNormTable(computeRules, () => {
-        const eq = extractEq(normalize(goal));
-        if (!eq) return null;
-        const lhs = normalize(eq.left);
-        const rhs = normalize(eq.right);
-        if (exprEqual(lhs, rhs)) return { kind: "ident", name: "refl" };
-        // Congruence on Succ
-        if (
-          lhs.kind === "call" && lhs.name === "Succ" && lhs.args.length === 1 &&
-          rhs.kind === "call" && rhs.name === "Succ" && rhs.args.length === 1
-        ) {
-          if (exprEqual(normalize(lhs.args[0]), normalize(rhs.args[0]))) {
-            return { kind: "call", name: "cong_succ", args: [{ kind: "ident", name: "refl" }] };
-          }
-        }
-        return null;
-      })
-    );
-  };
-}
-
-/** Auto: conv + congruence (simplified depth-1 search). */
-export function createAutoHandler(
-  _provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): MetaHandler {
-  return (left, right, graph, _agentPorts) => {
-    const tacAgent = left.type === TACTIC_AUTO ? left : right;
-    const tmAgent = left.type === TACTIC_AUTO ? right : left;
-    tacticResolve(tacAgent, tmAgent, graph, (goal) =>
-      withNormTable(computeRules, () => {
-        const eq = extractEq(normalize(goal));
-        if (!eq) return null;
-        const lhs = normalize(eq.left);
-        const rhs = normalize(eq.right);
-        if (exprEqual(lhs, rhs)) return { kind: "ident", name: "refl" };
-        // Congruence on matching constructors
-        if (
-          lhs.kind === "call" && rhs.kind === "call" &&
-          lhs.name === rhs.name && lhs.args.length === rhs.args.length
-        ) {
-          if (lhs.args.every((a, i) => exprEqual(normalize(a), normalize(rhs.args[i])))) {
-            return { kind: "ident", name: "refl" };
-          }
-        }
-        return null;
-      })
-    );
-  };
-}
-
-// ─── Built-in tactics registration ─────────────────────────────────
-
-const TACTIC_TM_TYPES = [TM_VAR, TM_APP, TM_PI, TM_SIGMA, TM_LAM];
-
-export function registerBuiltinTactics(
-  agents: Map<string, AgentDef>,
-  rules: RuleDef[],
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): void {
-  for (const decl of TACTIC_AGENT_DECLS) {
-    if (!agents.has(decl.name)) {
-      agents.set(decl.name, evalAgent(decl));
-    }
-  }
-
-  const handlers: [string, MetaHandler][] = [
-    [TACTIC_SIMP, createSimpHandler(provedCtx, computeRules)],
-    [TACTIC_DECIDE, createDecideHandler(computeRules)],
-    [TACTIC_OMEGA, createOmegaHandler(provedCtx, computeRules)],
-    [TACTIC_AUTO, createAutoHandler(provedCtx, computeRules)],
-  ];
-
-  for (const [agentName, handler] of handlers) {
-    for (const tm of TACTIC_TM_TYPES) {
-      rules.push({
-        agentA: agentName,
-        agentB: tm,
-        action: { kind: "meta", handler },
-      });
-    }
-  }
 }
 
 // ─── User tactic compilation ───────────────────────────────────────
@@ -424,20 +248,14 @@ function resolveUserTacticExpr(
 ): AST.ProveExpr {
   if (expr.kind === "ident") {
     // Strategy-based resolution: user strategies override built-in defaults
-    const allStrategies = new Map([...DEFAULT_STRATEGIES, ...(strategies ?? [])]);
+    const allStrategies = strategies ?? new Map<string, AST.StrategyExpr>();
     const strategy = allStrategies.get(expr.name);
     if (strategy) {
       const sctx = makeStrategyContext(prove, caseArm, provedCtx, hints, instances);
-      const result = runStrategy(strategy, sctx, allStrategies);
+      const result = runStrategy(strategy, sctx, allStrategies, 20, {
+        prove, caseArm, provedCtx, computeRules,
+      });
       if (result) return result;
-    }
-    // Fall back to BUILTIN_RESOLVERS for names not in strategies (backward compat)
-    if (!strategy) {
-      const builtinResolver = BUILTIN_RESOLVERS.get(expr.name);
-      if (builtinResolver) {
-        const result = builtinResolver(prove, caseArm, provedCtx, hints, instances);
-        return result ?? expr;
-      }
     }
     // User-defined INet tactics
     if (tactics.has(expr.name)) {

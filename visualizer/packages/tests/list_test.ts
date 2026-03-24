@@ -77,8 +77,8 @@ Deno.test("list: system compiles with all agents and rules", () => {
   const result = compileCore(LIST_SOURCE);
   assertEquals(result.errors.length, 0);
   const lp = result.systems.get("ListProofs")!;
-  // Nat(2) + List(4) + Eq(4) + ListProofs(3) = 13 rules
-  assertEquals(lp.rules.length, 13);
+  // 29 Prelude + Nat(2) + List(4) + Eq(4) + ListProofs(3) = 42
+  assertEquals(lp.rules.length, 42);
   assertEquals(lp.agents.has("Nil"), true);
   assertEquals(lp.agents.has("Cons"), true);
   assertEquals(lp.agents.has("length"), true);

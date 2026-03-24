@@ -38,8 +38,8 @@ Deno.test("tactic: system compiles with prove-generated agents", () => {
   const tp = result.systems.get("TacticProofs")!;
   assertEquals(tp.agents.has("plus_zero_right"), true);
   assertEquals(tp.agents.has("plus_succ_right"), true);
-  // Nat(2) + Eq(4) + NatEq(1) + pzr(2) + psr(2) = 11 rules
-  assertEquals(tp.rules.length, 11);
+  // 29 Prelude + Nat(2) + Eq(4) + NatEq(1) + pzr(2) + psr(2) = 40
+  assertEquals(tp.rules.length, 40);
 });
 
 Deno.test("tactic: plus_zero_right agent has correct ports", () => {

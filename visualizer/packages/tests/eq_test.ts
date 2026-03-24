@@ -34,7 +34,7 @@ Deno.test("eq: system compiles with agents and rules", () => {
   assertEquals(eq.agents.has("sym"), true);
   assertEquals(eq.agents.has("cong"), true);
   assertEquals(eq.agents.has("trans"), true);
-  assertEquals(eq.rules.length, 4);
+  assertEquals(eq.rules.length, 33); // 29 Prelude + 4 Eq
 });
 
 Deno.test("eq: subst(refl, value) → value", () => {

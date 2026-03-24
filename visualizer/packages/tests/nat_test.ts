@@ -43,7 +43,7 @@ Deno.test("nat: system compiles with agents and rules", () => {
   assertEquals(nat.agents.has("Zero"), true);
   assertEquals(nat.agents.has("Succ"), true);
   assertEquals(nat.agents.has("add"), true);
-  assertEquals(nat.rules.length, 2);
+  assertEquals(nat.rules.length, 31); // 29 Prelude (Quote+Meta) + 2 Nat
 });
 
 Deno.test("nat: 0 + 0 = 0", () => {

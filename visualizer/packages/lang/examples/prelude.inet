@@ -1,10 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════
-# Prelude — Structural agents shared by all interaction net systems.
+# Prelude — The trusted kernel shared by all interaction net systems.
 #
-# These agents are part of the meta-theory: every interaction net
-# system needs an entry point (root) and a way to reference free
-# variables (var).  Including this prelude and extending "Prelude"
-# saves redeclaring them in every system definition.
+# Every system that extends "Prelude" inherits:
+#   • Structural agents: root, var
+#   • Quotation agents: term/goal/context reification
+#   • Meta-agents: proof automation & strategy protocol
+#   • Default strategies: assumption, simp, decide, omega, auto
 #
 # Usage:
 #   include "prelude"
@@ -12,6 +13,72 @@
 # ═══════════════════════════════════════════════════════════════════
 
 system "Prelude" {
-  agent root(principal)              # Entry point / output
-  agent var(principal)               # Free variable
+
+  # ─── Structural ─────────────────────────────────────────────
+  agent root(principal)
+  agent var(principal)
+
+  # ─── Quotation: Term Reification ────────────────────────────
+  # Reifies proof terms, goals, and contexts as first-class INet
+  # agents.  Each Tm* agent annihilates with itself (structural
+  # equality).  These form the shared language between the prover,
+  # meta-agents, and strategy protocol.
+
+  agent TmVar(principal)                              # variable (label = name)
+  agent TmApp(principal, args)                        # application (label = fn)
+  agent TmPi(principal, domain, codomain)             # Π type
+  agent TmSigma(principal, domain, codomain)          # Σ type
+  agent TmLam(principal, paramType, body)             # λ abstraction
+  agent TmNil(principal)                              # argument-list nil
+  agent TmCons(principal, head, tail)                 # argument-list cons
+  agent QGoal(principal, prop, ctx)                   # proof goal
+  agent CtxNil(principal)                             # empty context
+  agent CtxCons(principal, name_term, type_term, tail) # hypothesis
+
+  rule TmVar   <> TmVar   -> annihilate
+  rule TmApp   <> TmApp   -> annihilate
+  rule TmPi    <> TmPi    -> annihilate
+  rule TmSigma <> TmSigma -> annihilate
+  rule TmLam   <> TmLam   -> annihilate
+  rule TmNil   <> TmNil   -> annihilate
+  rule TmCons  <> TmCons  -> annihilate
+  rule QGoal   <> QGoal   -> annihilate
+  rule CtxNil  <> CtxNil  -> annihilate
+  rule CtxCons <> CtxCons -> annihilate
+
+  # ─── Meta-Agents ────────────────────────────────────────────
+  # Built-in agents whose interaction rules are implemented by
+  # the trusted kernel.  They inspect, transform, and construct
+  # quoted terms at reduction time.
+
+  agent MatchGoal(principal, on_var, on_app, on_pi, on_sigma, on_lam, on_other)
+  agent ApplyRule(principal, result)
+  agent NormalizeTerm(principal, result)
+  agent CtxSearch(principal, result)
+  agent EqCheck(principal, second, on_eq, on_neq)
+
+  # ─── Strategy Protocol ──────────────────────────────────────
+  # Backtracking proof search realised as interaction net agents.
+
+  agent Ok(principal, result)                         # success + proof term
+  agent Fail(principal)                               # failure signal
+  agent Gate(principal, on_ok, on_fail)               # Ok → on_ok, Fail → on_fail
+  agent DupTerm(principal, copy1, copy2)              # duplicate a Tm* tree
+
+  agent StratConv(principal, output)                  # definitional equality
+  agent StratCtxLookup(principal, output)             # context search
+  agent StratRewrite(principal, output)               # lemma rewrite
+  agent StratGround(principal, output)                # ground computation
+  agent StratSearch(principal, output, depth)          # depth-bounded search
+  agent StratCong(principal, output, inner)           # congruence decomposition
+
+  # Handler rules (trusted kernel — not expressible in INet)
+  open "Meta"
+
+  # ─── Default Strategies ─────────────────────────────────────
+  strategy assumption = ctx_search
+  strategy simp        = first(conv, ctx_search, rewrite)
+  strategy decide      = ground
+  strategy omega       = first(conv, cong(Succ, omega), rewrite, cong(Succ, rewrite))
+  strategy auto        = search(3)
 }

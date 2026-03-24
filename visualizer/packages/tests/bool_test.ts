@@ -68,8 +68,8 @@ Deno.test("bool: system compiles with all agents and rules", () => {
   const result = compileCore(BOOL_SOURCE);
   assertEquals(result.errors.length, 0);
   const bp = result.systems.get("BoolProofs")!;
-  // Bool(6) + Eq(4) + BoolProofs(12) = 22 rules
-  assertEquals(bp.rules.length, 22);
+  // 29 Prelude + Bool(6) + Eq(4) + BoolProofs(12) = 51
+  assertEquals(bp.rules.length, 51);
   assertEquals(bp.agents.has("True"), true);
   assertEquals(bp.agents.has("False"), true);
   assertEquals(bp.agents.has("not"), true);

@@ -69,13 +69,14 @@ export function compileAndAssert(source: string) {
 }
 
 export function collectRules(core: ReturnType<typeof compileCore>): InteractionRule[] {
-  const rules: InteractionRule[] = [];
+  const ruleMap = new Map<string, InteractionRule>();
   for (const sys of core.systems.values()) {
     for (const r of sys.rules) {
-      rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+      const key = r.agentA < r.agentB ? `${r.agentA}|${r.agentB}` : `${r.agentB}|${r.agentA}`;
+      ruleMap.set(key, { agentA: r.agentA, agentB: r.agentB, action: r.action });
     }
   }
-  return rules;
+  return [...ruleMap.values()];
 }
 
 export function collectAgentPorts(

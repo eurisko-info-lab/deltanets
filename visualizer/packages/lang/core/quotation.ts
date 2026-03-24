@@ -67,17 +67,26 @@ const QUOTE_RULES: RuleDef[] = QUOTE_AGENTS.map(annihilateRule);
  * Register quotation agents and rules into a system's agent/rule maps.
  * Called when a system uses `open "Quote"` or contains `quote(...)`.
  */
+/** Upsert a rule: replace an existing rule for the same pair, or push. */
+function upsertRule(rules: RuleDef[], rule: RuleDef): void {
+  const idx = rules.findIndex(
+    (r) =>
+      (r.agentA === rule.agentA && r.agentB === rule.agentB) ||
+      (r.agentA === rule.agentB && r.agentB === rule.agentA),
+  );
+  if (idx >= 0) rules[idx] = rule;
+  else rules.push(rule);
+}
+
 export function registerQuotationAgents(
   agents: Map<string, AgentDef>,
   rules: RuleDef[],
 ): void {
   for (const decl of QUOTE_AGENT_DECLS) {
-    if (!agents.has(decl.name)) {
-      agents.set(decl.name, evalAgent(decl));
-    }
+    if (!agents.has(decl.name)) agents.set(decl.name, evalAgent(decl));
   }
   for (const rule of QUOTE_RULES) {
-    rules.push(rule);
+    upsertRule(rules, rule);
   }
 }
 

@@ -30,8 +30,8 @@ Deno.test("nateq: system compiles with all agents and rules", () => {
   const nateq = result.systems.get("NatEq")!;
   // NatEq inherits Nat + Eq agents + adds cong_succ
   assertEquals(nateq.agents.has("cong_succ"), true);
-  // rules are flattened from inheritance: 2 Nat + 4 Eq + 1 NatEq = 7
-  assertEquals(nateq.rules.length, 7);
+  // 29 Prelude + 2 Nat + 4 Eq + 1 NatEq = 36
+  assertEquals(nateq.rules.length, 36);
 });
 
 Deno.test("nateq: cong_succ(refl) → refl", () => {

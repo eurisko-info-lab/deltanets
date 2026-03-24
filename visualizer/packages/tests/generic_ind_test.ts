@@ -48,8 +48,8 @@ Deno.test("generic-ind: system compiles with all agents and rules", () => {
   const result = compileCore(GENERIC_IND_SOURCE);
   assertEquals(result.errors.length, 0);
   const gi = result.systems.get("GenericInd")!;
-  // Nat(2) + Eq(4) + NatEq(1) + GenericInd(4) = 11 rules
-  assertEquals(gi.rules.length, 11);
+  // 29 Prelude + Nat(2) + Eq(4) + NatEq(1) + GenericInd(4) = 40
+  assertEquals(gi.rules.length, 40);
   assertEquals(gi.agents.has("nat_ind"), true);
   assertEquals(gi.agents.has("nat_ind_param"), true);
   assertEquals(gi.agents.has("cong_succ"), true);

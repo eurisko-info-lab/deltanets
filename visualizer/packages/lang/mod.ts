@@ -19,13 +19,11 @@ export {
   META_CTX_SEARCH, META_EQ_CHECK,
   META_AGENT_DECLS,
 } from "./core/meta-agents.ts";
-export { normalize, computeGoalType, exprEqual, convertible, checkConvertible, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto, makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch } from "./core/typecheck-prove.ts";
+export { normalize, computeGoalType, exprEqual, convertible, checkConvertible, searchProofContext, makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch } from "./core/typecheck-prove.ts";
 export type { StrategyContext } from "./core/typecheck-prove.ts";
 export {
-  registerBuiltinTactics, compileTactic, resolveAllTactics, runStrategy, DEFAULT_STRATEGIES,
-  createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,
-  TACTIC_AGENTS, TACTIC_SIMP, TACTIC_DECIDE, TACTIC_OMEGA, TACTIC_AUTO,
-  TACTIC_AGENT_DECLS, BUILTIN_TACTIC_NAMES,
+  compileTactic, resolveAllTactics, runStrategy,
+  BUILTIN_TACTIC_NAMES,
 } from "./core/tactics.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";

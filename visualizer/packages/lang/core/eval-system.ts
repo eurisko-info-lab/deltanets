@@ -7,20 +7,21 @@ import type * as AST from "./types.ts";
 import { inductionParam, auxParams as getAuxParams } from "./types.ts";
 import type { AgentDef, CanonicalDef, ClassDef, InstanceDef, ModeDef, RuleDef, SystemDef, TacticDef } from "./evaluator.ts";
 import { EvalError } from "./evaluator.ts";
-import { buildProofTree, type ProvedContext, type ProofTree, typecheckProve, withNormTable } from "./typecheck-prove.ts";
-import type { ComputeRule, ConstructorTyping } from "./typecheck-prove.ts";
+import { buildProofTree, type ProofTree, typecheckProve } from "./typecheck-prove.ts";
+import { withNormTable, type ProvedContext, type ComputeRule, type ConstructorTyping } from "./normalize.ts";
+import { evalAgent, desugarData, desugarRecord, desugarCodata, generateEliminatorRules, generateMutualEliminatorRules, checkMutualPositivity, checkMutualTermination, generateProjectionRules, generateObservationRules, getVisibleAgents, astComputeToRule } from "./desugar.ts";
 import { registerQuotationAgents, quoteExpr, containsQuote, QUOTE_AGENTS } from "./quotation.ts";
-import { registerMetaAgents, META_AGENTS } from "./meta-agents.ts";
-import { registerBuiltinTactics, compileTactic, resolveAllTactics, TACTIC_AGENTS } from "./tactics.ts";
+import { registerMetaAgents, META_AGENTS, STRAT_AGENTS } from "./meta-agents.ts";
+import { compileTactic, resolveAllTactics } from "./tactics.ts";
 
 export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef>): { sys: SystemDef; proofTrees: ProofTree[] } {
   const agents = new Map<string, AgentDef>();
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined };
   return { sys, proofTrees };
 }
 
@@ -95,13 +96,14 @@ export function evalBodyInto(
   inheritedInstances?: InstanceDef[],
   inheritedHints?: Map<string, Set<string>>,
   inheritedCanonicals?: CanonicalDef[],
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set"> } {
+  inheritedStrategies?: Map<string, AST.StrategyExpr>,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; strategies: Map<string, AST.StrategyExpr>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set"> } {
   const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
   const tactics = new Map<string, TacticDef>();
-  const strategies = new Map<string, AST.StrategyExpr>();
+  const strategies = new Map<string, AST.StrategyExpr>(inheritedStrategies);
   const coercions = new Map<string, Map<string, string>>(); // from → to → func
   const setoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>(inheritedSetoids); // relation name → setoid def
   const rings = new Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>(inheritedRings); // type name → ring def
@@ -231,9 +233,7 @@ export function evalBodyInto(
     }
     if (item.kind === "open" && item.system === "Meta") {
       for (const name of META_AGENTS) knownAgents.add(name);
-    }
-    if (item.kind === "open" && item.system === "Tactics") {
-      for (const name of TACTIC_AGENTS) knownAgents.add(name);
+      for (const name of STRAT_AGENTS) knownAgents.add(name);
     }
     if (item.kind === "tactic") {
       knownAgents.add(item.name);
@@ -287,6 +287,39 @@ export function evalBodyInto(
     }
   }
 
+  // Shared prove-processing pipeline: expand induction, resolve tactics,
+  // desugar, type-check, build proof tree, register in provedCtx.
+  function processProve(decl: AST.ProveDecl, regParams: AST.ProveParam[], regReturnType?: AST.ProveExpr) {
+    let prove = decl;
+    if (decl.induction && decl.cases.length === 0) {
+      prove = expandInduction(decl, agents, constructorsByType);
+    }
+    prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
+    const hasHoles = proveContainsHole(prove);
+    const hasRewrites = proveContainsRewrite(prove);
+    const hasMatch = proveContainsMatch(prove);
+    if (!hasHoles && !hasRewrites && !hasMatch) {
+      const stripped = stripProveTactics(prove);
+      const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
+      const agent = evalAgent(agentDecl);
+      agents.set(agent.name, agent);
+      for (const r of ruleDecls) {
+        rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+      }
+    }
+    const linearityErrors = checkProveLinearity(prove, agents, modes);
+    const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
+    const allErrors = [...linearityErrors, ...typeErrors];
+    if (allErrors.length > 0) {
+      throw new EvalError(allErrors.join("\n"));
+    }
+    const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
+    if (tree) proofTrees.push(tree);
+    if (prove.returnType && regReturnType) {
+      provedCtx.set(prove.name, { params: regParams, returnType: regReturnType });
+    }
+  }
+
   for (const item of body) {
     switch (item.kind) {
       case "agent": {
@@ -327,44 +360,7 @@ export function evalBodyInto(
         break;
       }
       case "prove": {
-        // Expand induction(var) tactic into case arms with ? holes
-        let prove = item;
-        if (item.induction && item.cases.length === 0) {
-          prove = expandInduction(item, agents, constructorsByType);
-        }
-        // Resolve all tactics (built-in + user-defined) in a single pass
-        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
-        const hasHoles = proveContainsHole(prove);
-        const hasRewrites = proveContainsRewrite(prove);
-        const hasMatch = proveContainsMatch(prove);
-        // Only generate agent + rules for complete proofs (no ? holes, rewrites, or match)
-        if (!hasHoles && !hasRewrites && !hasMatch) {
-          const stripped = stripProveTactics(prove);
-          const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
-          const agent = evalAgent(agentDecl);
-          agents.set(agent.name, agent);
-          for (const r of ruleDecls) {
-            rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
-          }
-        }
-        // Mode-aware linearity check: error if prove needs erase/dup incompatible with modes
-        const linearityErrors = checkProveLinearity(prove, agents, modes);
-        // Type check if return type is annotated
-        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
-        const allErrors = [...linearityErrors, ...typeErrors];
-        if (allErrors.length > 0) {
-          throw new EvalError(allErrors.join("\n"));
-        }
-        // Build proof derivation tree
-        const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
-        if (tree) proofTrees.push(tree);
-        // Register this prove's type for cross-lemma resolution
-        if (prove.returnType) {
-          provedCtx.set(prove.name, {
-            params: item.params,
-            returnType: item.returnType!,
-          });
-        }
+        processProve(item, item.params, item.returnType);
         break;
       }
       case "compute": {
@@ -452,38 +448,7 @@ export function evalBodyInto(
           measure: item.measure,
           attributes: item.attributes,
         };
-        // Process main body through prove pipeline
-        let prove = mainProve;
-        if (mainProve.induction && mainProve.cases.length === 0) {
-          prove = expandInduction(mainProve, agents, constructorsByType);
-        }
-        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
-        const hasHoles = proveContainsHole(prove);
-        const hasRewrites = proveContainsRewrite(prove);
-        const hasMatch = proveContainsMatch(prove);
-        if (!hasHoles && !hasRewrites && !hasMatch) {
-          const stripped = stripProveTactics(prove);
-          const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
-          const agent = evalAgent(agentDecl);
-          agents.set(agent.name, agent);
-          for (const r of ruleDecls) {
-            rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
-          }
-        }
-        const linearityErrors = checkProveLinearity(prove, agents, modes);
-        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
-        const allErrors = [...linearityErrors, ...typeErrors];
-        if (allErrors.length > 0) {
-          throw new EvalError(allErrors.join("\n"));
-        }
-        const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
-        if (tree) proofTrees.push(tree);
-        if (prove.returnType) {
-          provedCtx.set(prove.name, {
-            params: item.params,
-            returnType: item.returnType!,
-          });
-        }
+        processProve(mainProve, item.params, item.returnType);
         // Process each obligation as a separate prove
         for (const ob of item.obligations) {
           const obProve: AST.ProveDecl = {
@@ -494,34 +459,7 @@ export function evalBodyInto(
             cases: ob.cases,
             termination: "structural",
           };
-          let resolvedOb = obProve;
-          resolvedOb = withNormTable(computeRules, () => resolveAllTactics(resolvedOb, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
-          const obHasHoles = proveContainsHole(resolvedOb);
-          const obHasRewrites = proveContainsRewrite(resolvedOb);
-          const obHasMatch = proveContainsMatch(resolvedOb);
-          if (!obHasHoles && !obHasRewrites && !obHasMatch) {
-            const stripped = stripProveTactics(resolvedOb);
-            const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
-            const agent = evalAgent(agentDecl);
-            agents.set(agent.name, agent);
-            for (const r of ruleDecls) {
-              rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
-            }
-          }
-          const obLinErrors = checkProveLinearity(resolvedOb, agents, modes);
-          const obTypeErrors = typecheckProve(resolvedOb, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
-          const obAllErrors = [...obLinErrors, ...obTypeErrors];
-          if (obAllErrors.length > 0) {
-            throw new EvalError(obAllErrors.join("\n"));
-          }
-          const obTree = buildProofTree(resolvedOb, provedCtx, computeRules, constructorTyping);
-          if (obTree) proofTrees.push(obTree);
-          if (resolvedOb.returnType) {
-            provedCtx.set(resolvedOb.name, {
-              params: ob.params,
-              returnType: ob.returnType!,
-            });
-          }
+          processProve(obProve, ob.params, ob.returnType);
         }
         break;
       }
@@ -534,11 +472,6 @@ export function evalBodyInto(
         // Built-in "Meta" system: register meta-agents with handlers
         if (item.system === "Meta") {
           registerMetaAgents(agents, rules, computeRules);
-          break;
-        }
-        // Built-in "Tactics" system: register built-in tactic agents
-        if (item.system === "Tactics") {
-          registerBuiltinTactics(agents, rules, provedCtx, computeRules);
           break;
         }
         // Import agents/rules/etc from another system
@@ -661,7 +594,7 @@ export function evalBodyInto(
   const exports = exportNames.length > 0
     ? new Set(exportNames.flatMap(e => e.names))
     : undefined;
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances, hints, canonicals, dataSorts };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -679,9 +612,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings, base.classes, base.instances, base.hints, base.canonicals);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings, base.classes, base.instances, base.hints, base.canonicals, base.strategies);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -703,6 +636,7 @@ export function evalCompose(
   const mergedInstances: InstanceDef[] = [];
   const mergedHints = new Map<string, Set<string>>();
   const mergedCanonicals: CanonicalDef[] = [];
+  const mergedStrategies = new Map<string, AST.StrategyExpr>();
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -782,21 +716,21 @@ export function evalCompose(
     if (comp.canonicals) {
       mergedCanonicals.push(...comp.canonicals);
     }
+
+    // Strategies: merge
+    if (comp.strategies) {
+      for (const [name, s] of comp.strategies) mergedStrategies.set(name, s);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings, mergedClasses, mergedInstances, mergedHints, mergedCanonicals);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings, mergedClasses, mergedInstances, mergedHints, mergedCanonicals, mergedStrategies);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined }, proofTrees };
 }
 
-// ─── Agent evaluation ──────────────────────────────────────────────
-
-export function evalAgent(decl: AST.AgentDecl): AgentDef {
-  const portIndex = new Map<string, number>();
-  decl.ports.forEach((p, i) => portIndex.set(p.name, i));
-  return { name: decl.name, ports: decl.ports, portIndex };
-}
+// Re-export evalAgent from desugar.ts for backward compatibility.
+export { evalAgent } from "./desugar.ts";
 
 // ─── Prove desugaring ──────────────────────────────────────────────
 // Translates a `prove` declaration into an agent + rules.
@@ -1210,550 +1144,3 @@ function stripExprTactics(expr: AST.ProveExpr): AST.ProveExpr {
   return { kind: "call", name: expr.name, args: expr.args.map(stripExprTactics) };
 }
 
-// ─── Expression pretty-printing (for error messages) ───────────────
-function exprToString(e: AST.ProveExpr): string {
-  if (e.kind === "ident") return e.name;
-  if (e.kind === "call") return `${e.name}(${e.args.map(exprToString).join(", ")})`;
-  if (e.kind === "hole") return "?";
-  if (e.kind === "pi") return `(${e.param} : ${exprToString(e.domain)}) -> ${exprToString(e.codomain)}`;
-  return e.kind;
-}
-
-// ─── Data desugaring (syntactic sugar) ─────────────────────────────
-// Expands a `data` declaration into constructor agents, a duplicator
-// agent, and one duplicator rule per constructor.
-//
-// Example:  data Nat { | Zero | Succ(pred : Nat) }
-// Produces:
-//   agent Zero(principal)
-//   agent Succ(principal, pred)
-//   agent dup_nat(principal, copy1, copy2)
-//   rule dup_nat <> Zero -> { ... }
-//   rule dup_nat <> Succ -> { ... }
-
-/** Extract the base type name from a field type expression (lowercase). */
-function fieldTypeBaseName(type: AST.ProveExpr): string {
-  if (type.kind === "ident") return type.name.toLowerCase();
-  if (type.kind === "call") return type.name.toLowerCase();
-  return "unknown";
-}
-
-function desugarData(
-  decl: AST.DataDecl,
-  agents: Map<string, AgentDef>,
-  rules: RuleDef[],
-  constructorsByType: Map<string, Set<string>>,
-): void {
-  // 1. Register constructor families
-  constructorsByType.set(decl.name, new Set(decl.constructors.map((c) => c.name)));
-
-  // 2. Emit constructor agents
-  for (const ctor of decl.constructors) {
-    const ports: AST.PortDef[] = [
-      { name: "principal", variadic: false },
-      ...ctor.fields.map((f) => ({ name: f.name, variadic: false })),
-    ];
-    const agentDecl: AST.AgentDecl = { kind: "agent", name: ctor.name, ports };
-    agents.set(ctor.name, evalAgent(agentDecl));
-  }
-
-  // 3. Emit dup_<type> agent + one rule per constructor
-  const dupName = `dup_${decl.name.toLowerCase()}`;
-  const dupPorts: AST.PortDef[] = [
-    { name: "principal", variadic: false },
-    { name: "copy1", variadic: false },
-    { name: "copy2", variadic: false },
-  ];
-  agents.set(dupName, evalAgent({ kind: "agent", name: dupName, ports: dupPorts }));
-
-  for (const ctor of decl.constructors) {
-    rules.push({
-      agentA: dupName,
-      agentB: ctor.name,
-      action: buildDupRule(ctor, decl.name),
-    });
-  }
-}
-
-/** Build the custom rule body for `dup_<type> <> Constructor`. */
-function buildDupRule(ctor: AST.DataConstructor, typeName: string): AST.CustomAction {
-  const stmts: AST.RuleStmt[] = [];
-  // Let: create two fresh copies of the constructor
-  stmts.push({ kind: "let", varName: "_c1", agentType: ctor.name });
-  stmts.push({ kind: "let", varName: "_c2", agentType: ctor.name });
-  // Relink: copy1 ← _c1.principal, copy2 ← _c2.principal
-  stmts.push({ kind: "relink", portA: { node: "left", port: "copy1" }, portB: { node: "_c1", port: "principal" } });
-  stmts.push({ kind: "relink", portA: { node: "left", port: "copy2" }, portB: { node: "_c2", port: "principal" } });
-
-  // For each field: create a sub-duplicator and wire it through
-  for (let i = 0; i < ctor.fields.length; i++) {
-    const field = ctor.fields[i];
-    const subDup = `dup_${fieldTypeBaseName(field.type)}`;
-    const varName = `_d${i}`;
-    stmts.push({ kind: "let", varName, agentType: subDup });
-    stmts.push({ kind: "relink", portA: { node: "right", port: field.name }, portB: { node: varName, port: "principal" } });
-    stmts.push({ kind: "wire", portA: { node: varName, port: "copy1" }, portB: { node: "_c1", port: field.name } });
-    stmts.push({ kind: "wire", portA: { node: varName, port: "copy2" }, portB: { node: "_c2", port: field.name } });
-  }
-
-  return { kind: "custom", body: stmts };
-}
-
-// ─── Auto-generated eliminators ────────────────────────────────────
-// For each data declaration, generate compute rules that define the
-// recursor (e.g., Nat_rec) as reduction equations — scrutinee first:
-//   compute Nat_rec(Zero, base, step) = base
-//   compute Nat_rec(Succ(k), base, step) = step(k, Nat_rec(k, base, step))
-
-function generateEliminatorRules(decl: AST.DataDecl): ComputeRule[] {
-  const rules: ComputeRule[] = [];
-  const recName = `${decl.name}_rec`;
-  const methodNames = decl.constructors.map((_, i) => `_m${i}`);
-
-  for (let ci = 0; ci < decl.constructors.length; ci++) {
-    const ctor = decl.constructors[ci];
-    const fieldVars = ctor.fields.map((f, fi) => `_f${fi}`);
-    const isRecursive = ctor.fields.map((f) => {
-      const baseName = f.type.kind === "ident" ? f.type.name : f.type.kind === "call" ? f.type.name : "";
-      return baseName === decl.name;
-    });
-
-    // Args: Constructor(f0, f1, ...), method0, method1, ...
-    const scrutineePattern: AST.ComputePattern = {
-      kind: "ctor" as const,
-      name: ctor.name,
-      args: fieldVars,
-    };
-    const methodPatterns: AST.ComputePattern[] = methodNames.map((n) => ({
-      kind: "var" as const,
-      name: n,
-    }));
-    const args = [scrutineePattern, ...methodPatterns];
-
-    // Result: method_i(f0, ..., Nat_rec(fk_recursive, m0, m1, ...), ...)
-    // For nullary constructors with no fields: result = method_i
-    const resultArgs: AST.ProveExpr[] = [];
-    for (let fi = 0; fi < ctor.fields.length; fi++) {
-      if (isRecursive[fi]) {
-        // Induction hypothesis: recursive call on the recursive field
-        const recCall: AST.ProveExpr = {
-          kind: "call",
-          name: recName,
-          args: [
-            { kind: "ident", name: fieldVars[fi] },
-            ...methodNames.map((n): AST.ProveExpr => ({ kind: "ident", name: n })),
-          ],
-        };
-        resultArgs.push(recCall);
-      } else {
-        resultArgs.push({ kind: "ident", name: fieldVars[fi] });
-      }
-    }
-
-    const result: AST.ProveExpr = resultArgs.length > 0
-      ? { kind: "call", name: methodNames[ci], args: resultArgs }
-      : { kind: "ident", name: methodNames[ci] };
-
-    rules.push({ funcName: recName, args, result });
-  }
-  return rules;
-}
-
-// ─── Mutual eliminator generation ──────────────────────────────────
-// Cross-type aware eliminators: each recursor takes methods for ALL
-// constructors across the entire mutual group.
-//   Even_rec(EZero, ez_m, es_m, os_m)      = ez_m
-//   Even_rec(ESucc(p), ez_m, es_m, os_m)    = es_m(p, Odd_rec(p, ez_m, es_m, os_m))
-//   Odd_rec(OSucc(p), ez_m, es_m, os_m)     = os_m(p, Even_rec(p, ez_m, es_m, os_m))
-
-function generateMutualEliminatorRules(group: AST.DataDecl[]): ComputeRule[] {
-  const rules: ComputeRule[] = [];
-  const groupNames = new Set(group.map((d) => d.name));
-
-  // Collect method names across all constructors in all types
-  const allMethods: string[] = [];
-  for (const decl of group) {
-    for (let ci = 0; ci < decl.constructors.length; ci++) {
-      allMethods.push(`_m${allMethods.length}`);
-    }
-  }
-  const methodPatterns: AST.ComputePattern[] = allMethods.map((n) => ({
-    kind: "var" as const,
-    name: n,
-  }));
-
-  let methodIdx = 0;
-  for (const decl of group) {
-    const recName = `${decl.name}_rec`;
-    for (let ci = 0; ci < decl.constructors.length; ci++) {
-      const ctor = decl.constructors[ci];
-      const fieldVars = ctor.fields.map((_, fi) => `_f${fi}`);
-
-      const scrutineePattern: AST.ComputePattern = {
-        kind: "ctor" as const,
-        name: ctor.name,
-        args: fieldVars,
-      };
-      const args = [scrutineePattern, ...methodPatterns];
-
-      // Method for this constructor
-      const mi = allMethods[methodIdx + ci];
-      const resultArgs: AST.ProveExpr[] = [];
-      for (let fi = 0; fi < ctor.fields.length; fi++) {
-        const f = ctor.fields[fi];
-        const baseName = f.type.kind === "ident"
-          ? f.type.name
-          : f.type.kind === "call"
-          ? f.type.name
-          : "";
-        if (groupNames.has(baseName)) {
-          // Cross-type (or self) recursive field: call baseName_rec
-          const crossRec: AST.ProveExpr = {
-            kind: "call",
-            name: `${baseName}_rec`,
-            args: [
-              { kind: "ident", name: fieldVars[fi] },
-              ...allMethods.map((n): AST.ProveExpr => ({ kind: "ident", name: n })),
-            ],
-          };
-          resultArgs.push(crossRec);
-        } else {
-          resultArgs.push({ kind: "ident", name: fieldVars[fi] });
-        }
-      }
-
-      const result: AST.ProveExpr = resultArgs.length > 0
-        ? { kind: "call", name: mi, args: resultArgs }
-        : { kind: "ident", name: mi };
-
-      rules.push({ funcName: recName, args, result });
-    }
-    methodIdx += decl.constructors.length;
-  }
-  return rules;
-}
-
-// ─── Joint positivity checking ─────────────────────────────────────
-// Verifies that none of the type names in the mutual group appear in
-// a negative position (left side of Pi/→) in any constructor field.
-
-function checkMutualPositivity(group: AST.DataDecl[]): string[] {
-  const errors: string[] = [];
-  const groupNames = new Set(group.map((d) => d.name));
-
-  function occursNegative(expr: AST.ProveExpr, names: Set<string>): boolean {
-    if (expr.kind === "ident") return false;
-    if (expr.kind === "call") {
-      // args are type parameters, not function arguments → still positive
-      return expr.args.some((a) => occursNegative(a, names));
-    }
-    if (expr.kind === "pi" || expr.kind === "sigma") {
-      // domain is negative position; check if any group name appears there
-      if (mentionsAny(expr.domain, names)) return true;
-      return occursNegative(expr.codomain, names);
-    }
-    if (expr.kind === "lambda") {
-      if (mentionsAny(expr.paramType, names)) return true;
-      return occursNegative(expr.body, names);
-    }
-    return false;
-  }
-
-  function mentionsAny(expr: AST.ProveExpr, names: Set<string>): boolean {
-    if (expr.kind === "ident") return names.has(expr.name);
-    if (expr.kind === "call") {
-      return names.has(expr.name) || expr.args.some((a) => mentionsAny(a, names));
-    }
-    if (expr.kind === "pi" || expr.kind === "sigma") {
-      return mentionsAny(expr.domain, names) || mentionsAny(expr.codomain, names);
-    }
-    if (expr.kind === "lambda") {
-      return mentionsAny(expr.paramType, names) || mentionsAny(expr.body, names);
-    }
-    if (expr.kind === "let") {
-      return mentionsAny(expr.value, names) || mentionsAny(expr.body, names);
-    }
-    if (expr.kind === "match") {
-      return expr.cases.some((c) => mentionsAny(c.body, names));
-    }
-    return false;
-  }
-
-  for (const decl of group) {
-    for (const ctor of decl.constructors) {
-      for (const field of ctor.fields) {
-        if (occursNegative(field.type, groupNames)) {
-          errors.push(
-            `mutual positivity: type ${decl.name}, constructor ${ctor.name}, ` +
-            `field ${field.name} — a mutual type appears in negative position in ${exprToString(field.type)}`,
-          );
-        }
-      }
-    }
-  }
-  return errors;
-}
-
-// ─── Mutual termination checking ───────────────────────────────────
-// Checks that cross-calls within a mutual prove group use at least
-// one structurally decreasing argument (a case binding).
-
-function checkMutualTermination(
-  prove: AST.ProveDecl,
-  mutualNames: Set<string>,
-): string[] {
-  if (prove.wf) return []; // trusted — skip mutual termination check
-  const errors: string[] = [];
-  // Sibling names: all mutual names except self (self is handled by regular checkTermination)
-  const siblings = new Set([...mutualNames].filter((n) => n !== prove.name));
-  if (siblings.size === 0) return errors;
-
-  for (const caseArm of prove.cases) {
-    if (caseArm.body.kind === "hole") continue;
-    const topBindings = new Set(caseArm.bindings);
-    const calls = collectCrossRecCalls(caseArm.body, siblings, topBindings);
-    for (const { call, bindings } of calls) {
-      if (call.kind !== "call" || call.args.length === 0) continue;
-      const hasDecreasing = call.args.some(
-        (a) => a.kind === "ident" && bindings.has(a.name),
-      );
-      if (!hasDecreasing) {
-        errors.push(
-          `prove ${prove.name}, case ${caseArm.pattern}: mutual call ` +
-          `${call.name}(${call.args.map(exprToString).join(", ")}) ` +
-          `is not structurally decreasing — at least one argument must be a case binding` +
-          (bindings.size > 0 ? ` (${[...bindings].join(", ")})` : ``),
-        );
-      }
-    }
-  }
-  return errors;
-}
-
-function collectCrossRecCalls(
-  expr: AST.ProveExpr,
-  funcNames: Set<string>,
-  activeBindings: Set<string>,
-): { call: AST.ProveExpr; bindings: Set<string> }[] {
-  const calls: { call: AST.ProveExpr; bindings: Set<string> }[] = [];
-  function walk(e: AST.ProveExpr, bindings: Set<string>) {
-    if (e.kind === "call") {
-      if (funcNames.has(e.name)) calls.push({ call: e, bindings });
-      for (const a of e.args) walk(a, bindings);
-    }
-    if (e.kind === "let") {
-      walk(e.value, bindings);
-      walk(e.body, bindings);
-    }
-    if (e.kind === "pi" || e.kind === "sigma") {
-      walk(e.domain, bindings);
-      walk(e.codomain, bindings);
-    }
-    if (e.kind === "lambda") {
-      walk(e.paramType, bindings);
-      walk(e.body, bindings);
-    }
-    if (e.kind === "match") {
-      for (const c of e.cases) {
-        const inner = new Set(bindings);
-        for (const b of c.bindings) inner.add(b);
-        walk(c.body, inner);
-      }
-    }
-  }
-  walk(expr, activeBindings);
-  return calls;
-}
-
-// ─── Record desugaring ─────────────────────────────────────────────
-// Expands a `record` declaration into:
-//   1. A data type with one constructor (mkName)
-//   2. Projection agents (one per field)
-//   3. Projection rules: proj <> mkName → relink/erase
-
-function desugarRecord(
-  decl: AST.RecordDecl,
-  agents: Map<string, AgentDef>,
-  rules: RuleDef[],
-  constructorsByType: Map<string, Set<string>>,
-  computeRules: ComputeRule[],
-  constructorTyping: ConstructorTyping,
-): void {
-  const ctorName = `mk${decl.name}`;
-
-  // Synthesize a DataDecl and delegate constructor + dup generation to desugarData
-  const dataDecl: AST.DataDecl = {
-    kind: "data",
-    name: decl.name,
-    params: decl.params,
-    indices: [],
-    constructors: [{ name: ctorName, fields: decl.fields }],
-  };
-  desugarData(dataDecl, agents, rules, constructorsByType);
-
-  // Generate projection agents + rules
-  for (let i = 0; i < decl.fields.length; i++) {
-    const field = decl.fields[i];
-    // Agent: fieldName(principal, result)
-    const projPorts: AST.PortDef[] = [
-      { name: "principal", variadic: false },
-      { name: "result", variadic: false },
-    ];
-    agents.set(field.name, evalAgent({ kind: "agent", name: field.name, ports: projPorts }));
-
-    // Rule: fieldName <> mkName → relink result to field[i], erase others
-    const stmts: AST.RuleStmt[] = [];
-    stmts.push({
-      kind: "relink",
-      portA: { node: "left", port: "result" },
-      portB: { node: "right", port: field.name },
-    });
-    // Erase all other fields
-    for (let j = 0; j < decl.fields.length; j++) {
-      if (j !== i) {
-        stmts.push({ kind: "erase-stmt", port: { node: "right", port: decl.fields[j].name } });
-      }
-    }
-    rules.push({
-      agentA: field.name,
-      agentB: ctorName,
-      action: { kind: "custom", body: stmts },
-    });
-  }
-}
-
-/** Desugar a codata declaration into a guard agent + observation agents + interaction rules.
- *  codata Stream(A) { head : A, tail : Stream(A) }
- *  →  guard_stream(principal, head, tail)          -- guard agent
- *     head(principal, result), tail(principal, result)   -- observation agents
- *     head <> guard_stream → relink result↔head, erase tail
- *     tail <> guard_stream → relink result↔tail, erase head
- *     dup_stream <> guard_stream → dup each field     */
-function desugarCodata(
-  decl: AST.CodataDecl,
-  agents: Map<string, AgentDef>,
-  rules: RuleDef[],
-  constructorsByType: Map<string, Set<string>>,
-): void {
-  const guardName = `guard_${decl.name.toLowerCase()}`;
-
-  // Synthesize a DataDecl with a single constructor (the guard) and delegate to desugarData
-  const dataDecl: AST.DataDecl = {
-    kind: "data",
-    name: decl.name,
-    params: decl.params,
-    indices: [],
-    constructors: [{ name: guardName, fields: decl.fields }],
-  };
-  desugarData(dataDecl, agents, rules, constructorsByType);
-
-  // Generate observation agents + interaction rules (same as record projections)
-  for (let i = 0; i < decl.fields.length; i++) {
-    const field = decl.fields[i];
-    // Agent: fieldName(principal, result)
-    const obsPorts: AST.PortDef[] = [
-      { name: "principal", variadic: false },
-      { name: "result", variadic: false },
-    ];
-    agents.set(field.name, evalAgent({ kind: "agent", name: field.name, ports: obsPorts }));
-
-    // Rule: fieldName <> guard_name → relink result to field[i], erase others
-    const stmts: AST.RuleStmt[] = [];
-    stmts.push({
-      kind: "relink",
-      portA: { node: "left", port: "result" },
-      portB: { node: "right", port: field.name },
-    });
-    for (let j = 0; j < decl.fields.length; j++) {
-      if (j !== i) {
-        stmts.push({ kind: "erase-stmt", port: { node: "right", port: decl.fields[j].name } });
-      }
-    }
-    rules.push({
-      agentA: field.name,
-      agentB: guardName,
-      action: { kind: "custom", body: stmts },
-    });
-  }
-}
-
-/** Generate compute rules for record projections:
- *  fieldName(mkName(f0, f1, ...)) = fi */
-function generateProjectionRules(decl: AST.RecordDecl): ComputeRule[] {
-  const ctorName = `mk${decl.name}`;
-  const rules: ComputeRule[] = [];
-  const fieldVars = decl.fields.map((_, fi) => `_f${fi}`);
-
-  for (let i = 0; i < decl.fields.length; i++) {
-    const field = decl.fields[i];
-    rules.push({
-      funcName: field.name,
-      args: [{
-        kind: "ctor",
-        name: ctorName,
-        args: fieldVars,
-      }],
-      result: { kind: "ident", name: fieldVars[i] },
-    });
-  }
-  return rules;
-}
-
-/** Generate compute rules for codata observations:
- *  fieldName(guard_name(f0, f1, ...)) = fi */
-function generateObservationRules(decl: AST.CodataDecl): ComputeRule[] {
-  const guardName = `guard_${decl.name.toLowerCase()}`;
-  const rules: ComputeRule[] = [];
-  const fieldVars = decl.fields.map((_, fi) => `_f${fi}`);
-
-  for (let i = 0; i < decl.fields.length; i++) {
-    const field = decl.fields[i];
-    rules.push({
-      funcName: field.name,
-      args: [{
-        kind: "ctor",
-        name: guardName,
-        args: fieldVars,
-      }],
-      result: { kind: "ident", name: fieldVars[i] },
-    });
-  }
-  return rules;
-}
-
-// ─── Open/Export helpers ───────────────────────────────────────────
-
-/** Get the set of agent names visible from a system, respecting exports and selective open. */
-function getVisibleAgents(source: SystemDef, selectNames?: string[]): Set<string> {
-  // Start with all agent names from the source
-  let visible = new Set(source.agents.keys());
-  // If the source has export restrictions, apply them
-  if (source.exports) {
-    visible = new Set([...visible].filter(n => source.exports!.has(n)));
-  }
-  // If selective import (open "X" use A, B), filter further
-  if (selectNames) {
-    visible = new Set(selectNames.filter(n => visible.has(n)));
-  }
-  return visible;
-}
-
-// ─── Compute rule conversion ───────────────────────────────────────
-// Converts an AST ComputeDecl into the internal ComputeRule format
-// used by the type checker's normalizer.
-
-function astComputeToRule(decl: AST.ComputeDecl, knownAgents: Set<string>): ComputeRule {
-  // Resolve var patterns: if a "var" pattern name matches a known agent,
-  // upgrade it to a nullary ctor pattern (e.g., Zero, True, Nil).
-  const resolvedArgs = decl.args.map((pat): AST.ComputePattern => {
-    if (pat.kind === "var" && knownAgents.has(pat.name)) {
-      return { kind: "ctor", name: pat.name, args: [] };
-    }
-    return pat;
-  });
-  return {
-    funcName: decl.funcName,
-    args: resolvedArgs,
-    result: decl.result,
-  };
-}

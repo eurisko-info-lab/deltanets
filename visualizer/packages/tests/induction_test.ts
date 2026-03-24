@@ -103,8 +103,8 @@ Deno.test("induction: system compiles with all agents and rules", () => {
   const result = compileCore(INDUCTION_SOURCE);
   assertEquals(result.errors.length, 0);
   const ind = result.systems.get("Induction")!;
-  // Induction: 2 Nat + 4 Eq + 1 NatEq + 2 pzr + 2 psr + 2 dup + 2 pc = 15 rules
-  assertEquals(ind.rules.length, 15);
+  // 29 Prelude + 2 Nat + 4 Eq + 1 NatEq + 2 pzr + 2 psr + 2 dup + 2 pc = 44
+  assertEquals(ind.rules.length, 44);
   assertEquals(ind.agents.has("plus_zero_right"), true);
   assertEquals(ind.agents.has("plus_succ_right"), true);
   assertEquals(ind.agents.has("dup_nat"), true);
