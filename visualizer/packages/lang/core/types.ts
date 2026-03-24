@@ -168,6 +168,7 @@ export type ProveDecl = {
   induction?: string; // if set, auto-expand cases for this variable's type
   measure?: ProveExpr; // {measure expr} — well-founded recursion via measure function
   wf?: string; // {wf R} — well-founded recursion via named relation (trusted)
+  attributes?: string[]; // @[simp], @[auto], etc. — auto-register as hints
 };
 
 export type ProveParam = {

@@ -69,6 +69,7 @@ export const TT = {
   STAR: "STAR", // *
   SLASH: "SLASH", // /
   DOTDOT: "DOTDOT", // ..
+  AT: "AT", // @
   // Literals
   IDENT: "IDENT",
   STRING: "STRING",
@@ -219,6 +220,7 @@ export function tokenize(source: string): Token[] {
       "*": TT.STAR,
       "/": TT.SLASH,
       "|": TT.PIPE,
+      "@": TT.AT,
     };
     if (singles[source[i]]) {
       tokens.push({

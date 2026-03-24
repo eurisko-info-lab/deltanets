@@ -387,6 +387,20 @@ class Parser {
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
+      else if (tok.type === TT.AT) {
+        // @[simp] prove ... — attribute syntax, auto-generates hint entries
+        const attrs = this.parseAttributes();
+        if (!this.check(TT.PROVE)) {
+          throw new ParseError(`Expected 'prove' after attribute @[...]`, tok.line, tok.col);
+        }
+        const prove = this.parseProveDecl();
+        prove.attributes = attrs;
+        body.push(prove);
+        // Auto-generate hint declarations for each attribute
+        for (const attr of attrs) {
+          body.push({ kind: "hint", db: attr, lemma: prove.name });
+        }
+      }
       else {throw new ParseError(
           `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint, got '${tok.value}'`,
           tok.line,
@@ -1317,6 +1331,19 @@ class Parser {
     this.eat(TT.COLON);
     const lemma = this.eatIdent();
     return { kind: "hint", db, lemma };
+  }
+
+  // @[simp] or @[simp, auto] — comma-separated attribute names in brackets
+  parseAttributes(): string[] {
+    this.eat(TT.AT);
+    this.eat(TT.LBRACKET);
+    const attrs: string[] = [this.eatIdent()];
+    while (this.check(TT.COMMA)) {
+      this.advance();
+      attrs.push(this.eatIdent());
+    }
+    this.eat(TT.RBRACKET);
+    return attrs;
   }
 
   // ─── Graph ───────────────────────────────────────────────────────

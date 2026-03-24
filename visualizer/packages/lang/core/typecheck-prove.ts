@@ -2594,18 +2594,13 @@ function resolveSimpExpr(
   return expr;
 }
 
-/** Try to close an equality goal by rewriting one side with an available lemma,
- *  then checking if the result matches the other side after normalization.
- *  Supports Eq and registered setoid relations via optional `rel` parameter. */
-function trySimpRewrite(
+/** Collect equational lemmas available in a proof context.
+ *  Priority: IH calls > simp-DB hints > general proved lemmas.
+ *  Phase 35: factored out for reuse by multi-step simp. */
+function collectEquationalLemmas(
   ctx: ProveCtx,
-  goalEq: { left: AST.ProveExpr; right: AST.ProveExpr },
   rel: string = "Eq",
-): AST.ProveExpr | null {
-  const lhs = normalize(goalEq.left);
-  const rhs = normalize(goalEq.right);
-
-  // Collect all available equational lemmas as { call, left, right }
+): { proof: AST.ProveExpr; left: AST.ProveExpr; right: AST.ProveExpr }[] {
   const lemmas: { proof: AST.ProveExpr; left: AST.ProveExpr; right: AST.ProveExpr }[] = [];
 
   // IH calls
@@ -2619,25 +2614,59 @@ function trySimpRewrite(
     }
   }
 
-  // Hint-DB lemmas (simp DB) — tried before general cross-lemma calls
+  // Available variables for argument instantiation
   const availableVars = [
     ...[...ctx.caseBindings.keys()].map(ident),
     ...auxParams(ctx.prove.params).map((p) => ident(p.name)),
   ];
+
+  // Helper: try all argument orderings for a lemma with N explicit params.
+  // For 0-1 params, there's only one ordering. For 2 params, try both permutations.
+  // For 3+ params, try positional + each single-swap variant to keep combinatorics bounded.
+  const tryLemmaInstantiations = (lemmaName: string, explicitParams: AST.ProveParam[]) => {
+    const n = explicitParams.length;
+    if (n === 0) {
+      const call = app(lemmaName);
+      const r = inferType(call, ctx);
+      if (r.ok) {
+        const equiv = extractEquiv(normalize(r.type));
+        if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
+      }
+      return;
+    }
+    if (n > availableVars.length) return;
+
+    // Positional: first n available vars
+    const positional = app(lemmaName, ...availableVars.slice(0, n));
+    const rPos = inferType(positional, ctx);
+    if (rPos.ok) {
+      const equiv = extractEquiv(normalize(rPos.type));
+      if (equiv && equiv.rel === rel) lemmas.push({ proof: positional, left: normalize(equiv.left), right: normalize(equiv.right) });
+    }
+
+    // For 2 params: also try swapped order
+    if (n === 2 && availableVars.length >= 2) {
+      const swapped = app(lemmaName, availableVars[1], availableVars[0]);
+      const rSwap = inferType(swapped, ctx);
+      if (rSwap.ok) {
+        const equiv = extractEquiv(normalize(rSwap.type));
+        if (equiv && equiv.rel === rel) {
+          const swapStr = exprToString(swapped);
+          const posStr = exprToString(positional);
+          if (swapStr !== posStr) lemmas.push({ proof: swapped, left: normalize(equiv.left), right: normalize(equiv.right) });
+        }
+      }
+    }
+  };
+
+  // Hint-DB lemmas (simp DB) — priority
   const hintSimpNames = ctx.hints?.get("simp");
   if (hintSimpNames) {
     for (const lemmaName of hintSimpNames) {
       const lemma = ctx.provedCtx.get(lemmaName);
       if (!lemma) continue;
       const explicitParams = lemma.params.filter((p) => !p.implicit);
-      if (explicitParams.length <= availableVars.length) {
-        const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
-        const r = inferType(call, ctx);
-        if (r.ok) {
-          const equiv = extractEquiv(normalize(r.type));
-          if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
-        }
-      }
+      tryLemmaInstantiations(lemmaName, explicitParams);
     }
   }
 
@@ -2645,27 +2674,33 @@ function trySimpRewrite(
   for (const [lemmaName, lemma] of ctx.provedCtx) {
     if (hintSimpNames?.has(lemmaName)) continue;
     const explicitParams = lemma.params.filter((p) => !p.implicit);
-    if (explicitParams.length <= availableVars.length) {
-      const call = app(lemmaName, ...availableVars.slice(0, explicitParams.length));
-      const r = inferType(call, ctx);
-      if (r.ok) {
-        const equiv = extractEquiv(normalize(r.type));
-        if (equiv && equiv.rel === rel) lemmas.push({ proof: call, left: normalize(equiv.left), right: normalize(equiv.right) });
-      }
-    }
+    tryLemmaInstantiations(lemmaName, explicitParams);
   }
 
-  // Try L→R rewriting on lhs to reach rhs
+  return lemmas;
+}
+
+/** Try to close an equality goal by rewriting one side with available lemmas.
+ *  Phase 35: multi-step rewriting — iterates up to 10 rewrite steps on the LHS,
+ *  applying lemmas (L→R and R→L) and normalizing after each step, until LHS equals RHS.
+ *  Builds a chain of rewrite proof terms: rewrite(lemma) or trans(step1, step2). */
+function trySimpRewrite(
+  ctx: ProveCtx,
+  goalEq: { left: AST.ProveExpr; right: AST.ProveExpr },
+  rel: string = "Eq",
+): AST.ProveExpr | null {
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+
+  const lemmas = collectEquationalLemmas(ctx, rel);
+
+  // Single-step rewriting (original behavior)
   for (const lem of lemmas) {
     const rewritten = normalize(substituteExprPattern(lhs, lem.left, lem.right));
     if (exprEqual(rewritten, rhs)) {
-      // lhs[l↦r] = rhs, so: trans(rewrite(lemma, lhs_proof), ...) — but simpler: subst
-      // Actually the simplest proof: the lemma itself rewrites the goal
       return app("rewrite", lem.proof);
     }
   }
-
-  // Try R→L rewriting (sym) on lhs to reach rhs
   for (const lem of lemmas) {
     const rewritten = normalize(substituteExprPattern(lhs, lem.right, lem.left));
     if (exprEqual(rewritten, rhs)) {
@@ -2673,7 +2708,52 @@ function trySimpRewrite(
     }
   }
 
+  // Multi-step rewriting (Phase 35): iterate up to 10 steps
+  let current = lhs;
+  const proofSteps: AST.ProveExpr[] = [];
+  for (let step = 0; step < 10; step++) {
+    let advanced = false;
+    // Try each lemma L→R
+    for (const lem of lemmas) {
+      const rewritten = normalize(substituteExprPattern(current, lem.left, lem.right));
+      if (!exprEqual(rewritten, current)) {
+        proofSteps.push(app("rewrite", lem.proof));
+        current = rewritten;
+        advanced = true;
+        if (exprEqual(current, rhs)) {
+          return chainProofSteps(proofSteps);
+        }
+        break; // restart lemma search after each successful step
+      }
+    }
+    if (advanced) continue;
+    // Try each lemma R→L
+    for (const lem of lemmas) {
+      const rewritten = normalize(substituteExprPattern(current, lem.right, lem.left));
+      if (!exprEqual(rewritten, current)) {
+        proofSteps.push(app("rewrite", app("sym", lem.proof)));
+        current = rewritten;
+        advanced = true;
+        if (exprEqual(current, rhs)) {
+          return chainProofSteps(proofSteps);
+        }
+        break;
+      }
+    }
+    if (!advanced) break; // no lemma made progress — stop
+  }
+
   return null;
+}
+
+/** Chain multiple proof steps using trans: trans(step1, trans(step2, step3)) */
+function chainProofSteps(steps: AST.ProveExpr[]): AST.ProveExpr {
+  if (steps.length === 1) return steps[0];
+  let result = steps[steps.length - 1];
+  for (let i = steps.length - 2; i >= 0; i--) {
+    result = app("trans", steps[i], result);
+  }
+  return result;
 }
 
 // ─── Decide tactic ─────────────────────────────────────────────────
