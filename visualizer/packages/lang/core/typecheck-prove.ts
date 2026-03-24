@@ -78,6 +78,31 @@ export function zonk(expr: AST.ProveExpr, ctx: UnifCtx): AST.ProveExpr {
     if (sol) return zonk(sol, ctx);
     return expr;
   }
+  if (expr.kind === "meta-app") {
+    const sol = ctx.get(expr.id);
+    if (sol) {
+      // Apply solution to arguments: if sol is a lambda, beta-reduce
+      let result = zonk(sol, ctx);
+      for (const arg of expr.args) {
+        const zArg = zonk(arg, ctx);
+        if (result.kind === "lambda") {
+          result = zonk(substitute(result.body, result.param, zArg), ctx);
+        } else if (result.kind === "ident") {
+          // Solution is a name — reconstruct as a call
+          result = { kind: "call", name: result.name, args: expr.args.map(a => zonk(a, ctx)) };
+          break;
+        } else if (result.kind === "call") {
+          // Solution is already a call — append args
+          result = { kind: "call", name: result.name, args: [...result.args, ...expr.args.map(a => zonk(a, ctx))] };
+          break;
+        } else {
+          return { kind: "meta-app", id: expr.id, args: expr.args.map(a => zonk(a, ctx)) };
+        }
+      }
+      return result;
+    }
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(a => zonk(a, ctx)) };
+  }
   if (expr.kind === "hole" || expr.kind === "ident") return expr;
   if (expr.kind === "call") {
     const args = expr.args.map((a) => zonk(a, ctx));
@@ -107,6 +132,12 @@ function occursIn(id: number, expr: AST.ProveExpr, ctx: UnifCtx): boolean {
     if (expr.id === id) return true;
     const sol = ctx.get(expr.id);
     return sol ? occursIn(id, sol, ctx) : false;
+  }
+  if (expr.kind === "meta-app") {
+    if (expr.id === id) return true;
+    const sol = ctx.get(expr.id);
+    if (sol) return occursIn(id, sol, ctx) || expr.args.some(a => occursIn(id, a, ctx));
+    return expr.args.some(a => occursIn(id, a, ctx));
   }
   if (expr.kind === "ident" || expr.kind === "hole") return false;
   if (expr.kind === "call") return expr.args.some((a) => occursIn(id, a, ctx));
@@ -141,6 +172,23 @@ export function unify(a: AST.ProveExpr, b: AST.ProveExpr, ctx: UnifCtx): boolean
     if (occursIn(b.id, a, ctx)) return false;
     ctx.set(b.id, a);
     return true;
+  }
+
+  // ── Higher-order pattern unification ──
+  // meta-app(id, [x1,...,xn]) vs term: solve ?id = λx1...λxn. term
+  // when all xi are distinct bound variables (Miller's pattern fragment).
+  if (a.kind === "meta-app" && b.kind === "meta-app" && a.id === b.id) {
+    // Same metavar applied to same number of args → unify args
+    if (a.args.length === b.args.length) {
+      return a.args.every((arg, i) => unify(arg, b.args[i], ctx));
+    }
+    return false;
+  }
+  if (a.kind === "meta-app") {
+    return solvePattern(a.id, a.args, b, ctx);
+  }
+  if (b.kind === "meta-app") {
+    return solvePattern(b.id, b.args, a, ctx);
   }
 
   // Holes never unify
@@ -187,6 +235,48 @@ export function unify(a: AST.ProveExpr, b: AST.ProveExpr, ctx: UnifCtx): boolean
   }
 
   return false;
+}
+
+/**
+ * Miller's pattern fragment solver.
+ * Given ?M(x1,...,xn) = body, where all xi are distinct ident variables,
+ * solve ?M = λx1...λxn. body (after occurs check).
+ * If the args are not all distinct idents, fall back to first-order:
+ * treat the meta-app as a plain metavar assignment when args is empty.
+ */
+function solvePattern(
+  id: number,
+  args: AST.ProveExpr[],
+  body: AST.ProveExpr,
+  ctx: UnifCtx,
+): boolean {
+  // Check pattern condition: all args must be distinct ident variables
+  const names: string[] = [];
+  for (const arg of args) {
+    const za = zonk(arg, ctx);
+    if (za.kind !== "ident") {
+      // Not a pattern — can't solve
+      return false;
+    }
+    if (names.includes(za.name)) {
+      // Non-linear pattern — can't solve
+      return false;
+    }
+    names.push(za.name);
+  }
+
+  // Occurs check
+  if (occursIn(id, body, ctx)) return false;
+
+  // Build solution: λx1. λx2. ... λxn. body
+  // We use a dummy type (hole) for param types — they are not needed for unification.
+  let solution: AST.ProveExpr = body;
+  for (let i = names.length - 1; i >= 0; i--) {
+    solution = { kind: "lambda", param: names[i], paramType: { kind: "hole" }, body: solution };
+  }
+
+  ctx.set(id, solution);
+  return true;
 }
 
 /**

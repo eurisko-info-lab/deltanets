@@ -230,7 +230,8 @@ export type ProveExpr =
   | { kind: "pi"; param: string; domain: ProveExpr; codomain: ProveExpr } // forall(x : A, B)
   | { kind: "sigma"; param: string; domain: ProveExpr; codomain: ProveExpr } // exists(x : A, B)
   | { kind: "lambda"; param: string; paramType: ProveExpr; body: ProveExpr } // fun(x : A, body)
-  | { kind: "metavar"; id: number }; // unification variable ?id
+  | { kind: "metavar"; id: number } // unification variable ?id
+  | { kind: "meta-app"; id: number; args: ProveExpr[] }; // applied metavar ?id(args) — HO unification
 
 // program name(params) -> ReturnType {
 //   wf(R) | measure(expr)

@@ -1,9 +1,9 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Updated**: 2026-03-24, post-Phase 39  
-**Current state**: ~12k LoC TypeScript (46 files) · 830 tests · strategy-based tactic protocol  
-**Overall Rocq parity**: ~85% surface, ~70% depth
+**Updated**: 2026-03-24, post-Phase 44  
+**Current state**: ~12k LoC TypeScript (46 files) · 902 tests · strategy-based tactic protocol  
+**Overall Rocq parity**: ~85% surface, ~75% depth
 
 ---
 
@@ -51,6 +51,10 @@
 | 37 | Program / Equations | `1d4fdfb` |
 | 38 | Strategy declarations | `c68a172` |
 | 39 | Meta-INet strategy protocol | `3b60d93` |
+| 40 | Proof term language | `2048b45` |
+| 41 | Standard library | `12700b1` |
+| 42 | Module functors | `6137fe4` |
+| 43 | Mixfix notations | `137ac9d` |
 
 ---
 
@@ -67,7 +71,7 @@
 | Pattern matching | Nested deep patterns, with-clauses, overlap detection | Good |
 | Termination | Structural recursion + `{measure}` + `{wf}` | Good — `wf` is trusted |
 | Implicit args | `{x : A}` in prove params, unification-based inference | Good — with canonical structure resolution |
-| Unification | First-order unification with metavars | Basic — no higher-order unification |
+| Unification | First-order + Miller's pattern fragment (higher-order) | Good — handles `?f x = S x` |
 | Sections/Variables | `section S { variable(A : Type) ... }` with auto-abstraction | Good |
 | Notations | `notation "+" := add (prec 50, left)` | Basic — infix only, no mixfix |
 | Coercions | `coercion name = From -> To via func` | Good |

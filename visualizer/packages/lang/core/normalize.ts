@@ -52,6 +52,9 @@ export function substitute(
   value: AST.ProveExpr,
 ): AST.ProveExpr {
   if (expr.kind === "hole" || expr.kind === "metavar") return expr;
+  if (expr.kind === "meta-app") {
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(a => substitute(a, varName, value)) };
+  }
   if (expr.kind === "ident") {
     return expr.name === varName ? value : expr;
   }
@@ -83,8 +86,11 @@ export function substitute(
       cases: expr.cases.map((c) => ({ ...c, body: substitute(c.body, varName, value) })),
     };
   }
-  // call: substitute in name if it matches (unlikely but handle), and all args
+  // call: substitute in name if it matches, and all args
   const newArgs = expr.args.map((a) => substitute(a, varName, value));
+  if (expr.name === varName && value.kind === "metavar") {
+    return { kind: "meta-app", id: value.id, args: newArgs };
+  }
   const newName = expr.name === varName && value.kind === "ident"
     ? value.name
     : expr.name;
@@ -99,6 +105,9 @@ export function substituteAll(
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
   if (expr.kind === "hole" || expr.kind === "metavar") return expr;
+  if (expr.kind === "meta-app") {
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(a => substituteAll(a, bindings)) };
+  }
   if (expr.kind === "ident") {
     return bindings.get(expr.name) ?? expr;
   }
@@ -138,6 +147,10 @@ export function substituteAll(
   }
   const newArgs = expr.args.map((a) => substituteAll(a, bindings));
   const replacement = bindings.get(expr.name);
+  // If function name maps to a metavar, produce a meta-app (HO applied metavar)
+  if (replacement?.kind === "metavar") {
+    return { kind: "meta-app", id: replacement.id, args: newArgs };
+  }
   const newName = replacement?.kind === "ident" ? replacement.name : expr.name;
   return { kind: "call", name: newName, args: newArgs };
 }
@@ -149,6 +162,10 @@ export function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   if (a.kind === "match" || b.kind === "match") return false;
   if (a.kind === "metavar" && b.kind === "metavar") return a.id === b.id;
   if (a.kind === "metavar" || b.kind === "metavar") return false;
+  if (a.kind === "meta-app" && b.kind === "meta-app") {
+    return a.id === b.id && a.args.length === b.args.length && a.args.every((arg, i) => exprEqual(arg, b.args[i]));
+  }
+  if (a.kind === "meta-app" || b.kind === "meta-app") return false;
   if (a.kind === "let" && b.kind === "let") {
     return a.name === b.name && exprEqual(a.value, b.value) && exprEqual(a.body, b.body);
   }
@@ -201,6 +218,7 @@ function toSubscript(n: number): string {
 export function exprToString(e: AST.ProveExpr): string {
   if (e.kind === "hole") return "?";
   if (e.kind === "metavar") return `?${e.id}`;
+  if (e.kind === "meta-app") return `?${e.id}(${e.args.map(exprToString).join(", ")})`;
   if (e.kind === "match") return `match(${e.scrutinee}) { ... }`;
   if (e.kind === "let") return `let ${e.name} = ${exprToString(e.value)} in ${exprToString(e.body)}`;
   if (e.kind === "pi") return `∀(${e.param} : ${exprToString(e.domain)}), ${exprToString(e.codomain)}`;
@@ -264,6 +282,9 @@ export function substituteExprPattern(
       cases: expr.cases.map((c) => ({ ...c, body: substituteExprPattern(c.body, pattern, replacement) })),
     };
   }
+  if (expr.kind === "meta-app") {
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(a => substituteExprPattern(a, pattern, replacement)) };
+  }
   if (expr.kind !== "call") return expr;
   const newArgs = expr.args.map((a) => substituteExprPattern(a, pattern, replacement));
   return { kind: "call", name: expr.name, args: newArgs };
@@ -289,6 +310,9 @@ function substituteComputeResult(
   bindings: Map<string, AST.ProveExpr>,
 ): AST.ProveExpr {
   if (expr.kind === "hole" || expr.kind === "match" || expr.kind === "metavar") return expr;
+  if (expr.kind === "meta-app") {
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(a => substituteComputeResult(a, bindings)) };
+  }
   if (expr.kind === "ident") return bindings.get(expr.name) ?? expr;
   if (expr.kind === "let") {
     return { kind: "let", name: expr.name, value: substituteComputeResult(expr.value, bindings), body: substituteComputeResult(expr.body, bindings) };
@@ -391,6 +415,9 @@ export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
     return expr;
   }
   if (expr.kind === "hole" || expr.kind === "match" || expr.kind === "metavar") return expr;
+  if (expr.kind === "meta-app") {
+    return { kind: "meta-app", id: expr.id, args: expr.args.map(normalize) };
+  }
   if (expr.kind === "let") {
     // Inline the let binding: let x = v in body → body[x := v]
     const normValue = normalize(expr.value);
