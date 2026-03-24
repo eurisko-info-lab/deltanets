@@ -51,6 +51,11 @@ export const TT = {
   CANONICAL: "CANONICAL",
   PROGRAM: "PROGRAM",
   OBLIGATION: "OBLIGATION",
+  THEOREM: "THEOREM",
+  LEMMA: "LEMMA",
+  BY: "BY",
+  EXAMPLE: "EXAMPLE",
+  WHERE: "WHERE",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -72,6 +77,8 @@ export const TT = {
   MINUS: "MINUS",
   STAR: "STAR", // *
   SLASH: "SLASH", // /
+  WALRUS: "WALRUS", // :=
+  FATARROW: "FATARROW", // =>
   DOTDOT: "DOTDOT", // ..
   AT: "AT", // @
   // Literals
@@ -137,6 +144,11 @@ const KEYWORDS: Record<string, TokenKind> = {
   canonical: TT.CANONICAL,
   program: TT.PROGRAM,
   obligation: TT.OBLIGATION,
+  theorem: TT.THEOREM,
+  lemma: TT.LEMMA,
+  by: TT.BY,
+  example: TT.EXAMPLE,
+  where: TT.WHERE,
 };
 
 export class LexError extends Error {
@@ -202,6 +214,18 @@ export function tokenize(source: string): Token[] {
       }
       if (two === "..") {
         tokens.push({ type: TT.DOTDOT, value: "..", line, col: startCol });
+        i += 2;
+        col += 2;
+        continue;
+      }
+      if (two === ":=") {
+        tokens.push({ type: TT.WALRUS, value: ":=", line, col: startCol });
+        i += 2;
+        col += 2;
+        continue;
+      }
+      if (two === "=>") {
+        tokens.push({ type: TT.FATARROW, value: "=>", line, col: startCol });
         i += 2;
         col += 2;
         continue;

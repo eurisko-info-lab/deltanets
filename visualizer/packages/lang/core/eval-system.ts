@@ -162,7 +162,7 @@ export function evalBodyInto(
           if (typeName) {
             if (!constructorsByType.has(typeName)) constructorsByType.set(typeName, new Set());
             const set = constructorsByType.get(typeName)!;
-            for (const c of p.cases) set.add(c.pattern);
+            for (const c of p.cases) if (c.pattern !== "_") set.add(c.pattern);
           }
         }
       }
@@ -198,7 +198,7 @@ export function evalBodyInto(
             constructorsByType.set(typeName, new Set());
           }
           const set = constructorsByType.get(typeName)!;
-          for (const c of item.cases) set.add(c.pattern);
+          for (const c of item.cases) if (c.pattern !== "_") set.add(c.pattern);
         }
       }
     }
@@ -293,6 +293,10 @@ export function evalBodyInto(
     let prove = decl;
     if (decl.induction && decl.cases.length === 0) {
       prove = expandInduction(decl, agents, constructorsByType);
+    }
+    // Expand wildcard "_" pattern into per-constructor cases
+    if (prove.cases.length === 1 && prove.cases[0].pattern === "_") {
+      prove = expandWildcard(prove, agents, constructorsByType);
     }
     prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
     const hasHoles = proveContainsHole(prove);
@@ -561,6 +565,9 @@ export function evalBodyInto(
           let prove = p;
           if (p.induction && p.cases.length === 0) {
             prove = expandInduction(p, agents, constructorsByType);
+          }
+          if (prove.cases.length === 1 && prove.cases[0].pattern === "_") {
+            prove = expandWildcard(prove, agents, constructorsByType);
           }
           prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
           const hasHoles = proveContainsHole(prove);
@@ -905,6 +912,36 @@ function expandInduction(
     cases.push({ pattern: consName, bindings, body: { kind: "hole" } });
   }
   return { ...prove, cases, induction: undefined };
+}
+
+/** Expand a wildcard "_" pattern into per-constructor cases (for direct proof terms). */
+function expandWildcard(
+  prove: AST.ProveDecl,
+  agents: Map<string, AgentDef>,
+  constructorsByType: Map<string, Set<string>>,
+): AST.ProveDecl {
+  const body = prove.cases[0].body;
+  const indParam = inductionParam(prove.params);
+  if (!indParam?.type) {
+    return prove;
+  }
+  const typeName = indParam.type.kind === "ident"
+    ? indParam.type.name
+    : indParam.type.kind === "call"
+    ? indParam.type.name
+    : null;
+  if (!typeName || !constructorsByType.has(typeName)) {
+    return prove;
+  }
+  const constructors = constructorsByType.get(typeName)!;
+  const cases: AST.ProveCase[] = [];
+  for (const consName of constructors) {
+    const consDef = agents.get(consName);
+    const auxPorts = consDef ? consDef.ports.slice(1) : [];
+    const bindings = auxPorts.map((p) => p.name);
+    cases.push({ pattern: consName, bindings, body });
+  }
+  return { ...prove, cases };
 }
 
 function isPreExisting(ref: AST.PortRef): boolean {

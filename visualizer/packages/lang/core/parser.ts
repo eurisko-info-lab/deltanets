@@ -227,6 +227,9 @@ class Parser {
         return this.parseCanonicalDecl();
       case TT.PROGRAM:
         return this.parseProgramDecl();
+      case TT.THEOREM:
+      case TT.LEMMA:
+        return this.parseTheoremDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -396,13 +399,18 @@ class Parser {
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
       else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
       else if (tok.type === TT.PROGRAM) body.push(this.parseProgramDecl());
+      else if (tok.type === TT.THEOREM || tok.type === TT.LEMMA) body.push(this.parseTheoremDecl());
       else if (tok.type === TT.AT) {
-        // @[simp] prove ... — attribute syntax, auto-generates hint entries
+        // @[simp] prove/theorem/lemma ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
-        if (!this.check(TT.PROVE)) {
-          throw new ParseError(`Expected 'prove' after attribute @[...]`, tok.line, tok.col);
+        let prove: AST.ProveDecl;
+        if (this.check(TT.THEOREM) || this.check(TT.LEMMA)) {
+          prove = this.parseTheoremDecl();
+        } else if (this.check(TT.PROVE)) {
+          prove = this.parseProveDecl();
+        } else {
+          throw new ParseError(`Expected 'prove', 'theorem', or 'lemma' after attribute @[...]`, tok.line, tok.col);
         }
-        const prove = this.parseProveDecl();
         prove.attributes = attrs;
         body.push(prove);
         // Auto-generate hint declarations for each attribute
@@ -411,7 +419,7 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -742,6 +750,150 @@ class Parser {
     return { kind: "obligation", name, params, returnType, cases };
   }
 
+  // ─── Theorem / Lemma (Lean-like syntax) ──────────────────────────
+  // theorem name (x y : A) {z : B} : ReturnType := body
+  // theorem name (x y : A) : ReturnType := by | Case => body ...
+  // lemma name (x : A) : P := by | Case => body ...
+
+  parseTheoremDecl(): AST.ProveDecl {
+    this.advance(); // eat 'theorem' or 'lemma'
+    const name = this.eatIdent();
+
+    // Parse Lean-style binder groups: (x y : A) {z : B} ...
+    const params: AST.ProveParam[] = [];
+    while (this.check(TT.LPAREN) || this.check(TT.LBRACE) || this.check(TT.LBRACKET)) {
+      params.push(...this.parseLeanBinderGroup());
+    }
+
+    // Optional return type: `: ReturnType`
+    let returnType: AST.ProveExpr | undefined;
+    if (this.check(TT.COLON)) {
+      this.advance();
+      returnType = this.parseProveExpr();
+    }
+
+    // Body: `:= expr` or `:= by ...`
+    this.eat(TT.WALRUS);
+
+    let cases: AST.ProveCase[] = [];
+    let induction: string | undefined;
+    let measure: AST.ProveExpr | undefined;
+    let wf: string | undefined;
+
+    if (this.check(TT.BY)) {
+      this.advance(); // eat 'by'
+      // Check for induction/measure/wf annotations
+      if (this.checkIdent("induction")) {
+        this.advance();
+        const varName = this.eatIdent();
+        // `induction n with | cases...` — explicit case arms
+        if (this.checkIdent("with")) {
+          this.advance();
+          cases = this.parseLeanCaseArms();
+        } else {
+          // `induction n` — auto-expand (existing behavior)
+          induction = varName;
+        }
+      } else if (this.checkIdent("measure")) {
+        this.advance();
+        this.eat(TT.LPAREN);
+        measure = this.parseProveExpr();
+        this.eat(TT.RPAREN);
+        cases = this.parseLeanCaseArms();
+      } else if (this.checkIdent("wf")) {
+        this.advance();
+        this.eat(TT.LPAREN);
+        wf = this.eatIdent();
+        this.eat(TT.RPAREN);
+        cases = this.parseLeanCaseArms();
+      } else {
+        // Plain `by` followed by case arms
+        cases = this.parseLeanCaseArms();
+      }
+    } else {
+      // Direct proof term: `:= expr`
+      const body = this.parseProveExpr();
+      cases = [{ pattern: "_", bindings: [], body }];
+    }
+
+    return { kind: "prove", name, params, returnType, cases, induction, measure, wf };
+  }
+
+  /** Parse a single Lean-style binder group: (x y : A), {x : A}, or [x : A] */
+  private parseLeanBinderGroup(): AST.ProveParam[] {
+    const implicit = this.check(TT.LBRACE) || this.check(TT.LBRACKET);
+    const open = this.advance().type; // eat (, {, or [
+    const close = open === TT.LBRACE ? TT.RBRACE
+                : open === TT.LBRACKET ? TT.RBRACKET
+                : TT.RPAREN;
+
+    // Collect names until we see `:` or the closing bracket
+    const names: string[] = [];
+    while (this.check(TT.IDENT)) {
+      // Peek ahead: if next is `:`, we have `name :` — stop collecting names
+      const saved = this.pos;
+      const nm = this.eatIdent();
+      if (this.check(TT.COLON)) {
+        names.push(nm);
+        break;
+      }
+      // If next is closing bracket with no colon, these are untyped params
+      if (this.check(close)) {
+        names.push(nm);
+        break;
+      }
+      names.push(nm);
+    }
+
+    let type: AST.ProveExpr | undefined;
+    if (this.check(TT.COLON)) {
+      this.advance();
+      type = this.parseProveExpr();
+    }
+    this.eat(close);
+    return names.map(n => ({ name: n, type, implicit }));
+  }
+
+  /** Parse Lean-style case arms: `| Pat args => body` or `| Pat(args) => body` */
+  private parseLeanCaseArms(): AST.ProveCase[] {
+    const cases: AST.ProveCase[] = [];
+    while (this.check(TT.PIPE)) {
+      this.advance();
+      const pattern = this.eatIdent();
+      let bindings: string[] = [];
+      let deepArgs: DeepPattern[] | undefined;
+
+      // Parenthesized bindings: | Succ(k) =>
+      if (this.check(TT.LPAREN)) {
+        this.advance();
+        if (!this.check(TT.RPAREN))
+          deepArgs = this.parseCommaList(() => this.parseDeepPattern());
+        this.eat(TT.RPAREN);
+      } else {
+        // Space-separated bindings: | Succ k =>  (collect idents until => or ->)
+        while (this.check(TT.IDENT) && !this.check(TT.FATARROW) && !this.check(TT.ARROW)) {
+          bindings.push(this.eatIdent());
+        }
+      }
+
+      // Accept => or -> as the arm separator
+      if (this.check(TT.FATARROW)) {
+        this.advance();
+      } else {
+        this.eat(TT.ARROW);
+      }
+
+      let body = this.parseProveExpr();
+      if (deepArgs) {
+        const flat = flattenDeepPatterns(deepArgs, body, this.deepPatternCounter);
+        bindings = flat.bindings;
+        body = flat.body;
+      }
+      cases.push({ pattern, bindings, body });
+    }
+    return cases;
+  }
+
   parseProveParam(): AST.ProveParam {
     // Implicit param: {name} or {name : Type}
     if (this.check(TT.LBRACE)) {
@@ -836,17 +988,47 @@ class Parser {
       this.eat(TT.RPAREN);
       return { kind: "sigma", param, domain, codomain };
     }
-    // fun(x : A, body) — lambda
+    // fun(x : A, body) — lambda (old syntax)
+    // fun (x : A) => body — lambda (Lean syntax, typed)
+    // fun x => body — lambda (Lean syntax, type inferred)
     if (this.check(TT.IDENT) && this.peek().value === "fun") {
       this.advance();
-      this.eat(TT.LPAREN);
-      const param = this.eatIdent();
-      this.eat(TT.COLON);
-      const paramType = this.parseProveExpr();
-      this.eat(TT.COMMA);
-      const body = this.parseProveExpr();
-      this.eat(TT.RPAREN);
-      return { kind: "lambda", param, paramType, body };
+      if (this.check(TT.LPAREN)) {
+        this.advance(); // eat (
+        const param = this.eatIdent();
+        if (this.check(TT.COLON)) {
+          this.advance(); // eat :
+          const paramType = this.parseProveExpr();
+          if (this.check(TT.COMMA)) {
+            // Old syntax: fun(x : A, body)
+            this.advance(); // eat ,
+            const body = this.parseProveExpr();
+            this.eat(TT.RPAREN);
+            return { kind: "lambda", param, paramType, body };
+          } else {
+            // Lean syntax: fun (x : A) => body
+            this.eat(TT.RPAREN);
+            if (this.check(TT.FATARROW)) this.advance();
+            else this.eat(TT.ARROW); // also accept ->
+            const body = this.parseProveExpr();
+            return { kind: "lambda", param, paramType, body };
+          }
+        } else {
+          // Lean syntax: fun (x) => body (type inferred)
+          this.eat(TT.RPAREN);
+          if (this.check(TT.FATARROW)) this.advance();
+          else this.eat(TT.ARROW);
+          const body = this.parseProveExpr();
+          return { kind: "lambda", param, paramType: { kind: "hole" }, body };
+        }
+      } else {
+        // Lean syntax: fun x => body
+        const param = this.eatIdent();
+        if (this.check(TT.FATARROW)) this.advance();
+        else this.eat(TT.ARROW);
+        const body = this.parseProveExpr();
+        return { kind: "lambda", param, paramType: { kind: "hole" }, body };
+      }
     }
     // \x:A.body — lambda (backslash syntax)
     if (this.check(TT.BACKSLASH)) {
