@@ -48,6 +48,8 @@ export const TT = {
   INSTANCE: "INSTANCE",
   HINT: "HINT",
   CANONICAL: "CANONICAL",
+  PROGRAM: "PROGRAM",
+  OBLIGATION: "OBLIGATION",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -131,6 +133,8 @@ const KEYWORDS: Record<string, TokenKind> = {
   instance: TT.INSTANCE,
   hint: TT.HINT,
   canonical: TT.CANONICAL,
+  program: TT.PROGRAM,
+  obligation: TT.OBLIGATION,
 };
 
 export class LexError extends Error {

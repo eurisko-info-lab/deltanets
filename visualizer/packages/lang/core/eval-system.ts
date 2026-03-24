@@ -42,7 +42,7 @@ function expandSections(
       result.push(...expandSections(item.body, combined));
     } else if (sectionVars.length > 0) {
       // Prepend section variables as implicit params
-      if (item.kind === "prove") {
+      if (item.kind === "prove" || item.kind === "program") {
         const implicitParams: AST.ProveParam[] = sectionVars.map((v) => ({
           name: v.name,
           type: v.type,
@@ -182,7 +182,7 @@ export function evalBodyInto(
         indices: [],
         fields: item.fields,
       });
-    } else if (item.kind === "prove") {
+    } else if (item.kind === "prove" || item.kind === "program") {
       const firstParam = inductionParam(item.params);
       if (firstParam?.type) {
         const typeName = firstParam.type.kind === "ident"
@@ -212,6 +212,10 @@ export function evalBodyInto(
         for (const ctor of d.constructors) knownAgents.add(ctor.name);
       }
       for (const p of item.proves) knownAgents.add(p.name);
+    }
+    if (item.kind === "program") {
+      knownAgents.add(item.name);
+      for (const ob of item.obligations) knownAgents.add(ob.name);
     }
     if (item.kind === "record") {
       knownAgents.add(`mk${item.name}`);
@@ -433,6 +437,91 @@ export function evalBodyInto(
         const projMap = new Map<string, string>();
         for (const f of item.fields) projMap.set(f.name, f.value);
         canonicals.push({ name: item.name, structName: item.structName, projections: projMap });
+        break;
+      }
+      case "program": {
+        // Lower program to prove with wf termination, then process obligations
+        const mainProve: AST.ProveDecl = {
+          kind: "prove",
+          name: item.name,
+          params: item.params,
+          returnType: item.returnType,
+          cases: item.cases,
+          wf: item.wf ?? (item.measure ? undefined : "_"),
+          measure: item.measure,
+          attributes: item.attributes,
+        };
+        // Process main body through prove pipeline
+        let prove = mainProve;
+        if (mainProve.induction && mainProve.cases.length === 0) {
+          prove = expandInduction(mainProve, agents, constructorsByType);
+        }
+        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+        const hasHoles = proveContainsHole(prove);
+        const hasRewrites = proveContainsRewrite(prove);
+        const hasMatch = proveContainsMatch(prove);
+        if (!hasHoles && !hasRewrites && !hasMatch) {
+          const stripped = stripProveTactics(prove);
+          const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
+          const agent = evalAgent(agentDecl);
+          agents.set(agent.name, agent);
+          for (const r of ruleDecls) {
+            rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+          }
+        }
+        const linearityErrors = checkProveLinearity(prove, agents, modes);
+        const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
+        const allErrors = [...linearityErrors, ...typeErrors];
+        if (allErrors.length > 0) {
+          throw new EvalError(allErrors.join("\n"));
+        }
+        const tree = buildProofTree(prove, provedCtx, computeRules, constructorTyping);
+        if (tree) proofTrees.push(tree);
+        if (prove.returnType) {
+          provedCtx.set(prove.name, {
+            params: item.params,
+            returnType: item.returnType!,
+          });
+        }
+        // Process each obligation as a separate prove
+        for (const ob of item.obligations) {
+          const obProve: AST.ProveDecl = {
+            kind: "prove",
+            name: ob.name,
+            params: ob.params,
+            returnType: ob.returnType,
+            cases: ob.cases,
+            termination: "structural",
+          };
+          let resolvedOb = obProve;
+          resolvedOb = withNormTable(computeRules, () => resolveAllTactics(resolvedOb, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+          const obHasHoles = proveContainsHole(resolvedOb);
+          const obHasRewrites = proveContainsRewrite(resolvedOb);
+          const obHasMatch = proveContainsMatch(resolvedOb);
+          if (!obHasHoles && !obHasRewrites && !obHasMatch) {
+            const stripped = stripProveTactics(resolvedOb);
+            const { agentDecl, ruleDecls } = desugarProve(stripped, agents);
+            const agent = evalAgent(agentDecl);
+            agents.set(agent.name, agent);
+            for (const r of ruleDecls) {
+              rules.push({ agentA: r.agentA, agentB: r.agentB, action: r.action });
+            }
+          }
+          const obLinErrors = checkProveLinearity(resolvedOb, agents, modes);
+          const obTypeErrors = typecheckProve(resolvedOb, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals);
+          const obAllErrors = [...obLinErrors, ...obTypeErrors];
+          if (obAllErrors.length > 0) {
+            throw new EvalError(obAllErrors.join("\n"));
+          }
+          const obTree = buildProofTree(resolvedOb, provedCtx, computeRules, constructorTyping);
+          if (obTree) proofTrees.push(obTree);
+          if (resolvedOb.returnType) {
+            provedCtx.set(resolvedOb.name, {
+              params: ob.params,
+              returnType: ob.returnType!,
+            });
+          }
+        }
         break;
       }
       case "open": {

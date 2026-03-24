@@ -1679,6 +1679,16 @@ function caseCtx(
     : ident(caseArm.pattern);
   // Build typed caseBindings: look up constructor field types when available
   const { bindings: caseBindings, types: bindingTypes } = buildTypedBindings(caseArm, constructorTyping);
+  // Also add aux params so they're visible in case bodies (e.g., program returns)
+  for (const p of auxParams(prove.params)) {
+    if (!caseBindings.has(p.name)) {
+      caseBindings.set(p.name, p.type ?? ident(p.name));
+      if (p.type) {
+        const tname = p.type.kind === "ident" ? p.type.name : p.type.kind === "call" ? p.type.name : null;
+        if (tname) bindingTypes.set(p.name, tname);
+      }
+    }
+  }
   return {
     ctx: {
       prove,

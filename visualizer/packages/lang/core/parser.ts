@@ -223,6 +223,8 @@ class Parser {
         return this.parseHintDecl();
       case TT.CANONICAL:
         return this.parseCanonicalDecl();
+      case TT.PROGRAM:
+        return this.parseProgramDecl();
       default:
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
@@ -390,6 +392,7 @@ class Parser {
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
       else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
+      else if (tok.type === TT.PROGRAM) body.push(this.parseProgramDecl());
       else if (tok.type === TT.AT) {
         // @[simp] prove ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
@@ -405,7 +408,7 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -678,6 +681,62 @@ class Parser {
     }
     this.eat(TT.RBRACE);
     return { kind: "prove", name, params, returnType, cases, induction, measure, wf };
+  }
+
+  // ─── Program (prove + proof obligations) ─────────────────────────
+  // program name(params) -> ReturnType {
+  //   wf(R) | measure(expr)
+  //   | Pat(bindings) -> body
+  //   obligation name(params) -> Prop { cases }
+  // }
+
+  parseProgramDecl(): AST.ProgramDecl {
+    this.eat(TT.PROGRAM);
+    const name = this.eatIdent();
+    this.eat(TT.LPAREN);
+    const params = this.parseCommaList(() => this.parseProveParam());
+    this.eat(TT.RPAREN);
+    this.eat(TT.ARROW);
+    const returnType = this.parseProveExpr();
+    this.eat(TT.LBRACE);
+    // Optional termination annotation: wf(R) or measure(expr)
+    let wf: string | undefined;
+    let measure: AST.ProveExpr | undefined;
+    if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
+        this.check(TT.IDENT) && this.peek().value === "wf") {
+      this.advance();
+      this.eat(TT.LPAREN);
+      wf = this.eatIdent();
+      this.eat(TT.RPAREN);
+    } else if (!this.check(TT.PIPE) && !this.check(TT.RBRACE) &&
+               this.check(TT.IDENT) && this.peek().value === "measure") {
+      this.advance();
+      this.eat(TT.LPAREN);
+      measure = this.parseProveExpr();
+      this.eat(TT.RPAREN);
+    }
+    const cases = this.parseCaseArms();
+    // Parse obligation sub-proves
+    const obligations: AST.ObligationDecl[] = [];
+    while (this.check(TT.OBLIGATION)) {
+      obligations.push(this.parseObligationDecl());
+    }
+    this.eat(TT.RBRACE);
+    return { kind: "program", name, params, returnType, cases, wf, measure, obligations };
+  }
+
+  parseObligationDecl(): AST.ObligationDecl {
+    this.eat(TT.OBLIGATION);
+    const name = this.eatIdent();
+    this.eat(TT.LPAREN);
+    const params = this.parseCommaList(() => this.parseProveParam());
+    this.eat(TT.RPAREN);
+    this.eat(TT.ARROW);
+    const returnType = this.parseProveExpr();
+    this.eat(TT.LBRACE);
+    const cases = this.parseCaseArms();
+    this.eat(TT.RBRACE);
+    return { kind: "obligation", name, params, returnType, cases };
   }
 
   parseProveParam(): AST.ProveParam {
@@ -1139,6 +1198,7 @@ class Parser {
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
       else if (tok.type === TT.CANONICAL) body.push(this.parseCanonicalDecl());
+      else if (tok.type === TT.PROGRAM) body.push(this.parseProgramDecl());
       else {
         throw new ParseError(
           `Expected declaration in section body, got '${tok.value}'`,

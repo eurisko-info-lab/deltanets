@@ -31,7 +31,8 @@ export type Statement =
   | ClassDecl
   | InstanceDecl
   | HintDecl
-  | CanonicalDecl;
+  | CanonicalDecl
+  | ProgramDecl;
 
 // system "name" { agent..., rule..., mode... }
 export type SystemDecl = {
@@ -58,7 +59,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -215,6 +216,32 @@ export type ProveExpr =
   | { kind: "sigma"; param: string; domain: ProveExpr; codomain: ProveExpr } // exists(x : A, B)
   | { kind: "lambda"; param: string; paramType: ProveExpr; body: ProveExpr } // fun(x : A, body)
   | { kind: "metavar"; id: number }; // unification variable ?id
+
+// program name(params) -> ReturnType {
+//   wf(R) | measure(expr)
+//   | Pat(bindings) -> body
+//   obligation name(params) -> Prop { cases }
+// }
+// Sugar over prove with wf termination + explicit proof obligations.
+export type ProgramDecl = {
+  kind: "program";
+  name: string;
+  params: ProveParam[];
+  returnType: ProveExpr;
+  cases: ProveCase[];
+  wf?: string;
+  measure?: ProveExpr;
+  obligations: ObligationDecl[];
+  attributes?: string[];
+};
+
+export type ObligationDecl = {
+  kind: "obligation";
+  name: string;
+  params: ProveParam[];
+  returnType: ProveExpr;
+  cases: ProveCase[];
+};
 
 // agent name(port, port, ..variadicPort)
 export type AgentDecl = {

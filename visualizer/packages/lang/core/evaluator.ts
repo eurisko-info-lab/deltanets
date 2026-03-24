@@ -251,8 +251,9 @@ export function evaluate(
           }
           break;
         }
-        case "prove": {
-          // Top-level prove: desugar using ambient + system agents
+        case "prove":
+        case "program": {
+          // Top-level prove/program: desugar using ambient + system agents
           const allAgents = new Map(ambientAgents);
           for (const sys of systems.values()) {
             for (const [name, agent] of sys.agents) {
