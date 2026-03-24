@@ -3,6 +3,7 @@
 export { compileCore, compileView } from "./index.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
 export { universeLevel, typeUniverse, typeSubsumes } from "./core/typecheck-prove.ts";
+export type { ConversionResult } from "./core/typecheck-prove.ts";
 export {
   quoteExpr, unquoteStatements, buildGoalStatements,
   registerQuotationAgents, QUOTE_AGENTS,
@@ -18,7 +19,7 @@ export {
   META_CTX_SEARCH, META_EQ_CHECK,
   META_AGENT_DECLS,
 } from "./core/meta-agents.ts";
-export { normalize, computeGoalType, exprEqual, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./core/typecheck-prove.ts";
+export { normalize, computeGoalType, exprEqual, convertible, checkConvertible, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./core/typecheck-prove.ts";
 export {
   registerBuiltinTactics, compileTactic, resolveAllTactics,
   createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,

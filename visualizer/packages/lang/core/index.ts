@@ -22,7 +22,7 @@ export type {
   SystemDef,
   TacticDef,
 } from "./evaluator.ts";
-export type { ProofNode, ProofTree } from "./typecheck-prove.ts";
+export type { ProofNode, ProofTree, ConversionResult } from "./typecheck-prove.ts";
 export { universeLevel, typeUniverse, typeSubsumes } from "./typecheck-prove.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./proof-export.ts";
 export {
@@ -40,7 +40,7 @@ export {
   META_CTX_SEARCH, META_EQ_CHECK,
   META_AGENT_DECLS,
 } from "./meta-agents.ts";
-export { normalize, computeGoalType, exprEqual, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./typecheck-prove.ts";
+export { normalize, computeGoalType, exprEqual, convertible, checkConvertible, searchProofContext, tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto } from "./typecheck-prove.ts";
 export {
   registerBuiltinTactics, compileTactic, resolveAllTactics,
   createSimpHandler, createDecideHandler, createOmegaHandler, createAutoHandler,

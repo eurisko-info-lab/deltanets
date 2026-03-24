@@ -278,6 +278,28 @@ export function exprEqual(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   return false;
 }
 
+// ─── Conversion (definitional equality) ────────────────────────────
+// Two terms are convertible (definitionally equal) if they normalize
+// to syntactically equal terms.  This is a judgment, not a type.
+
+export type ConversionResult =
+  | { convertible: true }
+  | { convertible: false; syntacticallyEqual: boolean; lhsNorm: string; rhsNorm: string };
+
+/** Check whether two expressions are definitionally equal (convertible). */
+export function checkConvertible(a: AST.ProveExpr, b: AST.ProveExpr): ConversionResult {
+  const synEq = exprEqual(a, b);
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (exprEqual(na, nb)) return { convertible: true };
+  return { convertible: false, syntacticallyEqual: synEq, lhsNorm: exprToString(na), rhsNorm: exprToString(nb) };
+}
+
+/** Shorthand: are two expressions convertible? */
+export function convertible(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
+  return exprEqual(normalize(a), normalize(b));
+}
+
 const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
 function toSubscript(n: number): string {
   return String(n).split("").map((d) => SUBSCRIPTS[parseInt(d)]).join("");
@@ -884,7 +906,7 @@ function inferType(
       return { ok: false, error: `trans: relation mismatch: '${eq1.rel}' vs '${eq2.rel}'` };
     }
     // Check middle types match (after normalization)
-    if (!exprEqual(normalize(eq1.right), normalize(eq2.left))) {
+    if (!convertible(eq1.right, eq2.left)) {
       return {
         ok: false,
         error: `trans: middle types don't match: ${exprToString(normalize(eq1.right))} vs ${exprToString(normalize(eq2.left))}`,
@@ -1156,10 +1178,10 @@ function eqTypeMatches(
     infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
     infEq.right.kind === "ident" && infEq.right.name === "_refl_a"
   ) {
-    return exprEqual(normalize(reqEq.left), normalize(reqEq.right));
+    return convertible(reqEq.left, reqEq.right);
   }
-  return exprEqual(normalize(infEq.left), normalize(reqEq.left)) &&
-    exprEqual(normalize(infEq.right), normalize(reqEq.right));
+  return convertible(infEq.left, reqEq.left) &&
+    convertible(infEq.right, reqEq.right);
 }
 
 // ─── Proof search (auto-fill candidates) ──────────────────────────
@@ -1610,7 +1632,7 @@ export function tryResolveSimp(
 ): AST.ProveExpr | null {
   const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
   const goalEq = extractEq(normalize(goal));
-  if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+  if (goalEq && convertible(goalEq.left, goalEq.right)) {
     return ident("refl");
   }
   const candidates = searchCandidates(ctx, goal);
@@ -2140,12 +2162,16 @@ export function typecheckProve(
     // Check on raw body BEFORE stripTacticSugar (which would convert conv → refl)
     if ((rawBody.kind === "ident" && rawBody.name === "conv") ||
         (rawBody.kind === "call" && rawBody.name === "conv" && rawBody.args.length === 0)) {
-      if (reqEq && exprEqual(normalize(reqEq.left), normalize(reqEq.right))) continue;
+      if (reqEq && convertible(reqEq.left, reqEq.right)) continue;
       // Also handle setoid goals: conv proves R(a, a) when both sides normalize to the same term
       const reqEquivConv = extractEquiv(requiredType);
       if (reqEquivConv && isEquivRelation(reqEquivConv.rel, setoids) &&
-          exprEqual(normalize(reqEquivConv.left), normalize(reqEquivConv.right))) continue;
-      errors.push(`${prefix}: conv failed — sides are not definitionally equal\n  goal: ${exprToString(requiredType)}`);
+          convertible(reqEquivConv.left, reqEquivConv.right)) continue;
+      const convCheck = reqEq ? checkConvertible(reqEq.left, reqEq.right)
+        : reqEquivConv ? checkConvertible(reqEquivConv.left, reqEquivConv.right) : null;
+      const detail = convCheck && !convCheck.convertible
+        ? `\n  lhs normalizes to: ${convCheck.lhsNorm}\n  rhs normalizes to: ${convCheck.rhsNorm}` : "";
+      errors.push(`${prefix}: conv failed — sides are not definitionally equal\n  goal: ${exprToString(requiredType)}${detail}`);
       continue;
     }
 
@@ -2251,12 +2277,12 @@ export function typecheckProve(
       // Handle refl sentinel for setoid goals: R(_refl_a, _refl_a) matches R(a, a) when sides are equal
       if (infEquiv.left.kind === "ident" && infEquiv.left.name === "_refl_a" &&
           infEquiv.right.kind === "ident" && infEquiv.right.name === "_refl_a") {
-        if (!exprEqual(normalize(reqEquiv2.left), normalize(reqEquiv2.right))) {
+        if (!convertible(reqEquiv2.left, reqEquiv2.right)) {
           errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
         }
-      } else if (!exprEqual(normalize(infEquiv.left), normalize(reqEquiv2.left)) ||
-                 !exprEqual(normalize(infEquiv.right), normalize(reqEquiv2.right))) {
-        errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
+      } else if (!convertible(infEquiv.left, reqEquiv2.left) ||
+                 !convertible(infEquiv.right, reqEquiv2.right)) {
+        errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);  
       }
       continue;
     }
@@ -2266,7 +2292,7 @@ export function typecheckProve(
       const isReflSentinel = infEq.left.kind === "ident" && infEq.left.name === "_refl_a" &&
                              infEq.right.kind === "ident" && infEq.right.name === "_refl_a";
       if (isReflSentinel) {
-        if (!exprEqual(normalize(reqEquiv2.left), normalize(reqEquiv2.right))) {
+        if (!convertible(reqEquiv2.left, reqEquiv2.right)) {
           errors.push(`${prefix}: type mismatch\n  expected: ${exprToString(requiredType)}\n  inferred: ${exprToString(normalize(inferred.type))}`);
         }
         continue;
@@ -2285,7 +2311,7 @@ export function typecheckProve(
       const witness = inferred.type.args[0];
       const infProofType = inferred.type.args[1];
       const expectedPred = normalize(substitute(reqSigma.predicate, reqSigma.boundVar, witness));
-      if (!eqTypeMatches(infProofType, expectedPred) && !exprEqual(normalize(infProofType), expectedPred)) {
+      if (!eqTypeMatches(infProofType, expectedPred) && !convertible(infProofType, expectedPred)) {
         errors.push(`${prefix}: Sigma predicate mismatch\n  expected: ${exprToString(expectedPred)}\n  inferred: ${exprToString(normalize(infProofType))}`);
       }
       continue;
@@ -2432,14 +2458,14 @@ function resolveSimpExpr(
 
       // 1. conv: if both sides normalize to same term → refl
       const goalEq = extractEq(normalize(goal));
-      if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+      if (goalEq && convertible(goalEq.left, goalEq.right)) {
         return ident("refl") as AST.ProveExpr;
       }
 
       // 1b. conv for setoid goals: R(a, a) → refl
       const goalEquiv = !goalEq ? extractEquiv(normalize(goal)) : null;
       if (goalEquiv && isEquivRelation(goalEquiv.rel, ctx.setoids) &&
-          exprEqual(normalize(goalEquiv.left), normalize(goalEquiv.right))) {
+          convertible(goalEquiv.left, goalEquiv.right)) {
         return ident("refl") as AST.ProveExpr;
       }
 
@@ -2774,11 +2800,11 @@ function tryCongSucc(
     const r = inferType(ihCall, ctx);
     if (r.ok) {
       const eq = extractEq(normalize(r.type));
-      if (eq && exprEqual(normalize(eq.left), innerLhs) && exprEqual(normalize(eq.right), innerRhs)) {
+      if (eq && convertible(eq.left, innerLhs) && convertible(eq.right, innerRhs)) {
         return app("cong_succ", ihCall);
       }
       // Also try with sym
-      if (eq && exprEqual(normalize(eq.left), innerRhs) && exprEqual(normalize(eq.right), innerLhs)) {
+      if (eq && convertible(eq.left, innerRhs) && convertible(eq.right, innerLhs)) {
         return app("cong_succ", app("sym", ihCall));
       }
     }
@@ -2866,7 +2892,7 @@ function autoSearch(
   const goalEq = extractEq(normGoal);
 
   // 1. conv: definitional equality → refl
-  if (goalEq && exprEqual(normalize(goalEq.left), normalize(goalEq.right))) {
+  if (goalEq && convertible(goalEq.left, goalEq.right)) {
     return ident("refl");
   }
 
@@ -2929,7 +2955,7 @@ function tryCongAuto(
   // Find the one differing argument position
   const diffs: number[] = [];
   for (let i = 0; i < nlhs.args.length; i++) {
-    if (!exprEqual(normalize(nlhs.args[i]), normalize(nrhs.args[i]))) diffs.push(i);
+    if (!convertible(nlhs.args[i], nrhs.args[i])) diffs.push(i);
   }
   // Standard cong applies to last differing argument
   if (diffs.length === 1 && diffs[0] === nlhs.args.length - 1) {
