@@ -8,10 +8,11 @@
 import type * as AST from "./types.ts";
 import type { AgentDef, RuleDef, TacticDef, InstanceDef } from "./evaluator.ts";
 import { evalAgent } from "./eval-system.ts";
-import type { ComputeRule, ProvedContext } from "./typecheck-prove.ts";
+import type { ComputeRule, ProvedContext, StrategyContext } from "./typecheck-prove.ts";
 import {
   withNormTable, normalize, computeGoalType,
   tryResolveAssumption, tryResolveSimp, tryResolveDecide, tryResolveOmega, tryResolveAuto,
+  makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch,
 } from "./typecheck-prove.ts";
 import {
   readTermFromGraph, writeTermToGraph, collectTermTree,
@@ -65,6 +66,71 @@ const BUILTIN_RESOLVERS = new Map<string, BuiltinResolver>([
   ["omega", tryResolveOmega],
   ["auto", tryResolveAuto],
 ]);
+
+// ─── Strategy interpreter (Phase 38) ──────────────────────────────
+// Evaluates strategy expressions by composing proof primitives.
+
+export const DEFAULT_STRATEGIES = new Map<string, AST.StrategyExpr>([
+  ["assumption", { kind: "ident", name: "ctx_search" }],
+  ["simp", { kind: "first", alts: [
+    { kind: "ident", name: "conv" },
+    { kind: "ident", name: "ctx_search" },
+    { kind: "ident", name: "rewrite" },
+  ]}],
+  ["decide", { kind: "ident", name: "ground" }],
+  ["omega", { kind: "first", alts: [
+    { kind: "ident", name: "conv" },
+    { kind: "cong", ctor: "Succ", inner: { kind: "ident", name: "omega" } },
+    { kind: "ident", name: "rewrite" },
+    { kind: "cong", ctor: "Succ", inner: { kind: "ident", name: "rewrite" } },
+  ]}],
+  ["auto", { kind: "search", depth: 3 }],
+]);
+
+const STRATEGY_PRIMITIVES = new Set(["conv", "ctx_search", "rewrite", "ground"]);
+
+export function runStrategy(
+  expr: AST.StrategyExpr,
+  sctx: StrategyContext,
+  strategies: Map<string, AST.StrategyExpr>,
+  depth: number = 20,
+): AST.ProveExpr | null {
+  if (depth <= 0) return null;
+
+  switch (expr.kind) {
+    case "ident": {
+      switch (expr.name) {
+        case "conv": return primConv(sctx);
+        case "ctx_search": return primCtxSearch(sctx);
+        case "rewrite": return primRewrite(sctx);
+        case "ground": return primGround(sctx);
+        default: {
+          const ref = strategies.get(expr.name);
+          if (ref) return runStrategy(ref, sctx, strategies, depth - 1);
+          return null;
+        }
+      }
+    }
+    case "first": {
+      for (const alt of expr.alts) {
+        const result = runStrategy(alt, sctx, strategies, depth);
+        if (result) return result;
+      }
+      return null;
+    }
+    case "cong": {
+      const decomp = primCong(expr.ctor, sctx);
+      if (!decomp) return null;
+      const subSctx: StrategyContext = { ...sctx, goal: decomp.subGoal };
+      const subProof = runStrategy(expr.inner, subSctx, strategies, depth - 1);
+      if (!subProof) return null;
+      return decomp.wrap(subProof);
+    }
+    case "search": {
+      return primSearch(sctx, expr.depth);
+    }
+  }
+}
 
 // ─── Agent declarations ────────────────────────────────────────────
 
@@ -325,13 +391,14 @@ export function resolveAllTactics(
   rules: RuleDef[],
   hints?: Map<string, Set<string>>,
   instances?: InstanceDef[],
+  strategies?: Map<string, AST.StrategyExpr>,
 ): AST.ProveDecl {
   if (!prove.returnType) return prove;
 
   let changed = false;
   const newCases = prove.cases.map((caseArm) => {
     const resolved = resolveUserTacticExpr(
-      caseArm.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances,
+      caseArm.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies,
     );
     if (resolved !== caseArm.body) {
       changed = true;
@@ -353,15 +420,26 @@ function resolveUserTacticExpr(
   rules: RuleDef[],
   hints?: Map<string, Set<string>>,
   instances?: InstanceDef[],
+  strategies?: Map<string, AST.StrategyExpr>,
 ): AST.ProveExpr {
   if (expr.kind === "ident") {
-    // Built-in tactic resolvers (assumption, simp, decide, omega, auto)
-    const builtinResolver = BUILTIN_RESOLVERS.get(expr.name);
-    if (builtinResolver) {
-      const result = builtinResolver(prove, caseArm, provedCtx, hints, instances);
-      return result ?? expr;
+    // Strategy-based resolution: user strategies override built-in defaults
+    const allStrategies = new Map([...DEFAULT_STRATEGIES, ...(strategies ?? [])]);
+    const strategy = allStrategies.get(expr.name);
+    if (strategy) {
+      const sctx = makeStrategyContext(prove, caseArm, provedCtx, hints, instances);
+      const result = runStrategy(strategy, sctx, allStrategies);
+      if (result) return result;
     }
-    // User-defined tactics
+    // Fall back to BUILTIN_RESOLVERS for names not in strategies (backward compat)
+    if (!strategy) {
+      const builtinResolver = BUILTIN_RESOLVERS.get(expr.name);
+      if (builtinResolver) {
+        const result = builtinResolver(prove, caseArm, provedCtx, hints, instances);
+        return result ?? expr;
+      }
+    }
+    // User-defined INet tactics
     if (tactics.has(expr.name)) {
       const tactic = tactics.get(expr.name)!;
       const goal = computeGoalType(prove, caseArm, provedCtx);
@@ -372,20 +450,20 @@ function resolveUserTacticExpr(
     }
   }
   if (expr.kind === "let") {
-    const nv = resolveUserTacticExpr(expr.value, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
-    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+    const nv = resolveUserTacticExpr(expr.value, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies);
+    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies);
     if (nv !== expr.value || nb !== expr.body) return { kind: "let", name: expr.name, value: nv, body: nb };
     return expr;
   }
   if (expr.kind === "lambda") {
-    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+    const nb = resolveUserTacticExpr(expr.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies);
     if (nb !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: nb };
     return expr;
   }
   if (expr.kind === "match") {
     let ch = false;
     const nc = expr.cases.map((c) => {
-      const r = resolveUserTacticExpr(c.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+      const r = resolveUserTacticExpr(c.body, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies);
       if (r !== c.body) ch = true;
       return { ...c, body: r };
     });
@@ -394,7 +472,7 @@ function resolveUserTacticExpr(
   if (expr.kind === "call") {
     // ─── Tactic combinators (Phase 34) ────────────────────────────
     const resolve = (e: AST.ProveExpr) =>
-      resolveUserTacticExpr(e, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances);
+      resolveUserTacticExpr(e, prove, caseArm, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies);
 
     // try(t) — attempt t; if it doesn't resolve, return hole (no error)
     if (expr.name === "try" && expr.args.length === 1) {

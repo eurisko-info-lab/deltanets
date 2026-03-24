@@ -22,6 +22,7 @@ export type Statement =
   | CodataDecl
   | ComputeDecl
   | TacticDecl
+  | StrategyDecl
   | MutualDecl
   | SectionDecl
   | NotationDecl
@@ -59,7 +60,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl;
 
 // open "SystemName" — import all agents/rules from another system
 // open "SystemName" use AgentA, AgentB — selective import
@@ -443,6 +444,23 @@ export type TacticDecl = {
   name: string;
   body: (AgentDecl | RuleDecl)[];
 };
+
+// strategy name = first(conv, ctx_search, rewrite)
+// Composes proof primitives into a tactic resolution strategy.
+// Built-in primitives: conv, ctx_search, rewrite, ground.
+// Combinators: first(a, b, ...), cong(Ctor, s), search(n).
+
+export type StrategyDecl = {
+  kind: "strategy";
+  name: string;
+  body: StrategyExpr;
+};
+
+export type StrategyExpr =
+  | { kind: "ident"; name: string }              // primitive or strategy reference
+  | { kind: "first"; alts: StrategyExpr[] }       // try alternatives
+  | { kind: "cong"; ctor?: string; inner: StrategyExpr } // congruence decomposition
+  | { kind: "search"; depth: number };             // depth-bounded proof search
 
 // graph name = term <lambda-expr>
 // graph name { let..., wire... }

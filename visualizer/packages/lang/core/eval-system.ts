@@ -101,6 +101,7 @@ export function evalBodyInto(
   const proofTrees: ProofTree[] = [];
   const computeRules: ComputeRule[] = [...(inheritedCompute ?? [])];
   const tactics = new Map<string, TacticDef>();
+  const strategies = new Map<string, AST.StrategyExpr>();
   const coercions = new Map<string, Map<string, string>>(); // from → to → func
   const setoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>(inheritedSetoids); // relation name → setoid def
   const rings = new Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>(inheritedRings); // type name → ring def
@@ -332,7 +333,7 @@ export function evalBodyInto(
           prove = expandInduction(item, agents, constructorsByType);
         }
         // Resolve all tactics (built-in + user-defined) in a single pass
-        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
@@ -456,7 +457,7 @@ export function evalBodyInto(
         if (mainProve.induction && mainProve.cases.length === 0) {
           prove = expandInduction(mainProve, agents, constructorsByType);
         }
-        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+        prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
         const hasHoles = proveContainsHole(prove);
         const hasRewrites = proveContainsRewrite(prove);
         const hasMatch = proveContainsMatch(prove);
@@ -494,7 +495,7 @@ export function evalBodyInto(
             termination: "structural",
           };
           let resolvedOb = obProve;
-          resolvedOb = withNormTable(computeRules, () => resolveAllTactics(resolvedOb, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+          resolvedOb = withNormTable(computeRules, () => resolveAllTactics(resolvedOb, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
           const obHasHoles = proveContainsHole(resolvedOb);
           const obHasRewrites = proveContainsRewrite(resolvedOb);
           const obHasMatch = proveContainsMatch(resolvedOb);
@@ -584,6 +585,10 @@ export function evalBodyInto(
         for (const r of tacDef.rules) rules.push(r);
         break;
       }
+      case "strategy": {
+        strategies.set(item.name, item.body);
+        break;
+      }
       case "mutual": {
         // Phase 21: mutual inductive types and mutual prove blocks
 
@@ -624,7 +629,7 @@ export function evalBodyInto(
           if (p.induction && p.cases.length === 0) {
             prove = expandInduction(p, agents, constructorsByType);
           }
-          prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances));
+          prove = withNormTable(computeRules, () => resolveAllTactics(prove, provedCtx, computeRules, tactics, agents, rules, hints, instances, strategies));
           const hasHoles = proveContainsHole(prove);
           const hasRewrites = proveContainsRewrite(prove);
           const hasMatch = proveContainsMatch(prove);

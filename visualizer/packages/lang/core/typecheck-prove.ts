@@ -1822,6 +1822,86 @@ export function tryResolveAuto(
   return autoSearch(goal, ctx, 3);
 }
 
+// ─── Strategy primitives (Phase 38) ───────────────────────────────
+// Each primitive wraps internal machinery for use by the strategy interpreter.
+
+export type StrategyContext = {
+  goal: AST.ProveExpr;
+  _ctx: ProveCtx;
+};
+
+export function makeStrategyContext(
+  prove: AST.ProveDecl,
+  caseArm: AST.ProveCase,
+  provedCtx: ProvedContext,
+  hints?: Map<string, Set<string>>,
+  instances?: import("./evaluator.ts").InstanceDef[],
+): StrategyContext {
+  const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx, new Map(), undefined, hints, instances);
+  return { goal, _ctx: ctx };
+}
+
+export function primConv(sctx: StrategyContext): AST.ProveExpr | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (goalEq && convertible(goalEq.left, goalEq.right)) {
+    return ident("refl");
+  }
+  return null;
+}
+
+export function primCtxSearch(sctx: StrategyContext): AST.ProveExpr | null {
+  const candidates = searchCandidates(sctx._ctx, sctx.goal);
+  return candidates.length > 0 ? parseProofString(candidates[0]) : null;
+}
+
+export function primRewrite(sctx: StrategyContext): AST.ProveExpr | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (!goalEq) return null;
+  return trySimpRewrite(sctx._ctx, goalEq);
+}
+
+export function primGround(sctx: StrategyContext): AST.ProveExpr | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (!goalEq) return null;
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+  if (isGroundTerm(lhs, sctx._ctx.caseBindings) && isGroundTerm(rhs, sctx._ctx.caseBindings) && exprEqual(lhs, rhs)) {
+    return ident("refl");
+  }
+  return null;
+}
+
+export function primSearch(sctx: StrategyContext, depth: number): AST.ProveExpr | null {
+  return autoSearch(sctx.goal, sctx._ctx, depth);
+}
+
+export function primCong(
+  ctor: string | undefined,
+  sctx: StrategyContext,
+): { subGoal: AST.ProveExpr; wrap: (proof: AST.ProveExpr) => AST.ProveExpr } | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (!goalEq) return null;
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+  if (lhs.kind !== "call" || rhs.kind !== "call") return null;
+  if (ctor && lhs.name !== ctor) return null;
+  if (!ctor && lhs.name !== rhs.name) return null;
+  if (lhs.name !== rhs.name || lhs.args.length !== rhs.args.length) return null;
+  const diffs: number[] = [];
+  for (let i = 0; i < lhs.args.length; i++) {
+    if (!convertible(lhs.args[i], rhs.args[i])) diffs.push(i);
+  }
+  if (diffs.length !== 1) return null;
+  const idx = diffs[0];
+  const subGoal = app("Eq", lhs.args[idx], rhs.args[idx]);
+  const congName = `cong_${lhs.name.toLowerCase()}`;
+  const constArgs = lhs.args.filter((_, i) => i !== idx);
+  return {
+    subGoal,
+    wrap: (proof: AST.ProveExpr) => app(congName, proof, ...constArgs),
+  };
+}
+
 /** Build a proof derivation tree for a typed prove block. */
 export function buildProofTree(
   prove: AST.ProveDecl,
@@ -2491,61 +2571,6 @@ export function typecheckProve(
   }, canonicals); // end withNormTable
 }
 
-// ─── Assumption resolution ─────────────────────────────────────────
-// Resolves `assumption` in prove case bodies to the first matching proof term.
-// Must be called BEFORE type-checking and desugaring.
-
-export function resolveAssumptions(
-  prove: AST.ProveDecl,
-  provedCtx: ProvedContext,
-): AST.ProveDecl {
-  if (!prove.returnType) return prove;
-
-  let changed = false;
-  const newCases = prove.cases.map((caseArm) => {
-    const resolved = resolveAssumptionExpr(caseArm.body, prove, caseArm, provedCtx);
-    if (resolved !== caseArm.body) {
-      changed = true;
-      return { ...caseArm, body: resolved };
-    }
-    return caseArm;
-  });
-  return changed ? { ...prove, cases: newCases } : prove;
-}
-
-function resolveAssumptionExpr(
-  expr: AST.ProveExpr,
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-): AST.ProveExpr {
-  if (expr.kind === "ident" && expr.name === "assumption") {
-    const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
-    const candidates = searchCandidates(ctx, goal);
-    if (candidates.length > 0) return parseProofString(candidates[0]);
-    return expr;
-  }
-  if (expr.kind === "match") {
-    let changed = false;
-    const newCases = expr.cases.map((c) => {
-      const r = resolveAssumptionExpr(c.body, prove, caseArm, provedCtx);
-      if (r !== c.body) changed = true;
-      return { ...c, body: r };
-    });
-    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
-  }
-  if (expr.kind === "call") {
-    let changed = false;
-    const newArgs = expr.args.map((a) => {
-      const r = resolveAssumptionExpr(a, prove, caseArm, provedCtx);
-      if (r !== a) changed = true;
-      return r;
-    });
-    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
-  }
-  return expr;
-}
-
 /** Parse a simple proof-term string like "cong_succ(pzr(k))" into a ProveExpr. */
 function parseProofString(s: string): AST.ProveExpr {
   let pos = 0;
@@ -2566,105 +2591,6 @@ function parseProofString(s: string): AST.ProveExpr {
     return { kind: "ident", name };
   }
   return parseExpr();
-}
-
-// ─── Simp resolution ───────────────────────────────────────────────
-// Resolves `simp` in prove case bodies to a concrete proof term.
-// Strategy: conv (definitional equality) → assumption search → rewrite with lemmas.
-// Must be called BEFORE type-checking and desugaring.
-
-export function resolveSimp(
-  prove: AST.ProveDecl,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[] = [],
-): AST.ProveDecl {
-  if (!prove.returnType) return prove;
-
-  let changed = false;
-  const newCases = prove.cases.map((caseArm) => {
-    const resolved = resolveSimpExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
-    if (resolved !== caseArm.body) {
-      changed = true;
-      return { ...caseArm, body: resolved };
-    }
-    return caseArm;
-  });
-  return changed ? { ...prove, cases: newCases } : prove;
-}
-
-function resolveSimpExpr(
-  expr: AST.ProveExpr,
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): AST.ProveExpr {
-  if (expr.kind === "ident" && expr.name === "simp") {
-    return withNormTable(computeRules, () => {
-      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
-
-      // 1. conv: if both sides normalize to same term → refl
-      const goalEq = extractEq(normalize(goal));
-      if (goalEq && convertible(goalEq.left, goalEq.right)) {
-        return ident("refl") as AST.ProveExpr;
-      }
-
-      // 1b. conv for setoid goals: R(a, a) → refl
-      const goalEquiv = !goalEq ? extractEquiv(normalize(goal)) : null;
-      if (goalEquiv && isEquivRelation(goalEquiv.rel, ctx.setoids) &&
-          convertible(goalEquiv.left, goalEquiv.right)) {
-        return ident("refl") as AST.ProveExpr;
-      }
-
-      // 2. assumption-style search
-      const candidates = searchCandidates(ctx, goal);
-      if (candidates.length > 0) return parseProofString(candidates[0]);
-
-      // 3. one-step rewrite with each available lemma
-      if (goalEq) {
-        const lemmaProof = trySimpRewrite(ctx, goalEq);
-        if (lemmaProof) return lemmaProof;
-      }
-
-      // 3b. one-step rewrite for setoid goals
-      if (goalEquiv && isEquivRelation(goalEquiv.rel, ctx.setoids)) {
-        const lemmaProof = trySimpRewrite(ctx, { left: goalEquiv.left, right: goalEquiv.right }, goalEquiv.rel);
-        if (lemmaProof) return lemmaProof;
-      }
-
-      return expr; // leave as simp — type checker will report the error
-    });
-  }
-  if (expr.kind === "let") {
-    const newValue = resolveSimpExpr(expr.value, prove, caseArm, provedCtx, computeRules);
-    const newBody = resolveSimpExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "lambda") {
-    const newBody = resolveSimpExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "match") {
-    let changed = false;
-    const newCases = expr.cases.map((c) => {
-      const r = resolveSimpExpr(c.body, prove, caseArm, provedCtx, computeRules);
-      if (r !== c.body) changed = true;
-      return { ...c, body: r };
-    });
-    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
-  }
-  if (expr.kind === "call") {
-    let changed = false;
-    const newArgs = expr.args.map((a) => {
-      const r = resolveSimpExpr(a, prove, caseArm, provedCtx, computeRules);
-      if (r !== a) changed = true;
-      return r;
-    });
-    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
-  }
-  return expr;
 }
 
 /** Collect equational lemmas available in a proof context.
@@ -2829,29 +2755,6 @@ function chainProofSteps(steps: AST.ProveExpr[]): AST.ProveExpr {
   return result;
 }
 
-// ─── Decide tactic ─────────────────────────────────────────────────
-// Proves Eq(a, b) when both sides are ground (no free variables) and
-// normalize to structurally identical terms.
-
-export function resolveDecide(
-  prove: AST.ProveDecl,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[] = [],
-): AST.ProveDecl {
-  if (!prove.returnType) return prove;
-
-  let changed = false;
-  const newCases = prove.cases.map((caseArm) => {
-    const resolved = resolveDecideExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
-    if (resolved !== caseArm.body) {
-      changed = true;
-      return { ...caseArm, body: resolved };
-    }
-    return caseArm;
-  });
-  return changed ? { ...prove, cases: newCases } : prove;
-}
-
 function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveExpr>): boolean {
   if (expr.kind === "metavar") return false;
   if (expr.kind === "ident") return !caseBindings.has(expr.name);
@@ -2860,153 +2763,6 @@ function isGroundTerm(expr: AST.ProveExpr, caseBindings: Map<string, AST.ProveEx
   if (expr.kind === "pi" || expr.kind === "sigma") return isGroundTerm(expr.domain, caseBindings) && isGroundTerm(expr.codomain, caseBindings);
   if (expr.kind === "lambda") return isGroundTerm(expr.paramType, caseBindings) && isGroundTerm(expr.body, caseBindings);
   return false;
-}
-
-function resolveDecideExpr(
-  expr: AST.ProveExpr,
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): AST.ProveExpr {
-  if (expr.kind === "ident" && expr.name === "decide") {
-    return withNormTable(computeRules, () => {
-      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
-      const goalEq = extractEq(normalize(goal));
-      if (goalEq) {
-        const lhs = normalize(goalEq.left);
-        const rhs = normalize(goalEq.right);
-        if (isGroundTerm(lhs, ctx.caseBindings) && isGroundTerm(rhs, ctx.caseBindings) && exprEqual(lhs, rhs)) {
-          return ident("refl") as AST.ProveExpr;
-        }
-      }
-      return expr;
-    });
-  }
-  if (expr.kind === "let") {
-    const newValue = resolveDecideExpr(expr.value, prove, caseArm, provedCtx, computeRules);
-    const newBody = resolveDecideExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "lambda") {
-    const newBody = resolveDecideExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "match") {
-    let changed = false;
-    const newCases = expr.cases.map((c) => {
-      const r = resolveDecideExpr(c.body, prove, caseArm, provedCtx, computeRules);
-      if (r !== c.body) changed = true;
-      return { ...c, body: r };
-    });    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
-  }
-  if (expr.kind === "call") {
-    let changed = false;
-    const newArgs = expr.args.map((a) => {
-      const r = resolveDecideExpr(a, prove, caseArm, provedCtx, computeRules);
-      if (r !== a) changed = true;
-      return r;
-    });
-    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
-  }
-  return expr;
-}
-
-// ─── Omega tactic ──────────────────────────────────────────────────
-// Proves Eq goals over Nat by normalizing both sides and checking if
-// they match after compute-rule reduction. Falls back to congruence
-// (cong_succ) with IH when direct normalization is insufficient.
-
-export function resolveOmega(
-  prove: AST.ProveDecl,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[] = [],
-): AST.ProveDecl {
-  if (!prove.returnType) return prove;
-
-  let changed = false;
-  const newCases = prove.cases.map((caseArm) => {
-    const resolved = resolveOmegaExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
-    if (resolved !== caseArm.body) {
-      changed = true;
-      return { ...caseArm, body: resolved };
-    }
-    return caseArm;
-  });
-  return changed ? { ...prove, cases: newCases } : prove;
-}
-
-function resolveOmegaExpr(
-  expr: AST.ProveExpr,
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): AST.ProveExpr {
-  if (expr.kind === "ident" && expr.name === "omega") {
-    return withNormTable(computeRules, () => {
-      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
-      const goalEq = extractEq(normalize(goal));
-      if (!goalEq) return expr;
-
-      const lhs = normalize(goalEq.left);
-      const rhs = normalize(goalEq.right);
-
-      // 1. Direct normalization equality → refl
-      if (exprEqual(lhs, rhs)) return ident("refl") as AST.ProveExpr;
-
-      // 2. Try congruence: if both sides are Succ(X) and Succ(Y),
-      //    try to prove Eq(X, Y) recursively
-      const congResult = tryCongSucc(lhs, rhs, ctx);
-      if (congResult) return congResult;
-
-      // 3. Try IH application + rewrite
-      const rwResult = trySimpRewrite(ctx, goalEq);
-      if (rwResult) return rwResult;
-
-      // 4. Try cong_succ(IH)
-      if (lhs.kind === "call" && lhs.name === "Succ" && lhs.args.length === 1 &&
-          rhs.kind === "call" && rhs.name === "Succ" && rhs.args.length === 1) {
-        const innerGoal = app("Eq", lhs.args[0], rhs.args[0]);
-        const innerRw = trySimpRewrite(ctx, { left: lhs.args[0], right: rhs.args[0] });
-        if (innerRw) return app("cong_succ", innerRw);
-      }
-
-      return expr;
-    });
-  }
-  if (expr.kind === "let") {
-    const newValue = resolveOmegaExpr(expr.value, prove, caseArm, provedCtx, computeRules);
-    const newBody = resolveOmegaExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "lambda") {
-    const newBody = resolveOmegaExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "match") {
-    let changed = false;
-    const newCases = expr.cases.map((c) => {
-      const r = resolveOmegaExpr(c.body, prove, caseArm, provedCtx, computeRules);
-      if (r !== c.body) changed = true;
-      return { ...c, body: r };
-    });
-    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
-  }
-  if (expr.kind === "call") {
-    let changed = false;
-    const newArgs = expr.args.map((a) => {
-      const r = resolveOmegaExpr(a, prove, caseArm, provedCtx, computeRules);
-      if (r !== a) changed = true;
-      return r;
-    });
-    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
-  }
-  return expr;
 }
 
 /** Try congruence on Succ: if Succ(a) = Succ(b) and IH gives a = b, return cong_succ(IH) */
@@ -3037,75 +2793,6 @@ function tryCongSucc(
     }
   }
   return null;
-}
-
-// ─── Auto tactic ───────────────────────────────────────────────────
-// Depth-bounded proof search combining conv, assumption, simp, and
-// congruence reasoning. Tries progressively deeper strategies.
-
-export function resolveAuto(
-  prove: AST.ProveDecl,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[] = [],
-): AST.ProveDecl {
-  if (!prove.returnType) return prove;
-
-  let changed = false;
-  const newCases = prove.cases.map((caseArm) => {
-    const resolved = resolveAutoExpr(caseArm.body, prove, caseArm, provedCtx, computeRules);
-    if (resolved !== caseArm.body) {
-      changed = true;
-      return { ...caseArm, body: resolved };
-    }
-    return caseArm;
-  });
-  return changed ? { ...prove, cases: newCases } : prove;
-}
-
-function resolveAutoExpr(
-  expr: AST.ProveExpr,
-  prove: AST.ProveDecl,
-  caseArm: AST.ProveCase,
-  provedCtx: ProvedContext,
-  computeRules: ComputeRule[],
-): AST.ProveExpr {
-  if (expr.kind === "ident" && expr.name === "auto") {
-    return withNormTable(computeRules, () => {
-      const { ctx, expectedType: goal } = caseCtx(prove, caseArm, provedCtx);
-      const result = autoSearch(goal, ctx, 3);
-      return result ?? expr;
-    });
-  }
-  if (expr.kind === "let") {
-    const newValue = resolveAutoExpr(expr.value, prove, caseArm, provedCtx, computeRules);
-    const newBody = resolveAutoExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newValue !== expr.value || newBody !== expr.body) return { kind: "let", name: expr.name, value: newValue, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "lambda") {
-    const newBody = resolveAutoExpr(expr.body, prove, caseArm, provedCtx, computeRules);
-    if (newBody !== expr.body) return { kind: "lambda", param: expr.param, paramType: expr.paramType, body: newBody };
-    return expr;
-  }
-  if (expr.kind === "match") {
-    let changed = false;
-    const newCases = expr.cases.map((c) => {
-      const r = resolveAutoExpr(c.body, prove, caseArm, provedCtx, computeRules);
-      if (r !== c.body) changed = true;
-      return { ...c, body: r };
-    });
-    return changed ? { kind: "match", scrutinee: expr.scrutinee, cases: newCases } : expr;
-  }
-  if (expr.kind === "call") {
-    let changed = false;
-    const newArgs = expr.args.map((a) => {
-      const r = resolveAutoExpr(a, prove, caseArm, provedCtx, computeRules);
-      if (r !== a) changed = true;
-      return r;
-    });
-    return changed ? { kind: "call", name: expr.name, args: newArgs } : expr;
-  }
-  return expr;
 }
 
 function autoSearch(

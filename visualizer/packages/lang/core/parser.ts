@@ -203,6 +203,8 @@ class Parser {
         return this.parseComputeDecl();
       case TT.TACTIC:
         return this.parseTacticDecl();
+      case TT.STRATEGY:
+        return this.parseStrategyDecl();
       case TT.MUTUAL:
         return this.parseMutualDecl();
       case TT.SECTION:
@@ -382,6 +384,7 @@ class Parser {
       else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
+      else if (tok.type === TT.STRATEGY) body.push(this.parseStrategyDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
@@ -1126,6 +1129,79 @@ class Parser {
     return { kind: "tactic", name, body };
   }
 
+  // ─── Strategy (proof primitive composition) ──────────────────────
+  // strategy name = first(conv, ctx_search, rewrite)
+  // Primitives: conv, ctx_search, rewrite, ground
+  // Combinators: first(a, b, ...), cong(Ctor, s), cong(s), search(n)
+
+  parseStrategyDecl(): AST.StrategyDecl {
+    this.eat(TT.STRATEGY);
+    const name = this.eatIdent();
+    this.eat(TT.EQ);
+    const body = this.parseStrategyExpr();
+    return { kind: "strategy", name, body };
+  }
+
+  parseStrategyExpr(): AST.StrategyExpr {
+    const tok = this.peek();
+    if (tok.type === TT.NUMBER) {
+      // Bare number — shouldn't appear at top level, but handle gracefully
+      throw new ParseError(
+        `Expected strategy expression, got number '${tok.value}'`,
+        tok.line, tok.col,
+      );
+    }
+    const name = this.eatIdent();
+    // Check for combinator call: name(...)
+    if (this.check(TT.LPAREN)) {
+      this.advance(); // eat (
+      if (name === "first") {
+        const alts: AST.StrategyExpr[] = [];
+        if (!this.check(TT.RPAREN)) {
+          alts.push(this.parseStrategyExpr());
+          while (this.check(TT.COMMA)) {
+            this.advance();
+            alts.push(this.parseStrategyExpr());
+          }
+        }
+        this.eat(TT.RPAREN);
+        return { kind: "first", alts };
+      }
+      if (name === "cong") {
+        const first = this.parseStrategyExpr();
+        if (this.check(TT.COMMA)) {
+          // cong(Ctor, inner) — first arg is constructor name
+          this.advance();
+          const inner = this.parseStrategyExpr();
+          this.eat(TT.RPAREN);
+          if (first.kind !== "ident") {
+            throw new ParseError(
+              `Expected constructor name as first argument to cong`,
+              tok.line, tok.col,
+            );
+          }
+          return { kind: "cong", ctor: first.name, inner };
+        }
+        this.eat(TT.RPAREN);
+        // cong(inner) — any constructor
+        return { kind: "cong", inner: first };
+      }
+      if (name === "search") {
+        const depthTok = this.eat(TT.NUMBER);
+        this.eat(TT.RPAREN);
+        return { kind: "search", depth: parseInt(depthTok.value, 10) };
+      }
+      // Generic named strategy with args — treat as first() for extensibility
+      // (future: could be strategy application)
+      throw new ParseError(
+        `Unknown strategy combinator '${name}'`,
+        tok.line, tok.col,
+      );
+    }
+    // Simple identifier — primitive or strategy reference
+    return { kind: "ident", name };
+  }
+
   // ─── Mutual (mutual inductive types / mutual proves) ─────────────
   // mutual { data ... data ... prove ... prove ... }
 
@@ -1188,6 +1264,7 @@ class Parser {
       else if (tok.type === TT.OPEN) body.push(this.parseOpenDecl());
       else if (tok.type === TT.EXPORT) body.push(this.parseExportDecl());
       else if (tok.type === TT.TACTIC) body.push(this.parseTacticDecl());
+      else if (tok.type === TT.STRATEGY) body.push(this.parseStrategyDecl());
       else if (tok.type === TT.MUTUAL) body.push(this.parseMutualDecl());
       else if (tok.type === TT.SECTION) body.push(this.parseSectionDecl());
       else if (tok.type === TT.NOTATION) body.push(this.parseNotationDecl());
