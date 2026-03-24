@@ -2,7 +2,7 @@
 
 export { compileCore, compileView } from "./index.ts";
 export { exportProofJSON, exportProofText, exportProofTerm } from "./core/proof-export.ts";
-export { universeLevel, typeUniverse, typeSubsumes, isPropSort, sortOf } from "./core/typecheck-prove.ts";
+export { universeLevel, typeUniverse, typeSubsumes, isPropSort, isSPropSort, sortOf, convertibleInSort } from "./core/typecheck-prove.ts";
 export type { ConversionResult } from "./core/typecheck-prove.ts";
 export {
   quoteExpr, unquoteStatements, buildGoalStatements,

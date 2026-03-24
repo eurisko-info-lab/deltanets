@@ -97,7 +97,7 @@ export function evalBodyInto(
   inheritedHints?: Map<string, Set<string>>,
   inheritedCanonicals?: CanonicalDef[],
   inheritedStrategies?: Map<string, AST.StrategyExpr>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; strategies: Map<string, AST.StrategyExpr>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set"> } {
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; strategies: Map<string, AST.StrategyExpr>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set" | "SProp"> } {
   const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
@@ -111,7 +111,7 @@ export function evalBodyInto(
   const instances: InstanceDef[] = [...(inheritedInstances ?? [])]; // typeclass instances
   const canonicals: CanonicalDef[] = [...(inheritedCanonicals ?? [])]; // canonical structures
   const hints = new Map<string, Set<string>>(); // hint databases: db name → lemma names
-  const dataSorts = new Map<string, "Prop" | "Set">(); // type name → declared sort
+  const dataSorts = new Map<string, "Prop" | "Set" | "SProp">(); // type name → declared sort
   if (inheritedHints) {
     for (const [db, lemmas] of inheritedHints) hints.set(db, new Set(lemmas));
   }

@@ -47,19 +47,20 @@ const PROOF_AGENTS = new Set([
   "J", "K", "UIP",
 ]);
 
-/** Determine whether a type name is proof-irrelevant (lives in Prop). */
+/** Determine whether a type name is proof-irrelevant (lives in Prop or SProp). */
 function isPropType(
   name: string,
-  dataSorts?: Map<string, "Prop" | "Set">,
+  dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
 ): boolean {
   if (name === "Eq" || name === "Acc" || name === "exist") return true;
-  return dataSorts?.get(name) === "Prop";
+  const sort = dataSorts?.get(name);
+  return sort === "Prop" || sort === "SProp";
 }
 
 /** Check if a compute rule is proof-only (should be erased). */
 function isProofRule(
   rule: ComputeRule,
-  dataSorts?: Map<string, "Prop" | "Set">,
+  dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
 ): boolean {
   if (PROOF_AGENTS.has(rule.funcName)) return true;
   if (isPropType(rule.funcName, dataSorts)) return true;
@@ -71,7 +72,7 @@ function isComputationalProve(
   name: string,
   params: AST.ProveParam[],
   returnType: AST.ProveExpr | undefined,
-  dataSorts?: Map<string, "Prop" | "Set">,
+  dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
 ): boolean {
   if (PROOF_AGENTS.has(name)) return false;
   if (returnType) {
@@ -161,7 +162,7 @@ function patternCondition(
 function extractTypes(
   constructorsByType: Map<string, Set<string>>,
   constructorTyping: ConstructorTyping,
-  dataSorts?: Map<string, "Prop" | "Set">,
+  dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
 ): { types: ExtractedType[]; erased: string[] } {
   const types: ExtractedType[] = [];
   const erased: string[] = [];
@@ -213,7 +214,7 @@ function renderTypeExpr(type: AST.ProveExpr): string {
 
 function extractFunctions(
   computeRules: ComputeRule[],
-  dataSorts?: Map<string, "Prop" | "Set">,
+  dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
 ): { functions: ExtractedFunction[]; erased: string[] } {
   const erased: string[] = [];
 

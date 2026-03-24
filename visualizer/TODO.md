@@ -1,9 +1,9 @@
 # Delta-Nets → Rocq: Gap Analysis & Roadmap
 
 **Generated**: 2026-03-23, post-Phase 12  
-**Updated**: 2026-03-24, post-Phase 45  
-**Current state**: ~13k LoC TypeScript (48 files) · 923 tests · strategy-based tactic protocol  
-**Overall Rocq parity**: ~85% surface, ~75% depth
+**Updated**: 2026-03-24, post-Phase 46  
+**Current state**: ~13k LoC TypeScript (49 files) · 950 tests · strategy-based tactic protocol  
+**Overall Rocq parity**: ~87% surface, ~77% depth
 
 ---
 
@@ -68,7 +68,7 @@
 | Mutual inductives | `mutual { data ... data ... }` + joint positivity | Good |
 | Coinductive types | `codata` + guard agents + productivity checking | Good — observation-based |
 | Record types | `record` → single-constructor data + projections | Good |
-| Universe hierarchy | `Type(0) : Type(1) : ...`, Prop, Set, cumulative | Good — impredicative Prop, no SProp |
+| Universe hierarchy | `Type(0) : Type(1) : ...`, Prop, Set, SProp, cumulative | Good — impredicative Prop + SProp, definitional proof irrelevance |
 | Pattern matching | Nested deep patterns, with-clauses, overlap detection | Good |
 | Termination | Structural recursion + `{measure}` + `{wf}` | Good — `wf` is trusted |
 | Implicit args | `{x : A}` in prove params, unification-based inference | Good — with canonical structure resolution |
@@ -280,7 +280,7 @@ are currently stalled on ergonomics.
 |-------|---------|-------------|----------|
 | **44** | **Higher-order unification** | Pattern-fragment unification. Handles `?f x = S x`. Required for serious dependent types. | ~500 |
 | **45** | **Code extraction** | ~~Generate TypeScript/JS from verified programs. Erase Prop.~~ **DONE** | ~500 |
-| **46** | **SProp** | Strict propositions — definitional proof irrelevance. | ~300 |
+| **46** | **SProp** | ~~Strict propositions — definitional proof irrelevance.~~ **DONE** | ~300 |
 | **47** | **Primitive projections** | Records with definitional eta. `mk(fst(p), snd(p)) ≡ p`. | ~250 |
 
 ### Tier C — Performance & Scale (→ ~98%)

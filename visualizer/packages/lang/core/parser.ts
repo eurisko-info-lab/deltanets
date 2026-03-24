@@ -1283,15 +1283,15 @@ class Parser {
       }
       this.eat(TT.RPAREN);
     }
-    // Optional sort annotation: data X : Prop { ... } or data X : Set { ... }
-    let sort: "Prop" | "Set" | undefined;
+    // Optional sort annotation: data X : Prop { ... } or data X : Set { ... } or data X : SProp { ... }
+    let sort: "Prop" | "Set" | "SProp" | undefined;
     if (this.check(TT.COLON)) {
       this.advance();
       const sortName = this.eatIdent();
-      if (sortName === "Prop" || sortName === "Set") {
+      if (sortName === "Prop" || sortName === "Set" || sortName === "SProp") {
         sort = sortName;
       } else {
-        throw new Error(`Expected 'Prop' or 'Set' after ':' in data declaration, got '${sortName}'`);
+        throw new Error(`Expected 'Prop', 'Set', or 'SProp' after ':' in data declaration, got '${sortName}'`);
       }
     }
     this.eat(TT.LBRACE);

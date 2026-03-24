@@ -208,6 +208,17 @@ export function convertible(a: AST.ProveExpr, b: AST.ProveExpr): boolean {
   return exprEqual(normalize(a), normalize(b));
 }
 
+/** Sort-aware conversion: if `sort` is "SProp", all terms are definitionally equal
+ *  (strict proof irrelevance). Otherwise falls back to normal conversion. */
+export function convertibleInSort(
+  a: AST.ProveExpr,
+  b: AST.ProveExpr,
+  sort?: "Prop" | "SProp" | number,
+): boolean {
+  if (sort === "SProp") return true;
+  return convertible(a, b);
+}
+
 // ─── Expression formatting ─────────────────────────────────────────
 
 const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
