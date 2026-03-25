@@ -6,7 +6,7 @@
 // marks the "optimal" (leftmost-outermost) redex, and provides the reduce()
 // closure for each.
 
-import { asMut, removeFromArrayIf } from "../../util.ts";
+import { asMut, match, removeFromArrayIf } from "../../util.ts";
 import type { SystemType } from "../../ast.ts";
 import { Ports } from "../../types.ts";
 import type { Graph, Node, NodePort, Redex } from "../../types.ts";
@@ -236,28 +236,33 @@ export function getRedexes(
         } else {
           const rule = findRule(node.type, other.type, activeRules);
           if (rule !== undefined) {
-            if (rule.action.kind === "builtin") {
-              if (rule.action.name === "annihilate") {
-                createRedex(node, other, false, () => reduceAnnihilate(node, asMut(graph)));
-              } else if (rule.action.name === "erase") {
-                createRedex(node, other, false, () => reduceEraseRule(node, other, asMut(graph)));
-              } else if (rule.action.name === "commute") {
-                createRedex(node, other, false, () => reduceCommute(node, asMut(graph)));
-              }
-            } else if (rule.action.kind === "custom" && agentPorts) {
-              const left = node.type === rule.agentA ? node : other;
-              const right = left === node ? other : node;
-              createRedex(node, other, false, () => {
-                reduceCustomRule(left, right, asMut(graph), rule, agentPorts);
-              });
-            } else if (rule.action.kind === "meta") {
-              const handler = rule.action.handler;
-              const left = node.type === rule.agentA ? node : other;
-              const right = left === node ? other : node;
-              createRedex(node, other, false, () => {
-                handler(left, right, graph, agentPorts ?? new Map());
-              });
-            }
+            match(rule.action, {
+              builtin: (action) => {
+                if (action.name === "annihilate") {
+                  createRedex(node, other, false, () => reduceAnnihilate(node, asMut(graph)));
+                } else if (action.name === "erase") {
+                  createRedex(node, other, false, () => reduceEraseRule(node, other, asMut(graph)));
+                } else if (action.name === "commute") {
+                  createRedex(node, other, false, () => reduceCommute(node, asMut(graph)));
+                }
+                // "aux-fan" has no principal-port redex at this site
+              },
+              custom: (_action) => {
+                if (!agentPorts) return;
+                const left = node.type === rule.agentA ? node : other;
+                const right = left === node ? other : node;
+                createRedex(node, other, false, () => {
+                  reduceCustomRule(left, right, asMut(graph), rule, agentPorts);
+                });
+              },
+              meta: (action) => {
+                const left = node.type === rule.agentA ? node : other;
+                const right = left === node ? other : node;
+                createRedex(node, other, false, () => {
+                  action.handler(left, right, graph, agentPorts ?? new Map());
+                });
+              },
+            });
           } else if (
             node.type.startsWith("rep") &&
             !other.type.startsWith("rep")
