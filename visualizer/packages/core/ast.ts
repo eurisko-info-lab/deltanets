@@ -5,7 +5,7 @@ import {
   SyntaxErr,
   type TYPE,
 } from "./parser.gen.ts";
-import { fancyNameToName, nameToFancyName } from "./util.ts";
+import { fancyNameToName, match, nameToFancyName } from "./util.ts";
 
 // --- Type representation for optional typing (STLC / interaction type theory) ---
 
@@ -17,12 +17,16 @@ export type HoleType = { kind: "hole" };
 
 // Renders a type as a string.
 export function typeToString(ty: Type): string {
-  if (ty.kind === "hole") return "?";
-  if (ty.kind === "base") return ty.name;
-  const fromStr = ty.from.kind === "arrow"
-    ? `(${typeToString(ty.from)})`
-    : typeToString(ty.from);
-  return `${fromStr} → ${typeToString(ty.to)}`;
+  return match(ty, {
+    hole: () => "?",
+    base: (t) => t.name,
+    arrow: (t) => {
+      const fromStr = t.from.kind === "arrow"
+        ? `(${typeToString(t.from)})`
+        : typeToString(t.from);
+      return `${fromStr} → ${typeToString(t.to)}`;
+    },
+  });
 }
 
 // Checks structural equality of two types.

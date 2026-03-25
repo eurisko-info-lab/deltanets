@@ -3,6 +3,7 @@
 import { assertEquals } from "$std/assert/mod.ts";
 import { link } from "./graph.ts";
 import type { AgentPortDefs, Graph, InteractionRule, Node } from "./types.ts";
+import { asMut } from "./util.ts";
 import { reduceCustomRule } from "./systems/deltanets/custom-rules.ts";
 
 /** Create a node with self-looped ports. */
@@ -47,7 +48,7 @@ Deno.test("custom rule: relink reconnects neighbors", () => {
     },
   };
 
-  reduceCustomRule(add, zero, graph, rule, agentPorts);
+  reduceCustomRule(add, zero, asMut(graph), rule, agentPorts);
 
   // add and zero should be removed
   assertEquals(graph.includes(add), false);
@@ -100,7 +101,7 @@ Deno.test("custom rule: let creates new node, wire connects ports", () => {
     },
   };
 
-  reduceCustomRule(add, succ, graph, rule, agentPorts);
+  reduceCustomRule(add, succ, asMut(graph), rule, agentPorts);
 
   // Original nodes removed
   assertEquals(graph.includes(add), false);
@@ -161,7 +162,7 @@ Deno.test("custom rule: erase-stmt inserts eraser", () => {
     },
   };
 
-  reduceCustomRule(a, b, graph, rule, agentPorts);
+  reduceCustomRule(a, b, asMut(graph), rule, agentPorts);
 
   assertEquals(graph.includes(a), false);
   assertEquals(graph.includes(b), false);
@@ -197,7 +198,7 @@ Deno.test("custom rule: numeric port strings work", () => {
     },
   };
 
-  reduceCustomRule(a, b, graph, rule, agentPorts);
+  reduceCustomRule(a, b, asMut(graph), rule, agentPorts);
 
   assertEquals(ext1.ports[0].node, ext2);
   assertEquals(ext2.ports[0].node, ext1);

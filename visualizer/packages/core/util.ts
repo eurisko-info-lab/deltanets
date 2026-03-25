@@ -228,3 +228,34 @@ export function invertMatrix(M: Matrix) {
   // We've done all operations, C should be the identity matrix and I should be the inverse
   return I;
 }
+
+// ─── Exhaustive pattern matching ───────────────────────────────────
+// Usage:  match(expr, { ident: (e) => ..., call: (e) => ..., ... })
+// TypeScript enforces that every `kind` variant has a handler.
+
+type KindOf<T> = T extends { kind: infer K } ? K : never;
+type VariantOf<T, K> = Extract<T, { kind: K }>;
+
+type MatchHandlers<T extends { kind: string }, R> = {
+  [K in KindOf<T>]: (value: VariantOf<T, K>) => R;
+};
+
+export function match<T extends { kind: string }, R>(
+  value: T,
+  handlers: MatchHandlers<T, R>,
+): R {
+  const handler = (handlers as Record<string, (value: T) => R>)[value.kind];
+  return handler(value);
+}
+
+// ─── Mutation branding ─────────────────────────────────────────────
+// Usage:  function foo(graph: Mut<Graph>) { ... }
+//         foo(asMut(graph));
+// Makes mutation intent explicit at call sites.
+
+declare const MUT_BRAND: unique symbol;
+export type Mut<T> = T & { readonly [MUT_BRAND]: true };
+
+export function asMut<T>(value: T): Mut<T> {
+  return value as Mut<T>;
+}

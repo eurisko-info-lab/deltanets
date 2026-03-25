@@ -6,7 +6,7 @@
 // marks the "optimal" (leftmost-outermost) redex, and provides the reduce()
 // closure for each.
 
-import { removeFromArrayIf } from "../../util.ts";
+import { asMut, removeFromArrayIf } from "../../util.ts";
 import type { SystemType } from "../../ast.ts";
 import { Ports } from "../../types.ts";
 import type { Graph, Node, NodePort, Redex } from "../../types.ts";
@@ -205,7 +205,7 @@ export function getRedexes(
           node,
           node.ports[0].node,
           true,
-          () => reduceAnnihilate(node, graph),
+          () => reduceAnnihilate(node, asMut(graph)),
         );
       }
     }
@@ -228,27 +228,27 @@ export function getRedexes(
         const activeRules = rules ?? DEFAULT_RULES;
 
         if (node.type === "era") {
-          createRedex(node, other, false, () => reduceErase(other, graph));
+          createRedex(node, other, false, () => reduceErase(other, asMut(graph)));
         } else if (other.type === "era") {
-          createRedex(node, other, false, () => reduceErase(node, graph));
+          createRedex(node, other, false, () => reduceErase(node, asMut(graph)));
         } else if (node.type === "abs" && other.type === "app") {
-          createRedex(node, other, false, () => reduceAnnihilate(node, graph));
+          createRedex(node, other, false, () => reduceAnnihilate(node, asMut(graph)));
         } else {
           const rule = findRule(node.type, other.type, activeRules);
           if (rule !== undefined) {
             if (rule.action.kind === "builtin") {
               if (rule.action.name === "annihilate") {
-                createRedex(node, other, false, () => reduceAnnihilate(node, graph));
+                createRedex(node, other, false, () => reduceAnnihilate(node, asMut(graph)));
               } else if (rule.action.name === "erase") {
-                createRedex(node, other, false, () => reduceEraseRule(node, other, graph));
+                createRedex(node, other, false, () => reduceEraseRule(node, other, asMut(graph)));
               } else if (rule.action.name === "commute") {
-                createRedex(node, other, false, () => reduceCommute(node, graph));
+                createRedex(node, other, false, () => reduceCommute(node, asMut(graph)));
               }
             } else if (rule.action.kind === "custom" && agentPorts) {
               const left = node.type === rule.agentA ? node : other;
               const right = left === node ? other : node;
               createRedex(node, other, false, () => {
-                reduceCustomRule(left, right, graph, rule, agentPorts);
+                reduceCustomRule(left, right, asMut(graph), rule, agentPorts);
               });
             } else if (rule.action.kind === "meta") {
               const handler = rule.action.handler;
@@ -265,7 +265,7 @@ export function getRedexes(
             // Rep commutation with expression agents (abs, app, custom)
             const level = parseRepLabel(node.label!).level;
             createRedex(node, other, false, () => {
-              const { nodeClones } = reduceCommute(node, graph);
+              const { nodeClones } = reduceCommute(node, asMut(graph));
               nodeClones.forEach((clone, i) => {
                 if (i === 0) {
                   clone.label = formatRepLabel(level, "unknown");
@@ -289,10 +289,10 @@ export function getRedexes(
             const { level: top, status: topFlag } = parseRepLabel(a.label!);
             const { level: bottom, status: bottomFlag } = parseRepLabel(b.label!);
             if (top === bottom) {
-              createRedex(a, b, false, () => reduceAnnihilate(b, graph));
+              createRedex(a, b, false, () => reduceAnnihilate(b, asMut(graph)));
             } else {
               createRedex(a, b, false, () => {
-                const { nodeClones, otherClones } = reduceCommute(b, graph);
+                const { nodeClones, otherClones } = reduceCommute(b, asMut(graph));
                 if (top > bottom) {
                   otherClones.forEach((node, i) => {
                     node.label = formatRepLabel(top + b.levelDeltas![i], topFlag);
@@ -388,7 +388,7 @@ export function getRedexes(
           node,
           node.ports[0].node,
           false,
-          () => reduceAuxFan(node.ports[0].node, graph, relativeLevel),
+          () => reduceAuxFan(node.ports[0].node, asMut(graph), relativeLevel),
         );
       }
     }

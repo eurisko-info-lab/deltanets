@@ -13,6 +13,7 @@ import type * as AST from "./types.ts";
 import type { SystemDef } from "./evaluator.ts";
 import type { ComputeRule, ConstructorTyping } from "./normalize.ts";
 import { exprToString } from "./normalize.ts";
+import { match } from "@deltanets/core";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -86,25 +87,21 @@ function isComputationalProve(
 // ─── Expression rendering (ProveExpr → TypeScript string) ──────────
 
 function renderExpr(expr: AST.ProveExpr): string {
-  if (expr.kind === "ident") return tsName(expr.name);
-  if (expr.kind === "call") {
-    if (expr.args.length === 0) return tsName(expr.name);
-    return `${tsName(expr.name)}(${expr.args.map(renderExpr).join(", ")})`;
-  }
-  if (expr.kind === "lambda") {
-    return `(${tsName(expr.param)}) => ${renderExpr(expr.body)}`;
-  }
-  if (expr.kind === "let") {
-    return `(() => { const ${tsName(expr.name)} = ${renderExpr(expr.value)}; return ${renderExpr(expr.body)}; })()`;
-  }
-  if (expr.kind === "match") {
-    // match in extraction context shouldn't appear in compute rule results
-    return `/* match ${expr.scrutinee} */`;
-  }
-  if (expr.kind === "hole") return `undefined /* hole */`;
-  if (expr.kind === "metavar" || expr.kind === "meta-app") return `undefined /* meta */`;
-  if (expr.kind === "pi" || expr.kind === "sigma") return `undefined /* type */`;
-  return `undefined`;
+  return match(expr, {
+    ident: (e) => tsName(e.name),
+    call: (e) => {
+      if (e.args.length === 0) return tsName(e.name);
+      return `${tsName(e.name)}(${e.args.map(renderExpr).join(", ")})`;
+    },
+    lambda: (e) => `(${tsName(e.param)}) => ${renderExpr(e.body)}`,
+    let: (e) => `(() => { const ${tsName(e.name)} = ${renderExpr(e.value)}; return ${renderExpr(e.body)}; })()`,
+    match: (e) => `/* match ${e.scrutinee} */`,
+    hole: () => `undefined /* hole */`,
+    metavar: () => `undefined /* meta */`,
+    "meta-app": () => `undefined /* meta */`,
+    pi: () => `undefined /* type */`,
+    sigma: () => `undefined /* type */`,
+  });
 }
 
 /** Convert INet names to valid TypeScript identifiers. */

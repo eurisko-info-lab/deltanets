@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import type * as AST from "./types.ts";
+import { match } from "@deltanets/core";
 
 // ─── Output types ──────────────────────────────────────────────────
 
@@ -107,26 +108,14 @@ export function evaluate(program: AST.Program): ViewResult {
 
   for (const stmt of program) {
     try {
-      switch (stmt.kind) {
-        case "use":
-          uses.push(stmt.path);
-          break;
-        case "theme":
-          themes.set(stmt.name, evalTheme(stmt));
-          break;
-        case "render":
-          styles.set(stmt.agent, evalRender(stmt));
-          break;
-        case "wire-style":
-          wireStyles.set(stmt.name, evalWireStyle(stmt));
-          break;
-        case "palette":
-          palette = evalPalette(stmt);
-          break;
-        case "layout":
-          layout = evalLayout(stmt);
-          break;
-      }
+      match(stmt, {
+        use: (s) => { uses.push(s.path); },
+        theme: (s) => { themes.set(s.name, evalTheme(s)); },
+        render: (s) => { styles.set(s.agent, evalRender(s)); },
+        "wire-style": (s) => { wireStyles.set(s.name, evalWireStyle(s)); },
+        palette: (s) => { palette = evalPalette(s); },
+        layout: (s) => { layout = evalLayout(s); },
+      });
     } catch (e) {
       errors.push((e as Error).message);
     }

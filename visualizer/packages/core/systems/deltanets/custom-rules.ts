@@ -5,7 +5,8 @@
 // matches rule.agentB.  If both agents have the same type AND both types
 // match rule.agentA, we keep the canonical order from the call site.
 
-import { removeFromArrayIf } from "../../util.ts";
+import { match, removeFromArrayIf } from "../../util.ts";
+import type { Mut } from "../../util.ts";
 import type {
   AgentPortDefs,
   Graph,
@@ -61,7 +62,7 @@ function resolvePort(
 export function reduceCustomRule(
   left: Node,
   right: Node,
-  graph: Graph,
+  graph: Mut<Graph>,
   rule: InteractionRule,
   agentPorts: AgentPortDefs,
 ) {
@@ -75,50 +76,40 @@ export function reduceCustomRule(
   env.set("right", right);
 
   for (const stmt of rule.action.body) {
-    switch (stmt.kind) {
-      case "let": {
-        // Create a new agent node with the specified type
-        const portCount = getPortCount(stmt.agentType, agentPorts);
+    match(stmt, {
+      let: (s) => {
+        const portCount = getPortCount(s.agentType, agentPorts);
         const newNode: Node = {
-          type: stmt.agentType,
-          label: stmt.label ?? stmt.agentType,
+          type: s.agentType,
+          label: s.label ?? s.agentType,
           ports: new Array(portCount),
         };
-        // Initialize ports to self-loops (disconnected)
         for (let i = 0; i < portCount; i++) {
           newNode.ports[i] = { node: newNode, port: i };
         }
         graph.push(newNode);
-        env.set(stmt.varName, newNode);
-        break;
-      }
-      case "wire": {
-        // Connect two ports with a new wire
-        const a = resolvePort(stmt.portA, env, agentPorts);
-        const b = resolvePort(stmt.portB, env, agentPorts);
+        env.set(s.varName, newNode);
+      },
+      wire: (s) => {
+        const a = resolvePort(s.portA, env, agentPorts);
+        const b = resolvePort(s.portB, env, agentPorts);
         link(a, b);
-        break;
-      }
-      case "relink": {
-        // Reconnect: the neighbor of portA gets connected to the neighbor of portB.
-        // For new self-looped nodes, neighbor == self, so this also handles new↔old.
-        const a = resolvePort(stmt.portA, env, agentPorts);
+      },
+      relink: (s) => {
+        const a = resolvePort(s.portA, env, agentPorts);
         const neighborA = a.node.ports[a.port];
-        const b = resolvePort(stmt.portB, env, agentPorts);
+        const b = resolvePort(s.portB, env, agentPorts);
         const neighborB = b.node.ports[b.port];
         link(neighborA, neighborB);
-        break;
-      }
-      case "erase-stmt": {
-        // Insert an eraser at the given port
-        const p = resolvePort(stmt.port, env, agentPorts);
+      },
+      "erase-stmt": (s) => {
+        const p = resolvePort(s.port, env, agentPorts);
         const neighbor = p.node.ports[p.port];
         const eraser: Node = { type: "era", label: "era", ports: [] };
         graph.push(eraser);
         link({ node: eraser, port: 0 }, neighbor);
-        break;
-      }
-    }
+      },
+    });
   }
 
   // Remove the original interacting nodes (left and right)

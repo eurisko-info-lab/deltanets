@@ -4,6 +4,7 @@ import { assertEquals, assertThrows } from "$std/assert/mod.ts";
 import { reduceAnnihilate, reduceCommute, reduceErase } from "./reductions.ts";
 import { link } from "./graph.ts";
 import type { Graph, Node } from "./types.ts";
+import { asMut } from "./util.ts";
 
 /** Create a node with the given type and number of ports (unlinked). */
 function makeNode(type: string, numPorts: number): Node {
@@ -31,7 +32,7 @@ Deno.test("annihilate: two binary nodes rewires aux ports", () => {
   link({ node: b, port: 2 }, { node: extB2, port: 0 });
 
   const graph: Graph = [a, b, extA1, extA2, extB1, extB2];
-  reduceAnnihilate(a, graph);
+  reduceAnnihilate(a, asMut(graph));
 
   assertEquals(graph.includes(a), false);
   assertEquals(graph.includes(b), false);
@@ -55,7 +56,7 @@ Deno.test("annihilate: unequal port counts creates erasers", () => {
   link({ node: b, port: 1 }, { node: extB1, port: 0 });
 
   const graph: Graph = [a, b, extA1, extA2, extB1];
-  reduceAnnihilate(a, graph);
+  reduceAnnihilate(a, asMut(graph));
 
   assertEquals(graph.includes(a), false);
   assertEquals(graph.includes(b), false);
@@ -77,7 +78,7 @@ Deno.test("erase: binary node propagates erasers to aux ports", () => {
   link({ node: node, port: 2 }, { node: ext2, port: 0 });
 
   const graph: Graph = [node, eraser, ext1, ext2];
-  reduceErase(node, graph);
+  reduceErase(node, asMut(graph));
 
   assertEquals(graph.includes(node), false);
   assertEquals(graph.includes(eraser), false);
@@ -94,7 +95,7 @@ Deno.test("erase: unary node leaves empty graph", () => {
   link({ node: node, port: 0 }, { node: eraser, port: 0 });
 
   const graph: Graph = [node, eraser];
-  reduceErase(node, graph);
+  reduceErase(node, asMut(graph));
 
   assertEquals(graph.includes(node), false);
   assertEquals(graph.includes(eraser), false);
@@ -118,7 +119,7 @@ Deno.test("commute: binary nodes produce 2x2 cross-copy", () => {
   link({ node: other, port: 2 }, { node: extO2, port: 0 });
 
   const graph: Graph = [node, other, extN1, extN2, extO1, extO2];
-  const { nodeClones, otherClones } = reduceCommute(node, graph);
+  const { nodeClones, otherClones } = reduceCommute(node, asMut(graph));
 
   assertEquals(graph.includes(node), false);
   assertEquals(graph.includes(other), false);
@@ -146,7 +147,7 @@ Deno.test("commute: preserves levelDeltas", () => {
   link({ node: other, port: 1 }, { node: extO, port: 0 });
 
   const graph: Graph = [node, other, extN, extO];
-  const { nodeClones } = reduceCommute(node, graph);
+  const { nodeClones } = reduceCommute(node, asMut(graph));
 
   assertEquals(nodeClones[0].levelDeltas !== node.levelDeltas, true);
   assertEquals(JSON.stringify(nodeClones[0].levelDeltas), "[1,-1]");
@@ -157,6 +158,6 @@ Deno.test("annihilate/commute: throw for non-interacting nodes", () => {
   const b = makeNode("abs", 2);
   a.ports[0] = { node: b, port: 0 };
 
-  assertThrows(() => reduceAnnihilate(a, [a, b]));
-  assertThrows(() => reduceCommute(a, [a, b]));
+  assertThrows(() => reduceAnnihilate(a, asMut([a, b])));
+  assertThrows(() => reduceCommute(a, asMut([a, b])));
 });

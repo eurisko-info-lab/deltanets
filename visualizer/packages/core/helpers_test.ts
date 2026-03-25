@@ -5,6 +5,7 @@
 import { assertEquals } from "$std/assert/mod.ts";
 import type { Node, NodePort } from "./types.ts";
 import { link } from "./graph.ts";
+import { asMut } from "./util.ts";
 import {
   countAuxErasers,
   formatRepLabel,
@@ -185,7 +186,7 @@ Deno.test("reduceEraseRule: both nodes replaced by erasers", () => {
   bAux1.ports = [{ node: b, port: 1 }];
 
   const graph = [a, b, aAux1, aAux2, bAux1];
-  reduceEraseRule(a, b, graph);
+  reduceEraseRule(a, b, asMut(graph));
 
   // Both original nodes should be removed
   assertEquals(graph.includes(a), false);

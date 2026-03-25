@@ -3,6 +3,7 @@
 
 import { removeFromArrayIf } from "./util.ts";
 import type { Graph, Node } from "./types.ts";
+import type { Mut } from "./util.ts";
 import { link } from "./graph.ts";
 
 /**
@@ -13,7 +14,7 @@ import { link } from "./graph.ts";
  * Before:  ...—[node]—[other]—...
  * After:   node.aux[i] ↔ other.aux[i] (direct wires), originals removed.
  */
-export function reduceAnnihilate(node: Node, graph: Graph) {
+export function reduceAnnihilate(node: Node, graph: Mut<Graph>) {
   const other = node.ports[0].node;
 
   // Sanity check
@@ -48,7 +49,7 @@ export function reduceAnnihilate(node: Node, graph: Graph) {
  * Before:  ...—[node]—[era]
  * After:   each node.aux[i] gets its own new eraser, originals removed.
  */
-export function reduceErase(node: Node, graph: Graph) {
+export function reduceErase(node: Node, graph: Mut<Graph>) {
   const eraser = node.ports[0].node;
 
   // Sanity checks
@@ -81,7 +82,7 @@ export function reduceErase(node: Node, graph: Graph) {
  * Before:  ...—[node]—[other]—...
  * After:   A grid of clones with cross-connected aux ports.
  */
-export function reduceCommute(node: Node, graph: Graph) {
+export function reduceCommute(node: Node, graph: Mut<Graph>) {
   const other = node.ports[0].node;
 
   // Sanity checks

@@ -1,6 +1,7 @@
 // Δ-Nets specific types and helper functions.
 
 import { removeFromArrayIf } from "../../util.ts";
+import type { Mut } from "../../util.ts";
 import { Ports } from "../../types.ts";
 import type { Graph, InteractionRule, Node, NodePort } from "../../types.ts";
 import { link, reciprocal } from "../../graph.ts";
@@ -85,7 +86,7 @@ export function countAuxErasers(node: Node): number {
 
 // --- Delta-nets specific reduction ---
 
-export function reduceAuxFan(node: Node, graph: Graph, relativeLevel: boolean) {
+export function reduceAuxFan(node: Node, graph: Mut<Graph>, relativeLevel: boolean) {
   // node is an app node
   const firstAuxNode = node.ports[Ports.app.result].node;
 
@@ -136,7 +137,7 @@ export function isExprAgent(type: string): boolean {
 }
 
 // Cross-rule erasure: both agents are erased (all aux ports get erasers)
-export function reduceEraseRule(nodeA: Node, nodeB: Node, graph: Graph) {
+export function reduceEraseRule(nodeA: Node, nodeB: Node, graph: Mut<Graph>) {
   for (let i = 1; i < nodeA.ports.length; i++) {
     const newEraser: Node = { type: "era", label: "era", ports: [] };
     graph.push(newEraser);

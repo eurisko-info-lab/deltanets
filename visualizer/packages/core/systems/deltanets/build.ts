@@ -1,31 +1,33 @@
 // Graph building from AST nodes.
 
-import { removeFromArrayIf } from "../../util.ts";
+import { match, removeFromArrayIf } from "../../util.ts";
 import type { AstNode, SystemType, Type } from "../../ast.ts";
 import { Ports } from "../../types.ts";
 import type { Graph, Node, NodePort } from "../../types.ts";
 import { link, reciprocal } from "../../graph.ts";
 
 function buildTypeGraph(ty: Type, graph: Graph): NodePort {
-  if (ty.kind === "hole") {
-    const node: Node = { type: "type-hole", label: "?", ports: [] };
-    graph.push(node);
-    return { node, port: Ports.typeHole.principal };
-  } else if (ty.kind === "base") {
-    const node: Node = { type: "type-base", label: ty.name, ports: [] };
-    graph.push(node);
-    return { node, port: Ports.typeBase.principal };
-  } else if (ty.kind === "arrow") {
-    const node: Node = { type: "type-arrow", label: "→", ports: [] };
-    graph.push(node);
-    const domainPort = buildTypeGraph(ty.from, graph);
-    link(domainPort, { node, port: Ports.typeArrow.domain });
-    const codomainPort = buildTypeGraph(ty.to, graph);
-    link(codomainPort, { node, port: Ports.typeArrow.codomain });
-    return { node, port: Ports.typeArrow.principal };
-  } else {
-    throw new Error("Unknown type kind: " + (ty as any).kind);
-  }
+  return match(ty, {
+    hole: () => {
+      const node: Node = { type: "type-hole", label: "?", ports: [] };
+      graph.push(node);
+      return { node, port: Ports.typeHole.principal };
+    },
+    base: (t) => {
+      const node: Node = { type: "type-base", label: t.name, ports: [] };
+      graph.push(node);
+      return { node, port: Ports.typeBase.principal };
+    },
+    arrow: (t) => {
+      const node: Node = { type: "type-arrow", label: "→", ports: [] };
+      graph.push(node);
+      const domainPort = buildTypeGraph(t.from, graph);
+      link(domainPort, { node, port: Ports.typeArrow.domain });
+      const codomainPort = buildTypeGraph(t.to, graph);
+      link(codomainPort, { node, port: Ports.typeArrow.codomain });
+      return { node, port: Ports.typeArrow.principal };
+    },
+  });
 }
 
 /**
