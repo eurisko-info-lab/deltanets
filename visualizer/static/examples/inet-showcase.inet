@@ -1,0 +1,659 @@
+# Showcase — Rocq-like Dependent Type Theory on Interaction Nets
+#
+# A comprehensive demonstration of the prover's features, all
+# compiled down to interaction net agents and reduction rules.
+#
+# Features demonstrated:
+#   1.  Data types with agents, rules, and compute equations
+#   2.  Structural induction (prove blocks)
+#   3.  Lean-style theorem/lemma declarations
+#   4.  @[simp] / @[auto] attributes + tactic automation
+#   5.  omega solver (linear arithmetic)
+#   6.  decide tactic (ground computation)
+#   7.  Ring tactic (polynomial normalization)
+#   8.  Sections with variable auto-abstraction
+#   9.  Scoped notations with precedence
+#  10.  Type classes and instances
+#  11.  Coinductive types (codata) with observations
+#  12.  Mutual inductive types
+#  13.  Programs with termination obligations
+#  14.  Module composition
+#
+# Each section builds on the previous one.  The graph blocks at the
+# bottom let you step through reductions in the visualizer.
+
+include "prelude"
+
+# ═══════════════════════════════════════════════════════════════════
+# 1. Foundation — Nat, add, Eq, cong_succ
+# ═══════════════════════════════════════════════════════════════════
+#
+# Standard Peano naturals and propositional equality, matching the
+# same system hierarchy used by all the proof examples.
+
+system "Nat" extend "Prelude" {
+  data Nat {
+    | Zero
+    | Succ(pred : Nat)
+  }
+
+  agent add(principal, result, accum)
+
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
+}
+
+system "Eq" extend "Nat" {
+  agent refl(principal)
+  agent subst(principal, result, value)
+  agent sym(principal, result)
+  agent trans(principal, result, second)
+
+  rule subst <> refl -> { relink left.result left.value }
+  rule sym <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+}
+
+system "NatEq" extend "Eq" {
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> {
+    let r = refl
+    relink left.result r.principal
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 2. Structural Induction — Classic prove blocks
+# ═══════════════════════════════════════════════════════════════════
+#
+# The `prove` keyword defines a proof by structural induction on a
+# data type parameter.  Each case arm corresponds to one constructor.
+# The type checker verifies the return type at each branch.
+
+system "Proofs" extend "NatEq" {
+
+  # add(n, 0) = n — requires induction (not definitional)
+  prove plus_zero_right(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_zero_right(k))
+  }
+
+  # add(n, S(m)) = S(add(n, m))
+  prove plus_succ_right(n : Nat, m : Nat) -> Eq(add(n, Succ(m)), Succ(add(n, m))) {
+    | Zero -> refl
+    | Succ(k) -> cong_succ(plus_succ_right(k, m))
+  }
+
+  # The crown jewel: commutativity of addition
+  prove plus_comm(n : Nat, m : Nat) -> Eq(add(n, m), add(m, n)) {
+    | Zero -> sym(plus_zero_right(m))
+    | Succ(k) -> trans(cong_succ(plus_comm(k, m)), sym(plus_succ_right(m, k)))
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 3. Lean-style theorem/lemma syntax
+# ═══════════════════════════════════════════════════════════════════
+#
+# The system supports Lean 4's declaration syntax:
+#   theorem NAME (params) : TYPE := PROOF
+#   theorem NAME (params) : TYPE := by CASES
+#   lemma NAME ...  (alias for theorem)
+#
+# Also supports shared type bindings: (n m : Nat) means both are Nat.
+
+system "LeanStyle" extend "Proofs" {
+
+  # Direct proof term — no case split needed
+  theorem refl_id (n : Nat) : Eq(n, n) := refl
+
+  # Lean-style case arms with =>
+  theorem add_zero (n : Nat) : Eq(add(n, Zero), n) := by
+    | Zero => refl
+    | Succ(k) => cong_succ(add_zero(k))
+
+  # Shared type bindings: (n m : Nat)
+  theorem add_succ (n m : Nat) : Eq(add(n, Succ(m)), Succ(add(n, m))) := by
+    | Zero => refl
+    | Succ(k) => cong_succ(add_succ(k, m))
+
+  # lemma is just an alias
+  lemma zero_left (n : Nat) : Eq(add(Zero, n), n) := refl
+
+  # induction ... with syntax
+  theorem add_zero_v2 (n : Nat) : Eq(add(n, Zero), n) := by
+    induction n with
+    | Zero => refl
+    | Succ(k) => cong_succ(add_zero_v2(k))
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 4. @[simp] / @[auto] attributes + tactic automation
+# ═══════════════════════════════════════════════════════════════════
+#
+# Lemmas annotated @[simp] or @[auto] register into hint databases.
+# The simp, auto, and eauto tactics then use these hints to close
+# proof goals automatically.
+
+system "Automation" extend "LeanStyle" {
+
+  @[simp] prove simp_plus_zero(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> refl
+    | Succ(m) -> cong_succ(simp_plus_zero(m))
+  }
+
+  @[auto] prove auto_zero_left(n : Nat) -> Eq(add(Zero, n), n) {
+    | Zero -> refl
+    | Succ(m) -> cong_succ(auto_zero_left(m))
+  }
+
+  # simp finds simp_plus_zero in the hint DB
+  prove simplified(n : Nat) -> Eq(add(n, Zero), n) {
+    | Zero -> simp
+    | Succ(k) -> cong_succ(simplified(k))
+  }
+
+  # auto finds auto_zero_left in the hint DB
+  prove automated(n : Nat) -> Eq(add(Zero, n), n) {
+    | Zero -> auto
+    | Succ(k) -> cong_succ(automated(k))
+  }
+
+  # eauto: backtracking search through hints
+  prove eautomated(n : Nat) -> Eq(add(Zero, n), n) {
+    | Zero -> eauto
+    | Succ(k) -> cong_succ(eautomated(k))
+  }
+
+  # Nested simplification — simp applies twice
+  prove double_simp(n : Nat) -> Eq(add(add(n, Zero), Zero), n) {
+    | Zero -> simp
+    | Succ(k) -> cong_succ(double_simp(k))
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 5. omega solver — linear arithmetic
+# ═══════════════════════════════════════════════════════════════════
+#
+# Decides equalities over Nat by normalizing linear expressions.
+# Handles ground facts and congruence with Succ/add.
+
+system "OmegaSolver" extend "Automation" {
+
+  # Ground: 1 + 1 = 2
+  prove one_plus_one(n : Nat)
+    -> Eq(add(Succ(Zero), Succ(Zero)), Succ(Succ(Zero))) {
+    | Zero -> omega
+    | Succ(k) -> omega
+  }
+
+  # add(0, n) = n
+  prove omega_zero_left(n : Nat) -> Eq(add(Zero, n), n) {
+    | Zero -> omega
+    | Succ(k) -> omega
+  }
+
+  # S(n) = S(n)
+  prove omega_succ_id(n : Nat) -> Eq(Succ(n), Succ(n)) {
+    | Zero -> omega
+    | Succ(k) -> omega
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 6. decide tactic — ground computation
+# ═══════════════════════════════════════════════════════════════════
+#
+# Fully normalizes ground terms and checks definitional equality.
+
+system "DecideTactic" extend "OmegaSolver" {
+
+  # 0 + 0 = 0
+  prove zero_plus_zero(n : Nat) -> Eq(add(Zero, Zero), Zero) {
+    | Zero -> decide
+    | Succ(k) -> decide
+  }
+
+  # 2 + 1 = 3
+  prove two_plus_one(n : Nat)
+    -> Eq(add(Succ(Succ(Zero)), Succ(Zero)), Succ(Succ(Succ(Zero)))) {
+    | Zero -> decide
+    | Succ(k) -> decide
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 7. Ring tactic — polynomial normalization
+# ═══════════════════════════════════════════════════════════════════
+#
+# Normalizes both sides of an equality into canonical polynomial
+# form (sorted monomials) to close algebraic identities.
+
+system "RingTactic" extend "DecideTactic" {
+
+  agent mul(principal, result, accum)
+  compute mul(Zero, y) = Zero
+  compute mul(Succ(k), y) = add(y, mul(k, y))
+
+  # Register Nat as a commutative ring
+  ring Nat { zero = Zero, add = add, mul = mul }
+
+  # a = a — trivial identity
+  prove ring_refl(a : Nat) -> Eq(a, a) {
+    | Zero -> ring
+    | Succ(k) -> ring
+  }
+
+  # add(a, 0) = add(0, a) — commutativity via ring normal form
+  prove ring_add_comm_zero(a : Nat) -> Eq(add(a, Zero), add(Zero, a)) {
+    | Zero -> ring
+    | Succ(k) -> ring
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 8. Sections — variable auto-abstraction
+# ═══════════════════════════════════════════════════════════════════
+#
+# Sections declare variables that become implicit parameters of
+# inner declarations.  Nested sections accumulate variables.
+
+system "Sections" extend "RingTactic" {
+
+  section Arithmetic {
+    variable(n : Nat)
+
+    prove section_add_zero(n : Nat) -> Eq(add(n, Zero), n) {
+      | Zero -> refl
+      | Succ(k) -> cong_succ(section_add_zero(k))
+    }
+
+    prove section_refl(n : Nat) -> Eq(n, n) {
+      | Zero -> refl
+      | Succ(k) -> cong_succ(section_refl(k))
+    }
+  }
+
+  # Nested sections accumulate variables
+  section Outer {
+    variable(a : Nat)
+    section Inner {
+      variable(b : Nat)
+
+      prove nested_refl(n : Nat) -> Eq(n, n) {
+        | Zero -> refl
+        | Succ(k) -> cong_succ(nested_refl(k))
+      }
+    }
+  }
+
+  # Data types in sections get the variable as type parameter
+  section Parametric {
+    variable(A : Type)
+    data Wrapper { | Wrap(value : A) }
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 9. Scoped Notations — infix operators with precedence
+# ═══════════════════════════════════════════════════════════════════
+#
+# Notations can be scoped (active only inside a scope block)
+# or global.  Each has an associativity and precedence.
+
+system "Notations" extend "Sections" {
+
+  # Scope-local: + is only active inside nat_scope
+  scope "nat_scope" {
+    notation "+" = add (prec 50, left)
+
+    # n + Zero desugars to add(n, Zero)
+    prove scoped_plus_zero(n : Nat) -> Eq(n + Zero, add(n, Zero)) {
+      | Zero -> refl
+      | Succ(k) -> refl
+    }
+  }
+
+  # Global notation
+  notation "+" = add (prec 50, left)
+
+  prove global_notation(n : Nat) -> Eq(n + Zero, n + Zero) {
+    | Zero -> refl
+    | Succ(k) -> refl
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 10. Type Classes and Instances
+# ═══════════════════════════════════════════════════════════════════
+#
+# Classes define interfaces.  Instances provide implementations.
+
+system "Typeclasses" extend "Notations" {
+  data Bool { | True | False }
+
+  class Show(A) { show : A }
+
+  agent showNat(principal, result)
+  compute showNat(n) = n
+
+  instance Show(Nat) { show = showNat }
+
+  class Monoid(A) { empty : A, append : A }
+
+  agent natEmpty(principal)
+  agent natAppend(principal, result, second)
+
+  instance Monoid(Nat) { empty = natEmpty, append = natAppend }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 11. Coinductive Types — Infinite Streams
+# ═══════════════════════════════════════════════════════════════════
+#
+# codata generates guard agents and observation agents (head, tail).
+# Guards ensure productivity; observations unfold one level.
+
+system "Codata" extend "NatEq" {
+
+  codata Stream(A) { head : A, tail : Stream(A) }
+
+  # repeat(n) = n, n, n, ...
+  prove repeat(n : Nat) -> Stream(Nat) {
+    | Zero -> guard_stream(Zero, repeat(Zero))
+    | Succ(k) -> guard_stream(Succ(k), repeat(Succ(k)))
+  }
+
+  # head(guard_stream(n, ...)) reduces to n
+  prove head_repeat(n : Nat) -> Eq(head(guard_stream(n, guard_stream(n, repeat(n)))), n) {
+    | Zero -> conv
+    | Succ(k) -> conv
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 12. Mutual Inductive Types — Even / Odd
+# ═══════════════════════════════════════════════════════════════════
+#
+# The mutual block lets types reference each other.  Mutual proofs
+# have structurally decreasing cross-calls.
+
+system "MutualTypes" extend "NatEq" {
+
+  mutual {
+    data Even {
+      | EZero
+      | ESucc(pred : Odd)
+    }
+    data Odd {
+      | OSucc(pred : Even)
+    }
+  }
+
+  mutual {
+    prove even_trivial(n : Even) -> Eq(Zero, Zero) {
+      | EZero -> refl
+      | ESucc(p) -> odd_trivial(p)
+    }
+    prove odd_trivial(n : Odd) -> Eq(Zero, Zero) {
+      | OSucc(p) -> even_trivial(p)
+    }
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 13. Programs with Termination — Dependent pattern matching
+# ═══════════════════════════════════════════════════════════════════
+#
+# The program keyword supports measure-based termination, explicit
+# well-founded annotations, and inline proof obligations.
+
+system "Programs" extend "NatEq" {
+
+  # Structural recursion
+  program double(n : Nat) -> Nat {
+    | Zero -> Zero
+    | Succ(k) -> Succ(Succ(double(k)))
+  }
+
+  # Explicit measure
+  program halve(n : Nat) -> Nat {
+    measure(n)
+    | Zero -> Zero
+    | Succ(k) -> halve(k)
+  }
+
+  # Well-founded with inline obligation
+  program sub(n : Nat, m : Nat) -> Nat {
+    wf(Lt)
+    | Zero -> Zero
+    | Succ(k) -> sub(k, m)
+
+    obligation sub_dec(k : Nat) -> Eq(k, k) {
+      | Zero -> refl
+      | Succ(k2) -> refl
+    }
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# 14. Module Composition — Pushout of systems
+# ═══════════════════════════════════════════════════════════════════
+#
+# compose merges independent systems into one.  The resulting system
+# has agents and rules from both sides.
+
+system "BoolMod" extend "Prelude" {
+  data Bool { | True | False }
+  agent not(principal, result)
+  rule not <> True  -> { let f = False  relink left.result f.principal }
+  rule not <> False -> { let t = True   relink left.result t.principal }
+  compute not(True) = False
+  compute not(False) = True
+}
+
+system "Combined" = compose "NatEq" + "BoolMod" {}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Visualization — Interactive Graphs
+# ═══════════════════════════════════════════════════════════════════
+#
+# Each graph block creates an interaction net you can step through
+# in the visualizer.  Click "Step" to fire one redex at a time
+# and watch the proof reduce to refl.
+
+# ─── plus_zero_right graphs ─────────────────────────────────────
+
+# plus_zero_right(0) → refl                        [1 step]
+graph pzr-zero {
+  let r   = root
+  let pzr = plus_zero_right
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- z.principal
+}
+
+# plus_zero_right(1) → refl                        [3 steps]
+graph pzr-one {
+  let r   = root
+  let pzr = plus_zero_right
+  let s   = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s.principal
+  wire s.pred       -- z.principal
+}
+
+# plus_zero_right(2) → refl                        [5 steps]
+graph pzr-two {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z.principal
+}
+
+# plus_zero_right(3) → refl                        [7 steps]
+graph pzr-three {
+  let r   = root
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let s3  = Succ
+  let z   = Zero
+  wire r.principal  -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- s3.principal
+  wire s3.pred      -- z.principal
+}
+
+# ─── plus_succ_right graphs ─────────────────────────────────────
+
+# plus_succ_right(0, 0) → refl                     [1 step]
+graph psr-zero-zero {
+  let r   = root
+  let psr = plus_succ_right
+  let z1  = Zero
+  let z2  = Zero
+  wire r.principal  -- psr.result
+  wire psr.principal -- z1.principal
+  wire psr.1        -- z2.principal
+}
+
+# plus_succ_right(2, 1) → refl                     [7 steps]
+graph psr-two-one {
+  let r   = root
+  let psr = plus_succ_right
+  let s1  = Succ
+  let s2  = Succ
+  let z1  = Zero
+  let sm  = Succ
+  let z2  = Zero
+  wire r.principal  -- psr.result
+  wire psr.principal -- s1.principal
+  wire s1.pred      -- s2.principal
+  wire s2.pred      -- z1.principal
+  wire psr.1        -- sm.principal
+  wire sm.pred      -- z2.principal
+}
+
+# ─── plus_comm graphs ──────────────────────────────────────────
+
+# plus_comm(0, 0) → refl                           [2 steps]
+graph pc-zero-zero {
+  let r  = root
+  let pc = plus_comm
+  let z1 = Zero
+  let z2 = Zero
+  wire r.principal -- pc.result
+  wire pc.principal -- z1.principal
+  wire pc.1        -- z2.principal
+}
+
+# plus_comm(1, 1) → refl                           [12 steps]
+graph pc-one-one {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let z1 = Zero
+  let s2 = Succ
+  let z2 = Zero
+  wire r.principal -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred     -- z1.principal
+  wire pc.1        -- s2.principal
+  wire s2.pred     -- z2.principal
+}
+
+# plus_comm(2, 1) → refl                           [19 steps]
+graph pc-two-one {
+  let r  = root
+  let pc = plus_comm
+  let s1 = Succ
+  let s2 = Succ
+  let z1 = Zero
+  let sm = Succ
+  let z2 = Zero
+  wire r.principal -- pc.result
+  wire pc.principal -- s1.principal
+  wire s1.pred     -- s2.principal
+  wire s2.pred     -- z1.principal
+  wire pc.1        -- sm.principal
+  wire sm.pred     -- z2.principal
+}
+
+# ─── Verify via subst: feed proof into subst to get the value ──
+
+# subst(plus_zero_right(2), 42) → 42              [6 steps]
+# Prop: add(2,0) = 2  →  subst extracts the value
+graph verify-pzr-two {
+  let r   = root
+  let sub = subst
+  let pzr = plus_zero_right
+  let s1  = Succ
+  let s2  = Succ
+  let z   = Zero
+  let v1  = Succ
+  let v2  = Succ
+  let vz  = Zero
+  wire r.principal   -- sub.result
+  wire sub.principal -- pzr.result
+  wire pzr.principal -- s1.principal
+  wire s1.pred       -- s2.principal
+  wire s2.pred       -- z.principal
+  wire sub.value     -- v1.principal
+  wire v1.pred       -- v2.principal
+  wire v2.pred       -- vz.principal
+}
+
+# ─── double program ────────────────────────────────────────────
+
+# double(2) → 4
+graph double-two {
+  let r  = root
+  let d  = double
+  let s1 = Succ
+  let s2 = Succ
+  let z  = Zero
+  wire r.principal -- d.result
+  wire d.principal -- s1.principal
+  wire s1.pred     -- s2.principal
+  wire s2.pred     -- z.principal
+}
+
+# ─── Boolean not (from Combined) ───────────────────────────────
+
+# not(True) → False                                 [1 step]
+graph not-true {
+  let r = root
+  let n = not
+  let t = True
+  wire r.principal -- n.result
+  wire n.principal -- t.principal
+}
+
+# not(False) → True                                 [1 step]
+graph not-false {
+  let r = root
+  let n = not
+  let f = False
+  wire r.principal -- n.result
+  wire n.principal -- f.principal
+}
