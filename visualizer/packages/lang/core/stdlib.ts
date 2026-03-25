@@ -119,6 +119,137 @@ system "Stdlib.Sigma" extend "Prelude" {
 }
 `;
 
+// ─── Z (integers) ─────────────────────────────────────────────────
+
+export const STDLIB_Z = `\
+system "Stdlib.Z" extend "Prelude" {
+  data Nat { | Zero | Succ(pred : Nat) }
+
+  agent add(principal, result, accum)
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
+
+  # Z = Pos(n) for n >= 0, NegSucc(n) for -(n+1)
+  data Z { | Pos(n : Nat) | NegSucc(n : Nat) }
+
+  # Negation: dispatches via helper agents
+  agent neg_z(principal, result)
+  rule neg_z <> Pos -> {
+    let d = neg_z_pos
+    relink left.result d.result
+    relink right.n d.principal
+  }
+  rule neg_z <> NegSucc -> {
+    let p = Pos
+    let s = Succ
+    relink left.result p.principal
+    wire p.n -- s.principal
+    relink right.n s.pred
+  }
+  agent neg_z_pos(principal, result)
+  rule neg_z_pos <> Zero -> {
+    let p = Pos
+    let z = Zero
+    relink left.result p.principal
+    wire p.n -- z.principal
+  }
+  rule neg_z_pos <> Succ -> {
+    let n = NegSucc
+    relink left.result n.principal
+    relink right.pred n.n
+  }
+
+  # Flat compute rules for the normalizer
+  compute neg_z(Pos(n)) = neg_z_pos(n)
+  compute neg_z(NegSucc(n)) = Pos(Succ(n))
+  compute neg_z_pos(Zero) = Pos(Zero)
+  compute neg_z_pos(Succ(n)) = NegSucc(n)
+
+  # Successor on Z
+  agent succ_z(principal, result)
+  rule succ_z <> Pos -> {
+    let p = Pos
+    let s = Succ
+    relink left.result p.principal
+    wire p.n -- s.principal
+    relink right.n s.pred
+  }
+  rule succ_z <> NegSucc -> {
+    let d = succ_z_neg
+    relink left.result d.result
+    relink right.n d.principal
+  }
+  agent succ_z_neg(principal, result)
+  rule succ_z_neg <> Zero -> {
+    let p = Pos
+    let z = Zero
+    relink left.result p.principal
+    wire p.n -- z.principal
+  }
+  rule succ_z_neg <> Succ -> {
+    let n = NegSucc
+    relink left.result n.principal
+    relink right.pred n.n
+  }
+
+  compute succ_z(Pos(n)) = Pos(Succ(n))
+  compute succ_z(NegSucc(n)) = succ_z_neg(n)
+  compute succ_z_neg(Zero) = Pos(Zero)
+  compute succ_z_neg(Succ(n)) = NegSucc(n)
+}
+`;
+
+// ─── Stream (coinductive) ─────────────────────────────────────────
+
+export const STDLIB_STREAM = `\
+system "Stdlib.Stream" extend "Prelude" {
+  data Nat { | Zero | Succ(pred : Nat) }
+
+  agent add(principal, result, accum)
+  rule add <> Zero -> { relink left.result left.accum }
+  rule add <> Succ -> {
+    let s = Succ
+    let a = add
+    relink left.result s.principal
+    wire s.pred -- a.result
+    relink left.accum a.accum
+    relink right.pred a.principal
+  }
+  compute add(Zero, y) = y
+  compute add(Succ(k), y) = Succ(add(k, y))
+
+  codata Stream(A) { head : A, tail : Stream(A) }
+
+  agent refl(principal)
+  rule sym   <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+
+  agent cong_succ(principal, result)
+  rule cong_succ <> refl -> { let r = refl  relink left.result r.principal }
+
+  # repeat(n) produces the constant stream n, n, n, ...
+  prove repeat(n : Nat) -> Stream(Nat) {
+    | Zero -> guard_stream(Zero, repeat(Zero))
+    | Succ(k) -> guard_stream(Succ(k), repeat(Succ(k)))
+  }
+
+  # head of a constant stream
+  prove head_repeat(n : Nat) -> Eq(head(guard_stream(n, guard_stream(n, repeat(n)))), n) {
+    | Zero -> conv
+    | Succ(k) -> conv
+  }
+}
+`;
+
 // ─── Core: combined standard library ──────────────────────────────
 // `include "stdlib"` gives you everything.
 

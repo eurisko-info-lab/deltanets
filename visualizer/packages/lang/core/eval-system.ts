@@ -288,6 +288,22 @@ export function evalBodyInto(
       computeRules.push(...generateObservationRules(item));
     }
   }
+  // Handle opaque/transparent declarations (toggle unfolding of compute rules)
+  for (const item of body) {
+    if (item.kind === "opaque") {
+      const isOpaque = !item.transparent;
+      for (const rule of computeRules) {
+        if (rule.funcName === item.name) rule.opaque = isOpaque;
+      }
+    }
+  }
+  // Handle arguments declarations (override implicit/explicit param bindings)
+  const argumentsOverrides = new Map<string, { name: string; implicit: boolean }[]>();
+  for (const item of body) {
+    if (item.kind === "arguments") {
+      argumentsOverrides.set(item.name, item.params);
+    }
+  }
 
   // Shared prove-processing pipeline: expand induction, resolve tactics,
   // desugar, type-check, build proof tree, register in provedCtx.
@@ -545,6 +561,23 @@ export function evalBodyInto(
       }
       case "strategy": {
         strategies.set(item.name, item.body);
+        break;
+      }
+      case "opaque": {
+        // Already handled in pre-scan above
+        break;
+      }
+      case "arguments": {
+        // Apply arguments override to provedCtx entry
+        const entry = provedCtx.get(item.name);
+        if (entry) {
+          const newParams = entry.params.map((p, i) => {
+            const override = item.params[i];
+            if (override) return { ...p, implicit: override.implicit };
+            return p;
+          });
+          provedCtx.set(item.name, { ...entry, params: newParams });
+        }
         break;
       }
       case "mutual": {

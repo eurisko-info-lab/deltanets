@@ -417,6 +417,9 @@ class Parser {
       else if (tok.type === TT.PROGRAM) body.push(this.parseProgramDecl());
       else if (tok.type === TT.THEOREM || tok.type === TT.LEMMA) body.push(this.parseTheoremDecl());
       else if (tok.type === TT.ALIAS) body.push(this.parseAliasDecl());
+      else if (tok.type === TT.OPAQUE) body.push(this.parseOpaqueDecl());
+      else if (tok.type === TT.TRANSPARENT) body.push(this.parseTransparentDecl());
+      else if (tok.type === TT.ARGUMENTS) body.push(this.parseArgumentsDecl());
       else if (tok.type === TT.AT) {
         // @[simp] prove/theorem/lemma ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
@@ -436,7 +439,7 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program/alias, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program/alias/opaque/transparent/arguments, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -510,6 +513,42 @@ class Parser {
     this.eat(TT.EQ);
     const target = this.eatIdent();
     return { kind: "alias", name, target };
+  }
+
+  // opaque name — mark compute rules for name as opaque (no unfolding)
+  parseOpaqueDecl(): AST.OpaqueDecl {
+    this.eat(TT.OPAQUE);
+    const name = this.eatIdent();
+    return { kind: "opaque", name };
+  }
+
+  // transparent name — mark compute rules for name as transparent (undo opaque)
+  parseTransparentDecl(): AST.OpaqueDecl {
+    this.eat(TT.TRANSPARENT);
+    const name = this.eatIdent();
+    return { kind: "opaque", name, transparent: true };
+  }
+
+  // arguments name(explicit, {implicit}, ...)
+  parseArgumentsDecl(): AST.ArgumentsDecl {
+    this.eat(TT.ARGUMENTS);
+    const name = this.eatIdent();
+    this.eat(TT.LPAREN);
+    const params: { name: string; implicit: boolean }[] = [];
+    while (!this.check(TT.RPAREN) && !this.check(TT.EOF)) {
+      if (this.check(TT.LBRACE)) {
+        this.advance();
+        const pname = this.eatIdent();
+        this.eat(TT.RBRACE);
+        params.push({ name: pname, implicit: true });
+      } else {
+        const pname = this.eatIdent();
+        params.push({ name: pname, implicit: false });
+      }
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RPAREN);
+    return { kind: "arguments", name, params };
   }
 
   // ─── Agent ───────────────────────────────────────────────────────
@@ -1530,6 +1569,11 @@ class Parser {
         const depthTok = this.eat(TT.NUMBER);
         this.eat(TT.RPAREN);
         return { kind: "search", depth: parseInt(depthTok.value, 10) };
+      }
+      if (name === "eauto") {
+        const depthTok = this.eat(TT.NUMBER);
+        this.eat(TT.RPAREN);
+        return { kind: "eauto", depth: parseInt(depthTok.value, 10) };
       }
       // Generic named strategy with args — treat as first() for extensibility
       // (future: could be strategy application)

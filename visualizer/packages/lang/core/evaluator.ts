@@ -16,7 +16,7 @@ import {
 } from "./eval-system.ts";
 import { evalGraph } from "./eval-graph.ts";
 import { PRELUDE_SOURCE } from "./prelude.ts";
-import { STDLIB_SOURCE, STDLIB_NAT, STDLIB_BOOL, STDLIB_EQ, STDLIB_OPTION, STDLIB_LIST, STDLIB_SIGMA } from "./stdlib.ts";
+import { STDLIB_SOURCE, STDLIB_NAT, STDLIB_BOOL, STDLIB_EQ, STDLIB_OPTION, STDLIB_LIST, STDLIB_SIGMA, STDLIB_Z, STDLIB_STREAM } from "./stdlib.ts";
 import { tokenize } from "./lexer.ts";
 import { parse } from "./parser.ts";
 
@@ -152,6 +152,8 @@ function builtinResolver(path: string): string | null {
   if (path === "stdlib/option") return `include "prelude"\n${STDLIB_OPTION}`;
   if (path === "stdlib/list") return `include "prelude"\n${STDLIB_LIST}`;
   if (path === "stdlib/sigma") return `include "prelude"\n${STDLIB_SIGMA}`;
+  if (path === "stdlib/z") return `include "prelude"\n${STDLIB_Z}`;
+  if (path === "stdlib/stream") return `include "prelude"\n${STDLIB_STREAM}`;
   return null;
 }
 

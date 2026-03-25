@@ -1472,6 +1472,64 @@ export function primSearch(sctx: StrategyContext, depth: number): AST.ProveExpr 
   return autoSearch(sctx.goal, sctx._ctx, depth);
 }
 
+/** eauto: hint-database-aware backtracking search.
+ *  Unlike auto/search, eauto iterates over ALL hint databases,
+ *  tries to apply hint lemmas by unifying their return types with
+ *  the goal, and recursively solves the remaining premises. */
+export function primEauto(sctx: StrategyContext, depth: number): AST.ProveExpr | null {
+  return eautoSearch(sctx.goal, sctx._ctx, depth);
+}
+
+function eautoSearch(
+  goal: AST.ProveExpr,
+  ctx: ProveCtx,
+  depth: number,
+): AST.ProveExpr | null {
+  if (depth <= 0) return null;
+
+  // First try regular autoSearch (conv, assumption, rewrite, cong, trans)
+  const auto = autoSearch(goal, ctx, depth);
+  if (auto) return auto;
+
+  // Then try applying hint lemmas that produce the goal type.
+  // For each hint db, try each lemma: if its return type matches the goal,
+  // try to recursively solve each of its parameter types.
+  const normGoal = normalize(goal);
+  if (!ctx.hints) return null;
+
+  for (const [_db, lemmaNames] of ctx.hints) {
+    for (const lemmaName of lemmaNames) {
+      const lemma = ctx.provedCtx.get(lemmaName);
+      if (!lemma) continue;
+      // Check if lemma's return type could match our goal
+      const normReturn = normalize(lemma.returnType);
+      if (!goalMatchesTemplate(normGoal, normReturn)) continue;
+      // Try to solve each parameter as a sub-goal
+      const argProofs: AST.ProveExpr[] = [];
+      let allSolved = true;
+      for (const param of lemma.params) {
+        if (!param.type) { allSolved = false; break; }
+        const subProof = eautoSearch(param.type, ctx, depth - 1);
+        if (!subProof) { allSolved = false; break; }
+        argProofs.push(subProof);
+      }
+      if (allSolved) return app(lemmaName, ...argProofs);
+    }
+  }
+
+  return null;
+}
+
+/** Shallow structural match: does the goal look like it could be an instance of the template? */
+function goalMatchesTemplate(goal: AST.ProveExpr, template: AST.ProveExpr): boolean {
+  if (template.kind === "ident") return true; // template is a variable — matches anything
+  if (goal.kind === "ident" && template.kind === "ident") return goal.name === template.name;
+  if (goal.kind === "call" && template.kind === "call") {
+    return goal.name === template.name && goal.args.length === template.args.length;
+  }
+  return false;
+}
+
 export function primCong(
   ctor: string | undefined,
   sctx: StrategyContext,

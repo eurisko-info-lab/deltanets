@@ -28,6 +28,7 @@ export type ComputeRule = {
   funcName: string;
   args: AST.ComputePattern[];
   result: AST.ProveExpr;
+  opaque?: boolean; // if true, normalizer skips this rule
 };
 
 /** Constructor typing info derived from data declarations.
@@ -351,6 +352,7 @@ export function buildNormTable(computeRules: ComputeRule[]): NormTable {
 
   const groups = new Map<string, ComputeRule[]>();
   for (const r of computeRules) {
+    if (r.opaque) continue; // skip opaque rules
     if (!groups.has(r.funcName)) groups.set(r.funcName, []);
     groups.get(r.funcName)!.push(r);
   }

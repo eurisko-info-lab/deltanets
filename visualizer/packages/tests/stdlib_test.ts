@@ -14,7 +14,7 @@ Deno.test("stdlib: include stdlib compiles with zero errors", () => {
 });
 
 Deno.test("stdlib: all individual modules compile", () => {
-  for (const mod of ["nat", "bool", "eq", "option", "list", "sigma"]) {
+  for (const mod of ["nat", "bool", "eq", "option", "list", "sigma", "z", "stream"]) {
     const r = compileCore(`include "stdlib/${mod}"`);
     assertEquals(r.errors.length, 0, `stdlib/${mod} errors: ${r.errors}`);
   }
@@ -164,4 +164,58 @@ Deno.test("stdlib: rule count is reasonable", () => {
   // 70 rules at time of writing; allow some growth
   assert(s.rules.length >= 50, `too few rules: ${s.rules.length}`);
   assert(s.rules.length <= 120, `too many rules: ${s.rules.length}`);
+});
+
+// ─── Z (integers) module ──────────────────────────────────────────
+
+Deno.test("stdlib/z: compiles without errors", () => {
+  const r = compileCore(`include "stdlib/z"`);
+  assertEquals(r.errors.length, 0, `stdlib/z errors: ${r.errors}`);
+});
+
+Deno.test("stdlib/z: has Z constructors", () => {
+  const r = compileCore(`include "stdlib/z"`);
+  const s = r.systems.get("Stdlib.Z")!;
+  const agents = [...s.agents.keys()];
+  assert(agents.includes("Pos"), "missing Pos");
+  assert(agents.includes("NegSucc"), "missing NegSucc");
+});
+
+Deno.test("stdlib/z: has neg_z and succ_z agents", () => {
+  const r = compileCore(`include "stdlib/z"`);
+  const s = r.systems.get("Stdlib.Z")!;
+  const agents = [...s.agents.keys()];
+  assert(agents.includes("neg_z"), "missing neg_z");
+  assert(agents.includes("succ_z"), "missing succ_z");
+});
+
+Deno.test("stdlib/z: neg_z compute rules available", () => {
+  const r = compileCore(`include "stdlib/z"`);
+  const s = r.systems.get("Stdlib.Z")!;
+  assert(s.computeRules !== undefined, "should have compute rules");
+  assert(s.computeRules!.length > 0, "should have some compute rules");
+});
+
+// ─── Stream (coinductive) module ──────────────────────────────────
+
+Deno.test("stdlib/stream: compiles without errors", () => {
+  const r = compileCore(`include "stdlib/stream"`);
+  assertEquals(r.errors.length, 0, `stdlib/stream errors: ${r.errors}`);
+});
+
+Deno.test("stdlib/stream: has Stream codata agents", () => {
+  const r = compileCore(`include "stdlib/stream"`);
+  const s = r.systems.get("Stdlib.Stream")!;
+  const agents = [...s.agents.keys()];
+  assert(agents.includes("guard_stream"), "missing guard_stream");
+  assert(agents.includes("head"), "missing head");
+  assert(agents.includes("tail"), "missing tail");
+});
+
+Deno.test("stdlib/stream: repeat theorem proved", () => {
+  const r = compileCore(`include "stdlib/stream"`);
+  const s = r.systems.get("Stdlib.Stream")!;
+  const proved = [...(s.provedCtx?.keys() ?? [])];
+  assert(proved.includes("repeat"), "repeat not proved");
+  assert(proved.includes("head_repeat"), "head_repeat not proved");
 });

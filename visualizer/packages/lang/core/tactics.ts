@@ -9,7 +9,7 @@ import { evalAgent } from "./eval-system.ts";
 import type { ComputeRule, ProvedContext, StrategyContext } from "./typecheck-prove.ts";
 import {
   withNormTable, normalize, computeGoalType,
-  makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch,
+  makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch, primEauto,
 } from "./typecheck-prove.ts";
 import {
   readTermFromGraph, writeTermToGraph, collectTermTree,
@@ -25,7 +25,7 @@ import type { Node, Graph, AgentPortDefs, MetaHandler, InteractionRule } from "@
 import { link, removeFromArrayIf, getRedexes } from "@deltanets/core";
 
 /** Built-in tactic keyword names. */
-export const BUILTIN_TACTIC_NAMES = new Set(["assumption", "simp", "decide", "omega", "auto"]);
+export const BUILTIN_TACTIC_NAMES = new Set(["assumption", "simp", "decide", "omega", "auto", "eauto"]);
 
 /** Tactic combinator keywords (Phase 34). */
 export const TACTIC_COMBINATORS = new Set(["try", "first", "repeat", "then", "seq", "all"]);
@@ -56,6 +56,8 @@ function isRecursiveStrategy(
       return isRecursiveStrategy(expr.inner, strategies, visited);
     case "search":
       return false;
+    case "eauto":
+      return true; // eauto requires TS interpreter (hint-DB backtracking)
   }
 }
 
@@ -150,6 +152,9 @@ function runStrategyTS(
     }
     case "search": {
       return primSearch(sctx, expr.depth);
+    }
+    case "eauto": {
+      return primEauto(sctx, expr.depth);
     }
   }
 }

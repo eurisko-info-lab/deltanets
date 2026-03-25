@@ -62,5 +62,6 @@ system "Prelude" {
   strategy decide      = ground
   strategy omega       = first(conv, cong(Succ, omega), rewrite, cong(Succ, rewrite))
   strategy auto        = search(3)
+  strategy eauto       = eauto(5)
 }
 `;

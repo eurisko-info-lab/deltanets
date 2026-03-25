@@ -58,6 +58,9 @@ export const TT = {
   WHERE: "WHERE",
   MODULE: "MODULE",
   ALIAS: "ALIAS",
+  OPAQUE: "OPAQUE",
+  TRANSPARENT: "TRANSPARENT",
+  ARGUMENTS: "ARGUMENTS",
   // Operators
   INTERACT: "INTERACT", // <>
   ARROW: "ARROW", // ->
@@ -153,6 +156,9 @@ const KEYWORDS: Record<string, TokenKind> = {
   where: TT.WHERE,
   module: TT.MODULE,
   alias: TT.ALIAS,
+  opaque: TT.OPAQUE,
+  transparent: TT.TRANSPARENT,
+  arguments: TT.ARGUMENTS,
 };
 
 export class LexError extends Error {

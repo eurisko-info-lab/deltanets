@@ -67,13 +67,28 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl | AliasDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl | AliasDecl | OpaqueDecl | ArgumentsDecl;
 
 // alias e = Zero — agent name alias (used to satisfy module type signatures)
 export type AliasDecl = {
   kind: "alias";
   name: string; // new name
   target: string; // existing agent name
+};
+
+// opaque name — prevent normalizer from unfolding compute rules for name
+// transparent name — re-enable unfolding (undo a previous opaque)
+export type OpaqueDecl = {
+  kind: "opaque";
+  name: string;
+  transparent?: boolean; // true for 'transparent name'
+};
+
+// arguments name (explicit, {implicit}, ...) — override implicit/explicit status of params
+export type ArgumentsDecl = {
+  kind: "arguments";
+  name: string;
+  params: { name: string; implicit: boolean }[];
 };
 
 // open "SystemName" — import all agents/rules from another system
@@ -475,7 +490,8 @@ export type StrategyExpr =
   | { kind: "ident"; name: string }              // primitive or strategy reference
   | { kind: "first"; alts: StrategyExpr[] }       // try alternatives
   | { kind: "cong"; ctor?: string; inner: StrategyExpr } // congruence decomposition
-  | { kind: "search"; depth: number };             // depth-bounded proof search
+  | { kind: "search"; depth: number }             // depth-bounded proof search
+  | { kind: "eauto"; depth: number };             // hint-DB-aware backtracking search
 
 // graph name = term <lambda-expr>
 // graph name { let..., wire... }
