@@ -1696,7 +1696,7 @@ export function typecheckProve(
     : prove.measure
     ? checkMeasureTermination(prove, prove.measure)
     : isCodata
-    ? checkProductivity(prove, returnTypeName)
+    ? checkProductivity(prove, returnTypeName, constructorTyping)
     : checkTermination(prove);
   if (!prove.returnType) return [...exhaustErrors, ...termErrors];
 
