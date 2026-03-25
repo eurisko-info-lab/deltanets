@@ -61,6 +61,12 @@ export {
 export type {
   ProofGoal, GoalBinding, TacticResult, ProofSession,
 } from "./interactive-proof.ts";
+export {
+  enableVM, disableVM, isVMEnabled,
+  vmNormalize, vmConvertible, vmCheckConvertible,
+  getVMStats, resetVMStats, clearVMCache,
+  compileExpr, exprHash, withVMContext, precompile,
+} from "./vm-normalize.ts";
 export type * from "./types.ts";
 
 export function compile(

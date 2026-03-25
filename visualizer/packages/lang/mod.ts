@@ -25,6 +25,12 @@ export {
   compileTactic, resolveAllTactics, runStrategy,
   BUILTIN_TACTIC_NAMES,
 } from "./core/tactics.ts";
+export {
+  enableVM, disableVM, isVMEnabled,
+  vmNormalize, vmConvertible, vmCheckConvertible,
+  getVMStats, resetVMStats, clearVMCache,
+  compileExpr, exprHash, withVMContext, precompile,
+} from "./core/vm-normalize.ts";
 export * as core from "./core/index.ts";
 export * as view from "./view/index.ts";
 export type {

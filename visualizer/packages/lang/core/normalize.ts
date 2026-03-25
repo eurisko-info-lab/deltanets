@@ -5,6 +5,7 @@
 
 import type * as AST from "./types.ts";
 import type { CanonicalDef } from "./evaluator.ts";
+import { isVMEnabled, vmNormalize, setVMContext, resetVMContext } from "./vm-normalize.ts";
 
 // ─── Record metadata (for eta-reduction of primitive projections) ──
 
@@ -423,11 +424,24 @@ export function withNormTable<T>(rules: ComputeRule[], fn: () => T, canonicals?:
   activeNormTable = rules.length > 0 ? buildNormTable(rules) : BUILTIN_NORM_RULES;
   activeCanonicals = canonicals ?? [];
   activeRecordDefs = recordDefs ?? prevRecordDefs;
+  if (isVMEnabled()) setVMContext(rules, activeRecordDefs);
   try { return fn(); }
-  finally { activeNormTable = prev; activeCanonicals = prevCanonicals; activeRecordDefs = prevRecordDefs; }
+  finally {
+    activeNormTable = prev;
+    activeCanonicals = prevCanonicals;
+    activeRecordDefs = prevRecordDefs;
+    if (isVMEnabled()) {
+      if (prev === BUILTIN_NORM_RULES) resetVMContext();
+      // Rebuild VM context from restored state if non-builtin
+      // (the previous withNormTable's rules are opaque, so we just reset)
+    }
+  }
 }
 
 export function normalize(expr: AST.ProveExpr): AST.ProveExpr {
+  // Delegate to VM when enabled (bytecode + memoization)
+  if (isVMEnabled()) return vmNormalize(expr);
+
   // Universe / sort normalization
   if (expr.kind === "ident") {
     if (expr.name === "Type") return app("Type", ident("0"));
