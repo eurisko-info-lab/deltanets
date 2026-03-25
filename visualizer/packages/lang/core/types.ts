@@ -67,7 +67,7 @@ export type ComposeDecl = {
 };
 
 // Items allowed inside a system body
-export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl | AliasDecl | OpaqueDecl | ArgumentsDecl;
+export type SystemBody = AgentDecl | RuleDecl | ModeDecl | ProveDecl | DataDecl | RecordDecl | CodataDecl | ComputeDecl | OpenDecl | ExportDecl | TacticDecl | StrategyDecl | MutualDecl | SectionDecl | NotationDecl | CoercionDecl | SetoidDecl | RingDecl | FieldDecl | ClassDecl | InstanceDecl | HintDecl | CanonicalDecl | ProgramDecl | AliasDecl | OpaqueDecl | ArgumentsDecl | ScopeDecl;
 
 // alias e = Zero — agent name alias (used to satisfy module type signatures)
 export type AliasDecl = {
@@ -159,6 +159,27 @@ export type RingDecl = {
   one?: string;   // multiplicative identity (e.g., "One")
   add: string;    // addition operation name (e.g., "add")
   mul: string;    // multiplication operation name (e.g., "mul")
+};
+
+// field T { zero = Z, one = O, add = f, mul = g, neg = h, inv = i }
+// Registers a field structure on type T (extends ring with neg + inv).
+export type FieldDecl = {
+  kind: "field";
+  type: string;   // domain type name (e.g., "Q")
+  zero: string;   // additive identity
+  one: string;    // multiplicative identity
+  add: string;    // addition operation
+  mul: string;    // multiplication operation
+  neg: string;    // additive inverse
+  inv: string;    // multiplicative inverse
+};
+
+// scope "name" { ... }
+// Scoped notation block: notations declared inside are only active within the scope.
+export type ScopeDecl = {
+  kind: "scope";
+  name: string;
+  body: SystemBody[];
 };
 
 // class Show(A) { show : A -> String }

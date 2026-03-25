@@ -521,6 +521,7 @@ type ProveCtx = {
   instances?: import("./evaluator.ts").InstanceDef[]; // typeclass instances
   canonicals?: import("./evaluator.ts").CanonicalDef[]; // canonical structures
   dataSorts?: Map<string, "Prop" | "Set" | "SProp">; // type name → declared sort
+  fields?: Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>; // registered field structures
 };
 
 type TypeResult =
@@ -1480,6 +1481,159 @@ export function primEauto(sctx: StrategyContext, depth: number): AST.ProveExpr |
   return eautoSearch(sctx.goal, sctx._ctx, depth);
 }
 
+/** omega: linear arithmetic decision procedure over Nat.
+ *  Normalizes both sides of an Eq(lhs, rhs) to linear form
+ *  c0 + c1*x1 + c2*x2 + ... where ci : Nat and xi are variables,
+ *  then checks structural equality of the linear forms. */
+export function primOmega(sctx: StrategyContext): AST.ProveExpr | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (!goalEq) return null;
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+  const lhsLin = natToLinear(lhs);
+  const rhsLin = natToLinear(rhs);
+  if (!lhsLin || !rhsLin) return null;
+  if (linearEqual(lhsLin, rhsLin)) return ident("refl");
+  return null;
+}
+
+/** Represent a linear expression over Nat: constant + sum of variable terms.
+ *  Map from variable-key → coefficient. Empty string key = constant. */
+type LinearNat = Map<string, number>;
+
+function natToLinear(expr: AST.ProveExpr): LinearNat | null {
+  // Zero → constant 0
+  if (expr.kind === "ident" && expr.name === "Zero") {
+    return new Map();
+  }
+  // Succ(e) → 1 + linearize(e)
+  if (expr.kind === "call" && expr.name === "Succ" && expr.args.length === 1) {
+    const inner = natToLinear(normalize(expr.args[0]));
+    if (!inner) return null;
+    inner.set("", (inner.get("") ?? 0) + 1);
+    return inner;
+  }
+  // add(a, b) → linearize(a) + linearize(b), but ONLY when the first arg
+  // is a constructor (Zero/Succ) so compute rules would actually reduce it.
+  // add(variable, b) is opaque since it can't be definitionally reduced.
+  if (expr.kind === "call" && expr.name === "add" && expr.args.length === 2) {
+    const first = normalize(expr.args[0]);
+    const isConstructor = (first.kind === "ident" && first.name === "Zero") ||
+      (first.kind === "call" && first.name === "Succ");
+    if (isConstructor) {
+      const a = natToLinear(first);
+      const b = natToLinear(normalize(expr.args[1]));
+      if (!a || !b) return null;
+      const result = new Map(a);
+      for (const [k, v] of b) result.set(k, (result.get(k) ?? 0) + v);
+      return result;
+    }
+    // First arg is not a constructor — treat whole expression as opaque
+    const key = exprToString(expr);
+    return new Map([[key, 1]]);
+  }
+  // Variable — treat as 1 * x
+  if (expr.kind === "ident") {
+    return new Map([[expr.name, 1]]);
+  }
+  // Unknown term — treat as atomic variable
+  const key = exprToString(expr);
+  return new Map([[key, 1]]);
+}
+
+function linearEqual(a: LinearNat, b: LinearNat): boolean {
+  // Normalize: remove zero-coefficient entries
+  for (const [k, v] of a) { if (v === 0) a.delete(k); }
+  for (const [k, v] of b) { if (v === 0) b.delete(k); }
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) {
+    if (b.get(k) !== v) return false;
+  }
+  return true;
+}
+
+/** field: decision procedure for field equations.
+ *  Normalizes both sides of Eq(lhs, rhs) into rational function form
+ *  (polynomial numerator / polynomial denominator), cross-multiplies,
+ *  and checks polynomial equality. */
+export function primField(sctx: StrategyContext): AST.ProveExpr | null {
+  const goalEq = extractEq(normalize(sctx.goal));
+  if (!goalEq) return null;
+  const lhs = normalize(goalEq.left);
+  const rhs = normalize(goalEq.right);
+  // Check all registered field structures
+  const ctx = sctx._ctx;
+  if (!ctx.fields || ctx.fields.size === 0) return null;
+  for (const field of ctx.fields.values()) {
+    if (fieldCongruent(lhs, rhs, field)) return ident("refl");
+  }
+  return null;
+}
+
+type FieldInfo = { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string };
+
+/** Rational function: numerator polynomial / denominator polynomial. */
+type RationalFunc = { num: Map<string, number>; den: Map<string, number> };
+
+function exprToRational(expr: AST.ProveExpr, field: FieldInfo): RationalFunc {
+  const one: Map<string, number> = new Map([["", 1]]);
+  // Zero
+  if (expr.kind === "ident" && expr.name === field.zero) {
+    return { num: new Map(), den: one };
+  }
+  // One
+  if (expr.kind === "ident" && expr.name === field.one) {
+    return { num: new Map([["", 1]]), den: one };
+  }
+  // add(a, b) → a/1 + b/1 = (a*d2 + b*d1) / (d1*d2)
+  if (expr.kind === "call" && expr.name === field.add && expr.args.length === 2) {
+    const a = exprToRational(expr.args[0], field);
+    const b = exprToRational(expr.args[1], field);
+    return {
+      num: addPolynomials(mulPolynomials(a.num, b.den), mulPolynomials(b.num, a.den)),
+      den: mulPolynomials(a.den, b.den),
+    };
+  }
+  // mul(a, b) → (n1*n2) / (d1*d2)
+  if (expr.kind === "call" && expr.name === field.mul && expr.args.length === 2) {
+    const a = exprToRational(expr.args[0], field);
+    const b = exprToRational(expr.args[1], field);
+    return { num: mulPolynomials(a.num, b.num), den: mulPolynomials(a.den, b.den) };
+  }
+  // neg(a) → -n/d
+  if (expr.kind === "call" && expr.name === field.neg && expr.args.length === 1) {
+    const a = exprToRational(expr.args[0], field);
+    const negNum = new Map<string, number>();
+    for (const [k, v] of a.num) negNum.set(k, -v);
+    return { num: negNum, den: a.den };
+  }
+  // inv(a) → d/n (flip)
+  if (expr.kind === "call" && expr.name === field.inv && expr.args.length === 1) {
+    const a = exprToRational(expr.args[0], field);
+    return { num: a.den, den: a.num };
+  }
+  // Atom → x/1
+  const atomKey = exprToString(expr);
+  return { num: new Map([[atomKey, 1]]), den: one };
+}
+
+/** Two field expressions are equal iff n1*d2 = n2*d1 as polynomials. */
+function fieldCongruent(a: AST.ProveExpr, b: AST.ProveExpr, field: FieldInfo): boolean {
+  const ra = exprToRational(a, field);
+  const rb = exprToRational(b, field);
+  // Cross multiply: a.num * b.den == b.num * a.den
+  const lhs = mulPolynomials(ra.num, rb.den);
+  const rhs = mulPolynomials(rb.num, ra.den);
+  if (polynomialEqual(lhs, rhs)) return true;
+  // Congruence fallback for non-field-op wrappers
+  if (a.kind === "call" && b.kind === "call" && a.name === b.name &&
+      a.name !== field.add && a.name !== field.mul && a.name !== field.neg && a.name !== field.inv &&
+      a.args.length === b.args.length) {
+    return a.args.every((ai, i) => fieldCongruent(normalize(ai), normalize(b.args[i]), field));
+  }
+  return false;
+}
+
 function eautoSearch(
   goal: AST.ProveExpr,
   ctx: ProveCtx,
@@ -1735,6 +1889,7 @@ export function typecheckProve(
   dataSorts?: Map<string, "Prop" | "Set" | "SProp">,
   canonicals?: import("./evaluator.ts").CanonicalDef[],
   recordDefs?: Map<string, import("./normalize.ts").RecordDef>,
+  fields?: Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>,
 ): string[] {
   return withNormTable(computeRules ?? [], () => {
   const ctorTyping = constructorTyping ?? new Map();
@@ -1766,6 +1921,7 @@ export function typecheckProve(
     if (setoids) ctx = { ...ctx, setoids };
     if (hints) ctx = { ...ctx, hints };
     if (instances) ctx = { ...ctx, instances };
+    if (fields) ctx = { ...ctx, fields };
     const prefix = `prove ${prove.name}, case ${caseArm.pattern}`;
     const rawBody = caseArm.body;
     const reqEq = extractEq(requiredType);
@@ -1805,6 +1961,22 @@ export function typecheckProve(
         if (matched) continue;
       }
       errors.push(`${prefix}: ring failed — sides are not equal as polynomials\n  goal: ${exprToString(requiredType)}`);
+      continue;
+    }
+
+    // Handle field — goal proved by field normalization (rational function equality)
+    if ((rawBody.kind === "ident" && rawBody.name === "field") ||
+        (rawBody.kind === "call" && rawBody.name === "field" && rawBody.args.length === 0)) {
+      if (reqEq && fields && fields.size > 0) {
+        const lhs = normalize(reqEq.left);
+        const rhs = normalize(reqEq.right);
+        let matched = false;
+        for (const fld of fields.values()) {
+          if (fieldCongruent(lhs, rhs, fld)) { matched = true; break; }
+        }
+        if (matched) continue;
+      }
+      errors.push(`${prefix}: field failed — sides are not equal as rational functions\n  goal: ${exprToString(requiredType)}`);
       continue;
     }
 

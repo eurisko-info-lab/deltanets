@@ -159,6 +159,7 @@ const KEYWORDS: Record<string, TokenKind> = {
   opaque: TT.OPAQUE,
   transparent: TT.TRANSPARENT,
   arguments: TT.ARGUMENTS,
+  // field and scope are contextual (parsed as IDENT, checked by value)
 };
 
 export class LexError extends Error {

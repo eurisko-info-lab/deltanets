@@ -16,7 +16,7 @@ import {
 } from "./eval-system.ts";
 import { evalGraph } from "./eval-graph.ts";
 import { PRELUDE_SOURCE } from "./prelude.ts";
-import { STDLIB_SOURCE, STDLIB_NAT, STDLIB_BOOL, STDLIB_EQ, STDLIB_OPTION, STDLIB_LIST, STDLIB_SIGMA, STDLIB_Z, STDLIB_STREAM } from "./stdlib.ts";
+import { STDLIB_SOURCE, STDLIB_NAT, STDLIB_BOOL, STDLIB_EQ, STDLIB_OPTION, STDLIB_LIST, STDLIB_SIGMA, STDLIB_Z, STDLIB_STREAM, STDLIB_Q } from "./stdlib.ts";
 import { tokenize } from "./lexer.ts";
 import { parse } from "./parser.ts";
 
@@ -52,6 +52,7 @@ export type SystemDef = {
   tactics?: Map<string, TacticDef>; // user-defined tactics
   setoids?: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; // registered setoid relations
   rings?: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; // registered ring structures
+  fields?: Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>; // registered field structures
   classes?: Map<string, ClassDef>; // typeclass declarations
   instances?: InstanceDef[]; // typeclass instances
   hints?: Map<string, Set<string>>; // hint databases: db name → lemma names
@@ -154,6 +155,7 @@ function builtinResolver(path: string): string | null {
   if (path === "stdlib/sigma") return `include "prelude"\n${STDLIB_SIGMA}`;
   if (path === "stdlib/z") return `include "prelude"\n${STDLIB_Z}`;
   if (path === "stdlib/stream") return `include "prelude"\n${STDLIB_STREAM}`;
+  if (path === "stdlib/q") return `include "prelude"\n${STDLIB_Q}`;
   return null;
 }
 

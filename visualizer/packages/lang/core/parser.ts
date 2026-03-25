@@ -240,6 +240,9 @@ class Parser {
       case TT.MODULE:
         return this.parseModuleDecl();
       default:
+        // Contextual keywords (not reserved — can also be identifiers)
+        if (tok.type === TT.IDENT && tok.value === "field") return this.parseFieldDecl();
+        if (tok.type === TT.IDENT && tok.value === "scope") return this.parseScopeDecl();
         throw new ParseError(
           `Unexpected '${tok.value || tok.type}'`,
           tok.line,
@@ -420,6 +423,8 @@ class Parser {
       else if (tok.type === TT.OPAQUE) body.push(this.parseOpaqueDecl());
       else if (tok.type === TT.TRANSPARENT) body.push(this.parseTransparentDecl());
       else if (tok.type === TT.ARGUMENTS) body.push(this.parseArgumentsDecl());
+      else if (tok.type === TT.IDENT && tok.value === "field") body.push(this.parseFieldDecl());
+      else if (tok.type === TT.IDENT && tok.value === "scope") body.push(this.parseScopeDecl());
       else if (tok.type === TT.AT) {
         // @[simp] prove/theorem/lemma ... — attribute syntax, auto-generates hint entries
         const attrs = this.parseAttributes();
@@ -439,7 +444,7 @@ class Parser {
         }
       }
       else {throw new ParseError(
-          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/class/instance/hint/canonical/program/alias/opaque/transparent/arguments, got '${tok.value}'`,
+          `Expected agent/rule/mode/prove/theorem/lemma/data/record/codata/compute/open/export/tactic/mutual/section/notation/coercion/setoid/ring/field/class/instance/hint/canonical/program/alias/opaque/transparent/arguments/scope, got '${tok.value}'`,
           tok.line,
           tok.col,
         );}
@@ -1655,6 +1660,8 @@ class Parser {
       else if (tok.type === TT.COERCION) body.push(this.parseCoercionDecl());
       else if (tok.type === TT.SETOID) body.push(this.parseSetoidDecl());
       else if (tok.type === TT.RING) body.push(this.parseRingDecl());
+      else if (tok.type === TT.IDENT && tok.value === "field") body.push(this.parseFieldDecl());
+      else if (tok.type === TT.IDENT && tok.value === "scope") body.push(this.parseScopeDecl());
       else if (tok.type === TT.CLASS) body.push(this.parseClassDecl());
       else if (tok.type === TT.INSTANCE) body.push(this.parseInstanceDecl());
       else if (tok.type === TT.HINT) body.push(this.parseHintDecl());
@@ -1807,6 +1814,59 @@ class Parser {
       throw new ParseError("ring must declare zero, add, and mul", this.prev().line, this.prev().col);
     }
     return { kind: "ring", type, zero, add, mul, ...(one ? { one } : {}) };
+  }
+
+  // ─── Field ───────────────────────────────────────────────────────
+  // field T { zero = Z, one = O, add = f, mul = g, neg = h, inv = i }
+
+  parseFieldDecl(): AST.FieldDecl {
+    this.eatIdentValue("field");
+    const type = this.eatIdent();
+    this.eat(TT.LBRACE);
+    let zero: string | null = null;
+    let one: string | null = null;
+    let add: string | null = null;
+    let mul: string | null = null;
+    let neg: string | null = null;
+    let inv: string | null = null;
+    while (!this.check(TT.RBRACE) && !this.check(TT.EOF)) {
+      const key = this.eatIdent();
+      this.eat(TT.EQ);
+      const val = this.eatIdent();
+      if (key === "zero") zero = val;
+      else if (key === "one") one = val;
+      else if (key === "add") add = val;
+      else if (key === "mul") mul = val;
+      else if (key === "neg") neg = val;
+      else if (key === "inv") inv = val;
+      else throw new ParseError(`Unknown field field '${key}', expected zero/one/add/mul/neg/inv`, this.prev().line, this.prev().col);
+      if (this.check(TT.COMMA)) this.advance();
+    }
+    this.eat(TT.RBRACE);
+    if (!zero || !one || !add || !mul || !neg || !inv) {
+      throw new ParseError("field must declare zero, one, add, mul, neg, and inv", this.prev().line, this.prev().col);
+    }
+    return { kind: "field", type, zero, one, add, mul, neg, inv };
+  }
+
+  // ─── Scope (notation scoping) ────────────────────────────────────
+  // scope "name" { ... }
+
+  parseScopeDecl(): AST.ScopeDecl {
+    this.eatIdentValue("scope");
+    const name = this.eat(TT.STRING).value;
+    // Save parser notation state
+    const savedNotations = new Map(this.notations);
+    const savedPrefixMixfix = new Map(this.prefixMixfix);
+    const savedInfixMixfix = new Map(this.infixMixfix);
+    const savedMixfixKeywords = new Set(this.mixfixKeywords);
+    const body = this.parseSystemBody();
+    // Restore parser notation state — scope notations don't leak
+    this.notations = savedNotations;
+    this.prefixMixfix = savedPrefixMixfix;
+    this.infixMixfix = savedInfixMixfix;
+    this.mixfixKeywords = savedMixfixKeywords;
+    return { kind: "scope", name, body };
   }
 
   // ─── Class (typeclass declaration) ───────────────────────────────

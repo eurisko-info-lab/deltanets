@@ -9,7 +9,7 @@ import { evalAgent } from "./eval-system.ts";
 import type { ComputeRule, ProvedContext, StrategyContext } from "./typecheck-prove.ts";
 import {
   withNormTable, normalize, computeGoalType,
-  makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch, primEauto,
+  makeStrategyContext, primConv, primCtxSearch, primRewrite, primGround, primCong, primSearch, primEauto, primOmega, primField,
 } from "./typecheck-prove.ts";
 import {
   readTermFromGraph, writeTermToGraph, collectTermTree,
@@ -25,7 +25,7 @@ import type { Node, Graph, AgentPortDefs, MetaHandler, InteractionRule } from "@
 import { link, removeFromArrayIf, getRedexes } from "@deltanets/core";
 
 /** Built-in tactic keyword names. */
-export const BUILTIN_TACTIC_NAMES = new Set(["assumption", "simp", "decide", "omega", "auto", "eauto"]);
+export const BUILTIN_TACTIC_NAMES = new Set(["assumption", "simp", "decide", "omega", "auto", "eauto", "field"]);
 
 /** Tactic combinator keywords (Phase 34). */
 export const TACTIC_COMBINATORS = new Set(["try", "first", "repeat", "then", "seq", "all"]);
@@ -33,7 +33,7 @@ export const TACTIC_COMBINATORS = new Set(["try", "first", "repeat", "then", "se
 // ─── Strategy interpreter (Phase 38) ──────────────────────────────
 // Evaluates strategy expressions by composing proof primitives.
 
-const STRATEGY_PRIMITIVES = new Set(["conv", "ctx_search", "rewrite", "ground"]);
+const STRATEGY_PRIMITIVES = new Set(["conv", "ctx_search", "rewrite", "ground", "omega_solve", "field_solve"]);
 
 /** Check if a strategy expression is recursive (references itself via the strategies map). */
 function isRecursiveStrategy(
@@ -128,6 +128,8 @@ function runStrategyTS(
         case "ctx_search": return primCtxSearch(sctx);
         case "rewrite": return primRewrite(sctx);
         case "ground": return primGround(sctx);
+        case "omega_solve": return primOmega(sctx);
+        case "field_solve": return primField(sctx);
         default: {
           const ref = strategies.get(expr.name);
           if (ref) return runStrategyTS(ref, sctx, strategies, depth - 1);

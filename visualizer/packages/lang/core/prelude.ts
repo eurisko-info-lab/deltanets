@@ -60,7 +60,8 @@ system "Prelude" {
   strategy assumption = ctx_search
   strategy simp        = first(conv, ctx_search, rewrite)
   strategy decide      = ground
-  strategy omega       = first(conv, cong(Succ, omega), rewrite, cong(Succ, rewrite))
+  strategy omega       = first(omega_solve, conv, cong(Succ, omega), rewrite, cong(Succ, rewrite))
+  strategy field       = field_solve
   strategy auto        = search(3)
   strategy eauto       = eauto(5)
 }

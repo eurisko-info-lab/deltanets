@@ -19,9 +19,9 @@ export function evalSystem(decl: AST.SystemDecl, systems?: Map<string, SystemDef
   const rules: RuleDef[] = [];
   const modes = new Map<string, ModeDef>();
 
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, fields, classes, instances, hints, canonicals, dataSorts } = evalBodyInto(decl.body, agents, rules, modes, undefined, undefined, undefined, undefined, systems);
 
-  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined };
+  const sys: SystemDef = { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, fields: fields.size > 0 ? fields : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined };
   return { sys, proofTrees };
 }
 
@@ -97,7 +97,8 @@ export function evalBodyInto(
   inheritedHints?: Map<string, Set<string>>,
   inheritedCanonicals?: CanonicalDef[],
   inheritedStrategies?: Map<string, AST.StrategyExpr>,
-): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; strategies: Map<string, AST.StrategyExpr>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set" | "SProp">; recordDefs: Map<string, import("./normalize.ts").RecordDef> } {
+  inheritedFields?: Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>,
+): { proofTrees: ProofTree[]; provedCtx: ProvedContext; constructorsByType: Map<string, Set<string>>; computeRules: ComputeRule[]; constructorTyping: ConstructorTyping; exports?: Set<string>; tactics: Map<string, TacticDef>; strategies: Map<string, AST.StrategyExpr>; setoids: Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>; rings: Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>; classes: Map<string, ClassDef>; instances: InstanceDef[]; hints: Map<string, Set<string>>; canonicals: CanonicalDef[]; dataSorts: Map<string, "Prop" | "Set" | "SProp">; recordDefs: Map<string, import("./normalize.ts").RecordDef>; fields: Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }> } {
   const body = expandSections(rawBody);
   const provedCtx: ProvedContext = new Map(initialCtx);
   const proofTrees: ProofTree[] = [];
@@ -107,6 +108,7 @@ export function evalBodyInto(
   const coercions = new Map<string, Map<string, string>>(); // from → to → func
   const setoids = new Map<string, { name: string; type: string; refl: string; sym: string; trans: string }>(inheritedSetoids); // relation name → setoid def
   const rings = new Map<string, { type: string; zero: string; one?: string; add: string; mul: string }>(inheritedRings); // type name → ring def
+  const fields = new Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>(inheritedFields); // type name → field def
   const classes = new Map<string, ClassDef>(inheritedClasses); // class name → class def
   const instances: InstanceDef[] = [...(inheritedInstances ?? [])]; // typeclass instances
   const canonicals: CanonicalDef[] = [...(inheritedCanonicals ?? [])]; // canonical structures
@@ -330,7 +332,7 @@ export function evalBodyInto(
       }
     }
     const linearityErrors = checkProveLinearity(prove, agents, modes);
-    const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals, recordDefs);
+    const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals, recordDefs, fields);
     const allErrors = [...linearityErrors, ...typeErrors];
     if (allErrors.length > 0) {
       throw new EvalError(allErrors.join("\n"));
@@ -423,6 +425,37 @@ export function evalBodyInto(
       case "ring": {
         // Register commutative semiring structure
         rings.set(item.type, { type: item.type, zero: item.zero, one: item.one, add: item.add, mul: item.mul });
+        break;
+      }
+      case "field": {
+        // Register field structure (extends ring with neg + inv)
+        fields.set(item.type, { type: item.type, zero: item.zero, one: item.one, add: item.add, mul: item.mul, neg: item.neg, inv: item.inv });
+        // Also register as a ring (a field is a ring)
+        rings.set(item.type, { type: item.type, zero: item.zero, one: item.one, add: item.add, mul: item.mul });
+        break;
+      }
+      case "scope": {
+        // Flatten scope body into parent — notation scoping is handled by the parser
+        const inner = evalBodyInto(item.body, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, systems, setoids, rings, classes, instances, hints, canonicals, strategies, fields);
+        for (const [k, v] of inner.provedCtx) provedCtx.set(k, v);
+        proofTrees.push(...inner.proofTrees);
+        for (const [k, v] of inner.constructorsByType) constructorsByType.set(k, v);
+        for (const [k, v] of inner.constructorTyping) constructorTyping.set(k, v);
+        computeRules.push(...inner.computeRules.filter(r => !computeRules.includes(r)));
+        for (const [k, v] of inner.tactics) tactics.set(k, v);
+        for (const [k, v] of inner.strategies) strategies.set(k, v);
+        for (const [k, v] of inner.setoids) setoids.set(k, v);
+        for (const [k, v] of inner.rings) rings.set(k, v);
+        for (const [k, v] of inner.fields) fields.set(k, v);
+        for (const [k, v] of inner.classes) classes.set(k, v);
+        instances.push(...inner.instances.filter(i => !instances.includes(i)));
+        for (const [k, v] of inner.hints) {
+          if (!hints.has(k)) hints.set(k, new Set());
+          for (const l of v) hints.get(k)!.add(l);
+        }
+        canonicals.push(...inner.canonicals.filter(c => !canonicals.includes(c)));
+        for (const [k, v] of inner.dataSorts) dataSorts.set(k, v);
+        for (const [k, v] of inner.recordDefs) recordDefs.set(k, v);
         break;
       }
       case "class": {
@@ -637,7 +670,7 @@ export function evalBodyInto(
             }
           }
           const linearityErrors = checkProveLinearity(prove, agents, modes);
-          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals, recordDefs);
+          const typeErrors = typecheckProve(prove, provedCtx, constructorsByType, computeRules, constructorTyping, codataTypes, coercions, setoids, rings, hints, instances, dataSorts, canonicals, recordDefs, fields);
           const termErrors = checkMutualTermination(prove, mutualNames);
           const allErrors = [...linearityErrors, ...typeErrors, ...termErrors];
           if (allErrors.length > 0) {
@@ -655,7 +688,7 @@ export function evalBodyInto(
   const exports = exportNames.length > 0
     ? new Set(exportNames.flatMap(e => e.names))
     : undefined;
-  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts, recordDefs };
+  return { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, fields, classes, instances, hints, canonicals, dataSorts, recordDefs };
 }
 
 // ─── Extend: system "B" extends "A" with additional declarations ──
@@ -673,9 +706,9 @@ export function evalExtend(
   const modes = new Map(base.modes);
 
   // Merge new declarations — inherit base system's proved propositions and constructors
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts, recordDefs } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings, base.classes, base.instances, base.hints, base.canonicals, base.strategies);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, fields, classes, instances, hints, canonicals, dataSorts, recordDefs } = evalBodyInto(decl.body, agents, rules, modes, base.provedCtx, base.constructorsByType, base.computeRules, base.constructorTyping, systems, base.setoids, base.rings, base.classes, base.instances, base.hints, base.canonicals, base.strategies, base.fields);
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined, recordDefs: recordDefs.size > 0 ? recordDefs : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, fields: fields.size > 0 ? fields : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined, recordDefs: recordDefs.size > 0 ? recordDefs : undefined }, proofTrees };
 }
 
 // ─── Compose (pushout): union of component systems + cross-rules ──
@@ -699,6 +732,7 @@ export function evalCompose(
   const mergedCanonicals: CanonicalDef[] = [];
   const mergedStrategies = new Map<string, AST.StrategyExpr>();
   const mergedRecordDefs = new Map<string, import("./normalize.ts").RecordDef>();
+  const mergedFields = new Map<string, { type: string; zero: string; one: string; add: string; mul: string; neg: string; inv: string }>();
 
   // Union: merge all agents, rules, modes, proved context from each component
   for (const compName of decl.components) {
@@ -788,16 +822,21 @@ export function evalCompose(
     if (comp.recordDefs) {
       for (const [name, def] of comp.recordDefs) mergedRecordDefs.set(name, def);
     }
+
+    // Fields: merge
+    if (comp.fields) {
+      for (const [name, f] of comp.fields) mergedFields.set(name, f);
+    }
   }
 
   // Add cross-interaction rules from the compose body (the pushout span)
-  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, classes, instances, hints, canonicals, dataSorts, recordDefs } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings, mergedClasses, mergedInstances, mergedHints, mergedCanonicals, mergedStrategies);
+  const { proofTrees, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics, strategies, setoids, rings, fields, classes, instances, hints, canonicals, dataSorts, recordDefs } = evalBodyInto(decl.body, agents, rules, modes, mergedCtx, mergedConstructors, mergedCompute, mergedCtorTyping, systems, mergedSetoids, mergedRings, mergedClasses, mergedInstances, mergedHints, mergedCanonicals, mergedStrategies, mergedFields);
   // Merge component recordDefs into body recordDefs
   for (const [name, def] of mergedRecordDefs) {
     if (!recordDefs.has(name)) recordDefs.set(name, def);
   }
 
-  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined, recordDefs: recordDefs.size > 0 ? recordDefs : undefined }, proofTrees };
+  return { sys: { name: decl.name, agents, rules, modes, provedCtx, constructorsByType, computeRules, constructorTyping, exports, tactics: tactics.size > 0 ? tactics : undefined, strategies: strategies.size > 0 ? strategies : undefined, setoids: setoids.size > 0 ? setoids : undefined, rings: rings.size > 0 ? rings : undefined, fields: fields.size > 0 ? fields : undefined, classes: classes.size > 0 ? classes : undefined, instances: instances.length > 0 ? instances : undefined, hints: hints.size > 0 ? hints : undefined, canonicals: canonicals.length > 0 ? canonicals : undefined, dataSorts: dataSorts.size > 0 ? dataSorts : undefined, recordDefs: recordDefs.size > 0 ? recordDefs : undefined }, proofTrees };
 }
 
 // Re-export evalAgent from desugar.ts for backward compatibility.

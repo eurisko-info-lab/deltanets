@@ -250,6 +250,36 @@ system "Stdlib.Stream" extend "Prelude" {
 }
 `;
 
+// ─── Q (rationals) ────────────────────────────────────────────────
+
+export const STDLIB_Q = `\
+system "Stdlib.Q" extend "Prelude" {
+  data Nat { | Zero | Succ(pred : Nat) }
+  data Z { | Pos(n : Nat) | NegSucc(n : Nat) }
+
+  # Q as fraction: Frac(num, den) represents num / Succ(den)
+  # (denominator is always >= 1; Frac(Pos(n), Zero) = n/1 = n)
+  data Q { | Frac(num : Z, den : Nat) }
+
+  # Symbolic operations (agents only — field tactic works on these symbolically)
+  agent q_add(principal, result, second)
+  agent q_mul(principal, result, second)
+  agent q_neg(principal, result)
+  agent q_inv(principal, result)
+
+  # Constants
+  agent q_zero(principal)
+  agent q_one(principal)
+
+  agent refl(principal)
+  rule sym   <> refl -> { let r = refl  relink left.result r.principal }
+  rule trans <> refl -> { relink left.result left.second }
+
+  # Register Q as a field
+  field Q { zero = q_zero, one = q_one, add = q_add, mul = q_mul, neg = q_neg, inv = q_inv }
+}
+`;
+
 // ─── Core: combined standard library ──────────────────────────────
 // `include "stdlib"` gives you everything.
 
